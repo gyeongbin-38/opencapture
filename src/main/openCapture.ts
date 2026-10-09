@@ -190,6 +190,7 @@ type Hooks = {
     configureTranslation: (input: unknown) => unknown;
     runtimeState?: () => object;
     configureRuntime?: (input: unknown) => object | Promise<object>;
+    steps?: () => void;
 };
 
 export function isTrustedPage(pageUrl: string, root: string, devUrl?: string) {
@@ -589,6 +590,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         label = "Capture",
         applyWorkflow = true,
         destinationFolder = active().path,
+        tags?: string[],
     ) {
         if (image.isEmpty()) throw new Error("비어 있는 이미지입니다.");
         mkdirSync(destinationFolder, { recursive: true });
@@ -610,6 +612,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 path,
                 createdAt: new Date().toISOString(),
                 collectionId: collection.id,
+                ...(tags?.length ? { tags } : {}),
             });
             persist();
             notifyLibraryUpdated();
@@ -1111,6 +1114,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             } else if (name === "pin-clipboard") await hooks.pin();
             else if (name === "settings") hooks.settings();
             else if (name === "restore-pins") hooks.restorePins();
+            else if (name === "steps") hooks.steps?.();
             else if (name === "configure-workflow") {
                 library.workflow = parseCaptureWorkflowPreferences(
                     payload,
@@ -1339,7 +1343,9 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                         ? "Upscale"
                         : label === "Annotated"
                           ? "Annotated"
-                          : "Framed";
+                          : label === "Steps"
+                            ? "Steps"
+                            : "Framed";
                 saveImage(image, fileLabel, false, dirname(item.path));
             } else throw new Error("지원하지 않는 동작입니다.");
             return state();

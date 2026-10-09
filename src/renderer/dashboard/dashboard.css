@@ -3198,3 +3198,14 @@ body::before {
         max-height: 40vh;
     }
 }
+
+.action-card.active {
+    border-color: var(--primary);
+    background: #70e1d214;
+}
+.action-card.active .action-icon {
+    color: var(--primary);
+}
+.action-card.active .action-link {
+    color: #f87171;
+}

@@ -770,13 +770,63 @@ function mouseChordRun(): (() => void) | null {
     }
 }
 
+// 단계 캡처 — 모드가 켜져 있으면 마우스 클릭마다 해당 화면을 순서대로 저장
+let stepCaptureActive = false;
+let stepCaptureCount = 0;
+let stepCaptureLastAt = 0;
+
+function toggleStepCapture() {
+    stepCaptureActive = !stepCaptureActive;
+    if (stepCaptureActive) {
+        stepCaptureCount = 0;
+        stepCaptureLastAt = 0;
+    }
+    syncMouseChord();
+}
+
+async function captureStepAt(x: number, y: number) {
+    try {
+        const display = screen.getDisplayNearestPoint({ x, y });
+        const scale = display.scaleFactor || 1;
+        const sources = await desktopCapturer.getSources({
+            types: ["screen"],
+            thumbnailSize: {
+                width: Math.max(1, Math.round(display.size.width * scale)),
+                height: Math.max(1, Math.round(display.size.height * scale)),
+            },
+            fetchWindowIcons: false,
+        });
+        const source =
+            sources.find((s) => s.display_id === String(display.id)) ??
+            sources[0];
+        if (!source || source.thumbnail.isEmpty()) return;
+        stepCaptureCount += 1;
+        openCapture?.saveImage(
+            source.thumbnail,
+            `Step-${stepCaptureCount}`,
+            false,
+            undefined,
+            ["단계"],
+        );
+    } catch (error) {
+        console.error("step capture failed", error);
+    }
+}
+
 function syncMouseChord() {
-    if (mouseChordRun()) {
+    if (mouseChordRun() || stepCaptureActive) {
         if (mouseHook) return;
         try {
             const { uIOhook } = require("uiohook-napi") as UiohookModule;
             mouseHook = uIOhook;
             uIOhook.on("mousedown", (e) => {
+                if (stepCaptureActive && e.button === 1) {
+                    const now = Date.now();
+                    if (now - stepCaptureLastAt > 350) {
+                        stepCaptureLastAt = now;
+                        setTimeout(() => void captureStepAt(e.x, e.y), 60);
+                    }
+                }
                 if (e.button === 1) chordState.left = true;
                 else if (e.button === 2) chordState.right = true;
                 else return;
@@ -924,7 +974,9 @@ app.whenReady().then(() => {
             shortcuts: ocShortcutStatus(),
             mouseChord: store.get("鼠标快捷键.全局"),
             brokerMode,
+            stepCapture: stepCaptureActive,
         }),
+        steps: toggleStepCapture,
         configureRuntime: (input) => {
             if (!input || typeof input !== "object")
                 throw new Error("올바른 설정이 아닙니다.");

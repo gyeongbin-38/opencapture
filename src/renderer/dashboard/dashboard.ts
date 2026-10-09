@@ -227,6 +227,12 @@ const captureActions: {
         shortcut: "Ctrl + Shift + R",
     },
     {
+        name: "steps",
+        icon: "≣",
+        title: "단계 캡처",
+        description: "클릭할 때마다 화면이 순서대로 저장돼요",
+    },
+    {
         name: "ocr",
         icon: "T",
         title: "텍스트 추출",
@@ -336,7 +342,11 @@ for (const action of captureActions) {
         .class("action-card", action.featured ? "featured" : "")
         .attr({ type: "button" })
         .data({ action: action.name, category })
-        .on("click", () => runAction(action.name));
+        .on("click", () => {
+            if (action.name === "steps") {
+                void toggleSteps();
+            } else runAction(action.name);
+        });
     const cardTop = view("x")
         .class("action-card-top")
         .add([
@@ -654,6 +664,14 @@ for (const [text, action, direction] of [
         })
         .addInto(selectionActions);
 }
+button("번호 합치기")
+    .class("outline-button", "compact", "combine-action")
+    .attr({
+        type: "button",
+        title: "선택한 캡처를 번호가 붙은 순서 이미지로 합성",
+    })
+    .on("click", () => void composeSteps([...selectedItemIds]))
+    .addInto(selectionActions);
 button("텍스트 인식")
     .class("outline-button", "compact", "bulk-action")
     .attr({ type: "button", title: "선택한 캡처의 글자를 인식해 검색에 추가" })
@@ -1675,6 +1693,78 @@ async function runAction(
     }
 }
 
+async function toggleSteps() {
+    const was = appState.runtime.stepCapture ?? false;
+    await runAction("steps", undefined, true);
+    if ((appState.runtime.stepCapture ?? false) && !was)
+        showToast(
+            "클릭할 때마다 화면이 저장됩니다. 카드를 다시 누르면 중지합니다.",
+        );
+}
+
+async function composeSteps(ids: string[]) {
+    const ordered = ids
+        .map((id) => appState.items.find((i) => i.id === id))
+        .filter((i): i is OpenCaptureItem => Boolean(i))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .slice(0, 20);
+    if (ordered.length < 2) return;
+    try {
+        const images: HTMLImageElement[] = [];
+        for (const item of ordered) {
+            const data = await window.openCapture.getItemData(item.id);
+            const img = new Image();
+            img.src = data;
+            await img.decode();
+            images.push(img);
+        }
+        const width = Math.max(...images.map((i) => i.naturalWidth), 1);
+        const gap = 28;
+        const badge = 40;
+        const scaled = images.map((img) => ({
+            img,
+            w: Math.round((img.naturalWidth * width) / img.naturalWidth),
+            h: Math.round((img.naturalHeight * width) / img.naturalWidth),
+        }));
+        const height = scaled.reduce((sum, i) => sum + i.h + gap, gap);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("canvas");
+        ctx.fillStyle = "#f4f4f5";
+        ctx.fillRect(0, 0, width, height);
+        let y = gap;
+        scaled.forEach(({ img, w, h }, index) => {
+            ctx.drawImage(img, 0, y, w, h);
+            ctx.beginPath();
+            ctx.arc(
+                badge / 2 + 14,
+                y + badge / 2 + 14,
+                badge / 2,
+                0,
+                Math.PI * 2,
+            );
+            ctx.fillStyle = "#2563eb";
+            ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `600 ${badge / 2 + 2}px system-ui, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(index + 1), badge / 2 + 14, y + badge / 2 + 15);
+            y += h + gap;
+        });
+        await runAction("save-composed", {
+            id: ordered[0].id,
+            dataURL: canvas.toDataURL("image/png"),
+            label: "Steps",
+        });
+        showToast("번호가 붙은 단계 이미지를 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
 async function importFiles(files: File[]) {
     try {
         appState = await window.openCapture.importFiles(files);
@@ -1767,6 +1857,15 @@ function renderState() {
         action.disabled = selectedCount < 2 || selectedCount > 20;
     loadMoreButton.el.hidden = appState.items.length >= appState.totalItemCount;
     loadMoreButton.el.textContent = `더 불러오기 (${appState.items.length}/${appState.totalItemCount})`;
+    const stepsCard = actionGrid.el.querySelector<HTMLElement>(
+        '[data-action="steps"]',
+    );
+    if (stepsCard) {
+        const running = appState.runtime.stepCapture ?? false;
+        stepsCard.classList.toggle("active", running);
+        const link = stepsCard.querySelector<HTMLElement>(".action-link");
+        if (link) link.textContent = running ? "중지" : "실행 →";
+    }
     todayChip.el.classList.toggle("active", todayOnly);
     todayChip.attr({ ariaPressed: String(todayOnly) });
     ocrChip.el.classList.toggle("active", ocrOnly);
@@ -1804,7 +1903,7 @@ function visibleLibraryItems() {
     }
     if (ocrOnly) items = items.filter((item) => item.ocrDone);
     if (activeTag)
-        items = items.filter((item) => item.tags?.includes(activeTag));
+        items = items.filter((item) => item.tags?.includes(activeTag ?? ""));
     if (searchQuery)
         items = items.filter((item) =>
             `${item.name} ${item.note ?? ""} ${item.ocrText ?? ""} ${(item.tags ?? []).join(" ")}`

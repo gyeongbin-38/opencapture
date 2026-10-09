@@ -1,5 +1,6 @@
 export type OpenCaptureActionName =
     | "capture"
+    | "steps"
     | "fullscreen"
     | "window"
     | "previous"
@@ -81,6 +82,7 @@ export interface OpenCaptureRuntime {
     startAtLogin: boolean;
     shortcuts: OpenCaptureShortcut[];
     mouseChord?: MouseChordAction;
+    stepCapture?: boolean;
 }
 
 export interface OpenCaptureItemsPage {
