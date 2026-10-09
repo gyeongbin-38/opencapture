@@ -1,0 +1,2 @@
+const {app,desktopCapturer,screen}=require('electron');
+app.whenReady().then(async()=>{try{const d=screen.getPrimaryDisplay();const s=await desktopCapturer.getSources({types:['screen'],thumbnailSize:{width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}});console.log(s.map(i=>({id:i.display_id,size:i.thumbnail.getSize()})));if(!s[0]?.thumbnail.isEmpty())require('fs').writeFileSync('.evidence/screen-fallback.png',s[0].thumbnail.toPNG());app.exit(s.length?0:1)}catch(e){console.error(e);app.exit(1)}});

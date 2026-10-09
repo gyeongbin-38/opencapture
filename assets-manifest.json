@@ -1,0 +1,143 @@
+{
+    "schemaVersion": 1,
+    "assets": [
+        {
+            "id": "ppocr-v6-small",
+            "description": "Default PaddleOCR v6 detection and recognition models",
+            "license": "Apache-2.0",
+            "licenseUrl": "https://github.com/xushengfeng/eSearch-OCR/blob/master/LICENSE",
+            "sourceUrl": "https://github.com/xushengfeng/eSearch-OCR/releases/download/4.0.0/ppocr_v6_small.zip",
+            "download": {
+                "sha256": "2e36eb4c59f57cd53d2324665887c0b20f08fad7002e6b2237045a55d590fb92",
+                "size": 26028589,
+                "minBytes": 26000000,
+                "maxBytes": 27000000
+            },
+            "archive": "zip",
+            "files": [
+                {
+                    "archivePath": "dic.txt",
+                    "path": "assets/onnx/ppocr/dic.txt",
+                    "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+                    "size": 74947
+                },
+                {
+                    "archivePath": "ppocr6_small_det.onnx",
+                    "path": "assets/onnx/ppocr/ppocr6_small_det.onnx",
+                    "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+                    "size": 9880512
+                },
+                {
+                    "archivePath": "ppocr6_small_rec.onnx",
+                    "path": "assets/onnx/ppocr/ppocr6_small_rec.onnx",
+                    "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
+                    "size": 21159378
+                }
+            ]
+        },
+        {
+            "id": "ppocr-korean",
+            "description": "PaddleOCR Korean recognition model and dictionary",
+            "license": "Apache-2.0",
+            "licenseUrl": "https://github.com/xushengfeng/eSearch-OCR/blob/master/LICENSE",
+            "sourceUrl": "https://github.com/xushengfeng/eSearch-OCR/releases/download/4.0.0/korean.zip",
+            "download": {
+                "sha256": "9b86623207529c52d8e18522f24d8947b804abe170ba55766368801855039bdb",
+                "size": 8952561,
+                "minBytes": 8900000,
+                "maxBytes": 9100000
+            },
+            "archive": "zip",
+            "files": [
+                {
+                    "archivePath": "korean_rec.onnx",
+                    "path": "assets/onnx/ppocr/korean/korean_rec.onnx",
+                    "sha256": "672643a78a04778cfedd771ac61888ec7e4aa4a11344a2cba139bf1cdb799037",
+                    "size": 9905621
+                },
+                {
+                    "archivePath": "korean_dict.txt",
+                    "path": "assets/onnx/ppocr/korean/korean_dict.txt",
+                    "sha256": "aa1fdc8ae8f7cd40a0ec4edb472eb0421e11427e6ccfee9915440742c18b0a20",
+                    "size": 14480
+                }
+            ]
+        },
+        {
+            "id": "document-orientation-classifier",
+            "description": "Document orientation classifier used by offline OCR",
+            "license": "Apache-2.0",
+            "licenseUrl": "https://github.com/xushengfeng/eSearch-OCR/blob/master/LICENSE",
+            "sourceUrl": "https://github.com/xushengfeng/eSearch-OCR/releases/download/8.1.0/doc_cls.onnx",
+            "download": {
+                "sha256": "f5516822af9262711e197ff224a8a9d884f8046a6321b762e34f8cbf082c45ef",
+                "size": 6784410,
+                "minBytes": 6700000,
+                "maxBytes": 6900000
+            },
+            "path": "assets/onnx/ppocr/doc_cls.onnx"
+        },
+        {
+            "id": "background-segmentation",
+            "description": "ONNX portrait/background segmentation model",
+            "license": "Apache-2.0",
+            "licenseUrl": "https://github.com/xushengfeng/eSearch-seg/blob/master/LICENSE",
+            "sourceUrl": "https://github.com/xushengfeng/eSearch-seg/releases/download/1.0.0/seg.onnx",
+            "download": {
+                "sha256": "20948f5f82a0ef020f8dd5d59a919b792936cbdf0e4beb49ac8b61f56f89fd0f",
+                "size": 617790,
+                "minBytes": 600000,
+                "maxBytes": 650000
+            },
+            "path": "assets/onnx/seg/seg.onnx"
+        },
+        {
+            "id": "ffmpeg-windows-x64",
+            "description": "FFmpeg 6.1 GPL build for Windows x64",
+            "license": "GPL-3.0-or-later",
+            "licenseUrl": "https://ffmpeg.org/legal.html",
+            "sourceUrl": "https://github.com/xushengfeng/eSearch/releases/download/13.0.0-beta.1/ffmpeg-win32-x64.zip",
+            "platforms": [
+                "win32"
+            ],
+            "architectures": [
+                "x64"
+            ],
+            "download": {
+                "sha256": "cea079e7ae3c2c982bece1460513a7768836d7e1ce0431259a0507f325ccdb3b",
+                "size": 142465406,
+                "minBytes": 142000000,
+                "maxBytes": 143000000
+            },
+            "archive": "zip",
+            "files": [
+                {
+                    "archivePath": "ffmpeg-n6.1-latest-win64-gpl-6.1/bin/ffmpeg.exe",
+                    "path": "lib/ffmpeg/ffmpeg.exe",
+                    "sha256": "6adc16f0cda77fea4addfaa90bfb62cda56e9e4f0ad2c7359bb987f738233388",
+                    "size": 126130176
+                },
+                {
+                    "archivePath": "ffmpeg-n6.1-latest-win64-gpl-6.1/LICENSE.txt",
+                    "path": "lib/ffmpeg/LICENSE.txt",
+                    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+                    "size": 35147
+                }
+            ]
+        },
+        {
+            "id": "u2netp",
+            "description": "U2Net small salient object segmentation",
+            "license": "Apache-2.0",
+            "licenseUrl": "https://github.com/xuebinqin/U-2-Net/blob/master/LICENSE",
+            "sourceUrl": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+            "download": {
+                "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+                "size": 4574861,
+                "minBytes": 4574861,
+                "maxBytes": 4574861
+            },
+            "path": "assets/onnx/seg/u2netp.onnx"
+        }
+    ]
+}
