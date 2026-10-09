@@ -2,12 +2,14 @@ export type CaptureWorkflowPreferences = {
     autoCopy: boolean;
     autoRemoveBackground: boolean;
     autoPin: boolean;
+    autoOcr: boolean;
 };
 
 export const defaultCaptureWorkflowPreferences: CaptureWorkflowPreferences = {
     autoCopy: false,
     autoRemoveBackground: false,
     autoPin: false,
+    autoOcr: true,
 };
 
 export function parseCaptureWorkflowPreferences(
@@ -17,7 +19,12 @@ export function parseCaptureWorkflowPreferences(
     if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("Workflow settings must be an object.");
     const input = value as Record<string, unknown>;
-    const allowed = new Set(["autoCopy", "autoRemoveBackground", "autoPin"]);
+    const allowed = new Set([
+        "autoCopy",
+        "autoRemoveBackground",
+        "autoPin",
+        "autoOcr",
+    ]);
     if (Object.keys(input).some((key) => !allowed.has(key)))
         throw new Error("Unknown workflow setting.");
     for (const value of Object.values(input)) {
@@ -35,6 +42,7 @@ export type CaptureWorkflowOperations<Derived> = {
         originalPath: string,
     ) => string | Promise<string>;
     pin: (path: string) => void | Promise<void>;
+    indexText?: (path: string) => void | Promise<void>;
     onError: (path: string, step: CaptureWorkflowStep, error: unknown) => void;
 };
 
@@ -42,7 +50,8 @@ export type CaptureWorkflowStep =
     | "queue"
     | "copy"
     | "remove-background"
-    | "pin";
+    | "pin"
+    | "index-text";
 
 export type CombineDirection = "vertical" | "horizontal";
 
@@ -157,6 +166,10 @@ export class CaptureWorkflowQueue<Derived> {
                 if (job.preferences.autoPin)
                     await this.attempt(effectivePath, "pin", () =>
                         this.operations.pin(effectivePath),
+                    );
+                if (job.preferences.autoOcr && this.operations.indexText)
+                    await this.attempt(job.path, "index-text", () =>
+                        this.operations.indexText?.(job.path),
                     );
             }
         } finally {

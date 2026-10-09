@@ -32,7 +32,9 @@ export type OpenCaptureActionName =
     | "rename-item"
     | "duplicate-item"
     | "save-composed"
-    | "set-note";
+    | "set-note"
+    | "set-tags"
+    | "index-ocr";
 
 export type TranslationEngine = "local" | "deepl" | "google";
 
@@ -51,12 +53,16 @@ export interface OpenCaptureItem {
     collectionId: string;
     favorite?: boolean;
     note?: string;
+    tags?: string[];
+    ocrText?: string;
+    ocrDone?: boolean;
 }
 
 export interface OpenCaptureWorkflow {
     autoCopy: boolean;
     autoRemoveBackground: boolean;
     autoPin: boolean;
+    autoOcr: boolean;
 }
 
 export interface OpenCaptureShortcut {
@@ -69,12 +75,7 @@ export interface OpenCaptureShortcut {
     default?: string;
 }
 
-export type MouseChordAction =
-    | "关闭"
-    | "截屏"
-    | "快速截屏"
-    | "录屏"
-    | "起始页";
+export type MouseChordAction = "关闭" | "截屏" | "快速截屏" | "录屏" | "起始页";
 
 export interface OpenCaptureRuntime {
     startAtLogin: boolean;

@@ -714,6 +714,12 @@ function rebindOcShortcut(id: string, key: unknown): boolean {
     if (!def) return false;
     if (key !== null && typeof key !== "string") return false;
     const keys = key === null ? def.keys : key === "" ? [] : [key];
+    if (key !== null && key !== "") {
+        const taken = ocShortcutRequests().some(
+            (other) => other.id !== id && other.keys.includes(key),
+        );
+        if (taken) return false;
+    }
     const status = shortcutStatus.find((s) => s.id === id);
     const oldActive = status?.active ?? null;
     let active: string | null = null;

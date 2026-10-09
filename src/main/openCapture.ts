@@ -56,6 +56,9 @@ type Item = {
     workflowComplete?: boolean;
     favorite?: boolean;
     note?: string;
+    tags?: string[];
+    ocrText?: string;
+    ocrDone?: boolean;
 };
 type Library = {
     collections: Collection[];
@@ -153,6 +156,16 @@ export function isLibrary(value: unknown): value is Library {
                 (i.favorite === undefined || typeof i.favorite === "boolean") &&
                 (i.note === undefined ||
                     (typeof i.note === "string" && i.note.length <= 2000)) &&
+                (i.tags === undefined ||
+                    (Array.isArray(i.tags) &&
+                        i.tags.length <= 12 &&
+                        i.tags.every(
+                            (t) => typeof t === "string" && t.length <= 30,
+                        ))) &&
+                (i.ocrText === undefined ||
+                    (typeof i.ocrText === "string" &&
+                        i.ocrText.length <= 50_000)) &&
+                (i.ocrDone === undefined || typeof i.ocrDone === "boolean") &&
                 (i.thumbnail === undefined || typeof i.thumbnail === "string"),
         ) &&
         (data.workflow === undefined ||
@@ -631,6 +644,108 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         )
             dashboard.webContents.send("oc:workflow-error", message);
     };
+    const ocrQueue: string[] = [];
+    let ocrWorker: BrowserWindow | null = null;
+    let ocrBusy = false;
+    let ocrJobTimer: ReturnType<typeof setTimeout> | undefined;
+    let ocrWorkerReady = false;
+    const pumpOcrQueue = () => {
+        if (ocrBusy) return;
+        const id = ocrQueue.shift();
+        if (id === undefined) return;
+        const item = library.items.find((i) => i.id === id);
+        if (!item || !existsSync(item.path)) {
+            pumpOcrQueue();
+            return;
+        }
+        ocrBusy = true;
+        if (ocrJobTimer) clearTimeout(ocrJobTimer);
+        ocrJobTimer = setTimeout(() => {
+            ocrJobTimer = undefined;
+            ocrBusy = false;
+            ocrWorker?.destroy();
+            ocrWorker = null;
+            ocrWorkerReady = false;
+            pumpOcrQueue();
+        }, 120_000);
+        ocrJobTimer.unref();
+        const dispatch = () => {
+            if (!ocrWorker || ocrWorker.isDestroyed()) return;
+            ocrWorker.webContents.send("oc:ocr-job", {
+                id: item.id,
+                path: item.path,
+            });
+        };
+        if (ocrWorker && !ocrWorker.isDestroyed() && ocrWorkerReady) dispatch();
+        else {
+            if (ocrWorker && !ocrWorker.isDestroyed() && !ocrWorkerReady) {
+                ocrWorker.webContents.once("did-finish-load", dispatch);
+                return;
+            }
+            ocrWorkerReady = false;
+            ocrWorker = new BrowserWindow({
+                show: false,
+                width: 16,
+                height: 16,
+                skipTaskbar: true,
+                webPreferences: {
+                    nodeIntegration: true,
+                    contextIsolation: false,
+                },
+            });
+            ocrWorker.webContents.setWindowOpenHandler(() => ({
+                action: "deny",
+            }));
+            ocrWorker.webContents.on("will-navigate", (event) =>
+                event.preventDefault(),
+            );
+            ocrWorker.webContents.once("did-finish-load", () => {
+                ocrWorkerReady = true;
+                dispatch();
+            });
+            ocrWorker.webContents.on("render-process-gone", () => {
+                if (ocrJobTimer) clearTimeout(ocrJobTimer);
+                ocrJobTimer = undefined;
+                ocrBusy = false;
+                ocrWorkerReady = false;
+                ocrWorker = null;
+                pumpOcrQueue();
+            });
+            if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL)
+                ocrWorker.loadURL(
+                    `${process.env.ELECTRON_RENDERER_URL}/ocr_worker.html`,
+                );
+            else ocrWorker.loadFile(join(root, "out/renderer/ocr_worker.html"));
+        }
+    };
+    const enqueueOcrIndex = (id: string) => {
+        const item = library.items.find((i) => i.id === id);
+        if (!item || ocrQueue.includes(id) || ocrQueue.length >= 200) return;
+        ocrQueue.push(id);
+        pumpOcrQueue();
+    };
+    ipcMain.on("oc:ocr-result", (event, payload: unknown) => {
+        if (
+            !ocrWorker ||
+            ocrWorker.isDestroyed() ||
+            event.sender.id !== ocrWorker.webContents.id
+        )
+            return;
+        if (ocrJobTimer) clearTimeout(ocrJobTimer);
+        ocrJobTimer = undefined;
+        ocrBusy = false;
+        const job = payload as { id?: unknown; ok?: unknown; text?: unknown };
+        const item = library.items.find((i) => i.id === job?.id);
+        if (item && job.ok === true) {
+            item.ocrDone = true;
+            const text =
+                typeof job.text === "string" ? job.text.slice(0, 50_000) : "";
+            item.ocrText = text || undefined;
+            persist();
+            notifyLibraryUpdated();
+        }
+        pumpOcrQueue();
+    });
     const workflowQueue = new CaptureWorkflowQueue<Electron.NativeImage>({
         copy: writeClipboardImage,
         removeBackground: async (path) =>
@@ -638,6 +753,12 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         saveDerived: async (image, originalPath) =>
             saveImage(image, "Cutout", false, dirname(originalPath)),
         pin: hooks.pin,
+        indexText: async (path) => {
+            const item = library.items.find(
+                (candidate) => pathKey(candidate.path) === pathKey(path),
+            );
+            if (item) enqueueOcrIndex(item.id);
+        },
         onError: recordWorkflowError,
     });
     const ignoredReceipts = new Set<string>();
@@ -1165,6 +1286,33 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 if (note) item.note = note;
                 else item.note = undefined;
                 persist();
+            } else if (name === "set-tags") {
+                if (!payload || typeof payload !== "object")
+                    throw new Error("태그 요청이 올바르지 않습니다.");
+                const { id, tags: rawTags } = payload as {
+                    id?: unknown;
+                    tags?: unknown;
+                };
+                const item = getItem(id);
+                if (!Array.isArray(rawTags))
+                    throw new Error("태그 목록이 올바르지 않습니다.");
+                const tags = [
+                    ...new Set(
+                        rawTags
+                            .filter((t): t is string => typeof t === "string")
+                            .map((t) => t.trim().replace(/\p{C}/gu, ""))
+                            .filter(Boolean)
+                            .map((t) => t.slice(0, 30)),
+                    ),
+                ].slice(0, 12);
+                item.tags = tags.length ? tags : undefined;
+                persist();
+            } else if (name === "index-ocr") {
+                const ids =
+                    typeof payload === "string"
+                        ? [getItem(payload).id]
+                        : selectedItems(payload, 200).map((i) => i.id);
+                for (const id of ids) enqueueOcrIndex(id);
             } else if (name === "save-composed") {
                 if (!payload || typeof payload !== "object")
                     throw new Error("저장 요청이 올바르지 않습니다.");

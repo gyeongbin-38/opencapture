@@ -36,6 +36,7 @@ const emptyState: OpenCaptureState = {
         autoCopy: false,
         autoRemoveBackground: false,
         autoPin: false,
+        autoOcr: true,
     },
     runtime: { startAtLogin: false, shortcuts: [] },
 };
@@ -46,6 +47,14 @@ let activePage: PageName = "home";
 const selectedItemIds = new Set<string>();
 let searchQuery = "";
 let favoritesOnly = false;
+let todayOnly = false;
+let ocrOnly = false;
+let activeTag: string | null = null;
+let sortMode: "new" | "old" | "name" = "new";
+let thumbSize = localStorage.getItem("oc:thumb-size") || "m";
+let quickLookId: string | null = null;
+const quickLookImages = new Map<string, string>();
+const pendingOcrIds = new Set<string>();
 let renameTargetId: string | null = null;
 let noteTargetId: string | null = null;
 let beautifyTarget: { id: string; image: HTMLImageElement } | null = null;
@@ -114,6 +123,12 @@ button()
     .attr({ type: "button" })
     .add([icon("⌘"), label("span", "단축키 보기"), label("small", "?")])
     .on("click", () => openShortcutSheet())
+    .addInto(sidebarBottom);
+button()
+    .class("text-button", "guide-button")
+    .attr({ type: "button" })
+    .add([icon("✦"), label("span", "시작 가이드")])
+    .on("click", () => openOnboarding())
     .addInto(sidebarBottom);
 
 const versionLabel = label("small", "OpenCapture")
@@ -405,6 +420,12 @@ const workflowOptions: {
         title: "화면에 고정",
         description: "완료된 이미지를 현재 화면 위에 띄웁니다.",
     },
+    {
+        key: "autoOcr",
+        title: "텍스트 자동 인식",
+        description:
+            "캡처 속 글자를 기기 안에서 인식해 라이브러리 검색에 활용합니다.",
+    },
 ];
 const workflowChoices = view("x", "wrap")
     .class("workflow-choices")
@@ -449,7 +470,10 @@ const searchField = view("x").class("search-field").addInto(searchGroup);
 searchField.add(view().class("search-icon").add(icon("⌕")));
 const searchInput = input("text")
     .class("search-input")
-    .attr({ placeholder: "이름으로 찾기", ariaLabel: "캡처 검색" })
+    .attr({
+        placeholder: "이름·메모·태그·본문 텍스트로 찾기",
+        ariaLabel: "캡처 검색",
+    })
     .on("input", () => {
         searchQuery = searchInput.el.value.trim().toLowerCase();
         renderState();
@@ -495,6 +519,59 @@ button()
     .add([icon("⇧"), label("span", "이미지 가져오기")])
     .on("click", () => fileInput.el.click())
     .addInto(libraryButtons);
+
+const filterBar = view("x", "wrap").class("filter-bar").addInto(libraryPage);
+const todayChip = button()
+    .class("chip-button")
+    .attr({ type: "button", ariaPressed: "false" })
+    .add([icon("◷"), label("span", "오늘")])
+    .on("click", () => {
+        todayOnly = !todayOnly;
+        renderState();
+    })
+    .addInto(filterBar);
+const ocrChip = button()
+    .class("chip-button")
+    .attr({ type: "button", ariaPressed: "false", title: "텍스트 인식된 캡처" })
+    .add([icon("T"), label("span", "텍스트")])
+    .on("click", () => {
+        ocrOnly = !ocrOnly;
+        renderState();
+    })
+    .addInto(filterBar);
+const tagChipRow = view("x", "wrap").class("tag-chip-row").addInto(filterBar);
+const filterBarEnd = view("x").class("filter-bar-end").addInto(filterBar);
+const sortSelect = select([
+    { value: "new", name: "최신순" },
+    { value: "old", name: "오래된순" },
+    { value: "name", name: "이름순" },
+])
+    .class("select-control", "sort-select")
+    .attr({ ariaLabel: "정렬" })
+    .on("change", (_event, element) => {
+        sortMode = element.el.value as typeof sortMode;
+        renderState();
+    })
+    .addInto(filterBarEnd);
+const sizeSegment = view("x")
+    .class("size-segment")
+    .attr({ role: "group", ariaLabel: "썸네일 크기" })
+    .addInto(filterBarEnd);
+for (const [size, text] of [
+    ["s", "작게"],
+    ["m", "보통"],
+    ["l", "크게"],
+] as const) {
+    button(text)
+        .class("size-segment-button")
+        .attr({ type: "button", ariaPressed: String(thumbSize === size) })
+        .on("click", () => {
+            thumbSize = size;
+            localStorage.setItem("oc:thumb-size", size);
+            renderState();
+        })
+        .addInto(sizeSegment);
+}
 
 const dropZone = view("y")
     .class("drop-zone")
@@ -577,6 +654,19 @@ for (const [text, action, direction] of [
         })
         .addInto(selectionActions);
 }
+button("텍스트 인식")
+    .class("outline-button", "compact", "bulk-action")
+    .attr({ type: "button", title: "선택한 캡처의 글자를 인식해 검색에 추가" })
+    .on("click", async () => {
+        const ids = [...selectedItemIds];
+        if (!ids.length) return;
+        for (const id of ids) {
+            pendingOcrIds.add(id);
+            setTimeout(() => pendingOcrIds.delete(id), 120_000);
+        }
+        await runAction("index-ocr", { ids });
+    })
+    .addInto(selectionActions);
 const itemGrid = view("x", "wrap").class("item-grid").addInto(libraryPage);
 const loadMoreButton = button("더 불러오기")
     .class("outline-button", "load-more")
@@ -1325,6 +1415,217 @@ upscaleDialog.el.addEventListener("cancel", (event) => {
     closeModal(upscaleDialog.el);
 });
 
+const quickLookDialog = ele("dialog")
+    .class("quicklook-dialog")
+    .addInto(modalBackdrop);
+const qlHeader = view("x")
+    .class("dialog-header", "ql-header")
+    .addInto(quickLookDialog);
+const qlTitle = view("y").class("ql-title").addInto(qlHeader);
+const qlName = label("h2", "").addInto(qlTitle);
+const qlMeta = label("small", "").addInto(qlTitle);
+button()
+    .class("close-button")
+    .attr({ type: "button", ariaLabel: "닫기" })
+    .add(icon("×"))
+    .on("click", () => closeModal(quickLookDialog.el))
+    .addInto(qlHeader);
+const qlBody = view("x").class("ql-body").addInto(quickLookDialog);
+const qlStage = view().class("ql-stage").addInto(qlBody);
+const qlImage = ele("img").class("ql-image").attr({ alt: "" }).addInto(qlStage);
+const qlPrev = button()
+    .class("ql-nav", "ql-prev")
+    .attr({ type: "button", ariaLabel: "이전 캡처" })
+    .add(label("span", "‹"))
+    .on("click", () => quickLookNavigate(-1))
+    .addInto(qlStage);
+const qlNext = button()
+    .class("ql-nav", "ql-next")
+    .attr({ type: "button", ariaLabel: "다음 캡처" })
+    .add(label("span", "›"))
+    .on("click", () => quickLookNavigate(1))
+    .addInto(qlStage);
+const qlSide = view("y").class("ql-side").addInto(qlBody);
+const qlActions = view("x", "wrap").class("ql-actions").addInto(qlSide);
+const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
+    ["▣", "복사", (item) => runAction("copy-item", item.id)],
+    ["⌖", "고정", (item) => runAction("pin-item", item.id)],
+    ["✎", "주석·편집", (item) => runAction("open-item", item.id)],
+    ["▨", "꾸미기", (item) => void openBeautify(item)],
+    ["⤢", "업스케일", (item) => void openUpscale(item)],
+    ["☰", "메모", (item) => openNote(item)],
+    ["✦", "배경 제거", (item) => runAction("remove-background", item.id)],
+    ["T", "이름", (item) => openRename(item)],
+    ["⧉", "복제", (item) => runAction("duplicate-item", item.id)],
+    ["▤", "폴더", (item) => runAction("reveal-item", item.id)],
+];
+for (const [glyph, text, run] of qlActionList) {
+    button()
+        .class("ql-action")
+        .attr({ type: "button" })
+        .add([icon(glyph), label("small", text)])
+        .on("click", () => {
+            const item = appState.items.find((i) => i.id === quickLookId);
+            if (item) run(item);
+        })
+        .addInto(qlActions);
+}
+qlSide.add(label("small", "태그").class("eyebrow", "ql-eyebrow"));
+const qlTags = view("x", "wrap").class("ql-tags").addInto(qlSide);
+const qlTagInput = input("text")
+    .class("text-control", "tag-input")
+    .attr({
+        placeholder: "태그 입력 후 Enter",
+        maxLength: 30,
+        ariaLabel: "태그 추가",
+    })
+    .addInto(qlSide);
+qlTagInput.on("keydown", async (event) => {
+    event.stopPropagation();
+    const item = appState.items.find((i) => i.id === quickLookId);
+    if (!item) return;
+    if (event.key === "Enter" || event.key === ",") {
+        event.preventDefault();
+        const value = qlTagInput.el.value.trim();
+        if (!value) return;
+        qlTagInput.el.value = "";
+        const tags = [...(item.tags ?? []), value];
+        await runAction("set-tags", { id: item.id, tags });
+    } else if (
+        event.key === "Backspace" &&
+        !qlTagInput.el.value &&
+        item.tags?.length
+    ) {
+        const tags = item.tags.slice(0, -1);
+        await runAction("set-tags", { id: item.id, tags });
+    }
+});
+qlSide.add(label("small", "인식된 텍스트").class("eyebrow", "ql-eyebrow"));
+const qlOcrStatus = label("small", "").addInto(qlSide);
+const qlOcrText = ele("pre").class("ql-ocr-text").addInto(qlSide);
+const qlOcrActions = view("x").class("ql-ocr-actions").addInto(qlSide);
+button()
+    .class("outline-button", "compact")
+    .attr({ type: "button" })
+    .add([icon("▣"), label("span", "텍스트 복사")])
+    .on("click", async () => {
+        const item = appState.items.find((i) => i.id === quickLookId);
+        if (!item?.ocrText) return;
+        await navigator.clipboard.writeText(item.ocrText);
+        showToast("인식된 텍스트를 복사했습니다.");
+    })
+    .addInto(qlOcrActions);
+button()
+    .class("text-button", "compact")
+    .attr({ type: "button" })
+    .add([icon("T"), label("span", "텍스트 인식")])
+    .on("click", async () => {
+        const item = appState.items.find((i) => i.id === quickLookId);
+        if (!item) return;
+        await requestOcrIndex(item.id);
+        renderQuickLook();
+    })
+    .addInto(qlOcrActions);
+quickLookDialog.el.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeModal(quickLookDialog.el);
+});
+
+const onboardDialog = ele("dialog")
+    .class("onboard-dialog")
+    .addInto(modalBackdrop);
+onboardDialog.add(
+    view("x")
+        .class("dialog-header")
+        .add([
+            view("y").add([
+                label("small", "시작 가이드").class("eyebrow"),
+                label("h2", "OpenCapture 시작하기"),
+            ]),
+            button()
+                .class("close-button")
+                .attr({ type: "button", ariaLabel: "닫기" })
+                .add(icon("×"))
+                .on("click", () => closeOnboarding()),
+        ]),
+);
+const onboardGrid = view("x", "wrap")
+    .class("onboard-grid")
+    .addInto(onboardDialog);
+const onboardCaptureKeys = view("x")
+    .class("key-group", "onboard-keys")
+    .addInto(
+        view("y")
+            .class("onboard-card")
+            .add([
+                view().class("onboard-icon").add(icon("⌗")),
+                label("strong", "한 번에 캡처"),
+                label("small", "언제든 이 단축키로 화면을 선택하세요."),
+            ])
+            .addInto(onboardGrid),
+    );
+const onboardChordCard = view("y")
+    .class("onboard-card")
+    .add([
+        view().class("onboard-icon").add(icon("◉")),
+        label("strong", "마우스로도 바로"),
+        label("small", "좌·우 버튼을 함께 누르면 캡처가 시작됩니다."),
+    ])
+    .addInto(onboardGrid);
+const onboardChordButton = button("지금 켜기")
+    .class("outline-button", "compact")
+    .attr({ type: "button" })
+    .on("click", async () => {
+        onboardChordButton.el.disabled = true;
+        await runAction("configure-runtime", { mouseChord: "截屏" });
+        await refreshState();
+        onboardChordButton.el.textContent = "켜짐";
+    })
+    .addInto(onboardChordCard);
+view("y")
+    .class("onboard-card")
+    .add([
+        view().class("onboard-icon").add(icon("✦")),
+        label("strong", "한 장에서 모두"),
+        label(
+            "small",
+            "캡처 하나로 복사·고정·주석·번역·업스케일·태그·검색까지 바로 이어집니다.",
+        ),
+    ])
+    .addInto(onboardGrid);
+button("시작하기")
+    .class("primary-button", "wide")
+    .attr({ type: "button" })
+    .on("click", () => closeOnboarding())
+    .addInto(onboardDialog);
+onboardDialog.el.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeOnboarding();
+});
+
+function renderOnboarding() {
+    onboardCaptureKeys.clear();
+    const capture = appState.runtime.shortcuts.find((s) => s.id === "capture");
+    const keyText = capture?.active ?? capture?.requested ?? "";
+    for (const key of (keyText ? formatShortcut(keyText) : "—").split(" + "))
+        onboardCaptureKeys.add(ele("kbd").attr({ textContent: key }));
+    onboardChordButton.el.disabled =
+        appState.runtime.mouseChord !== undefined &&
+        appState.runtime.mouseChord !== "关闭";
+    if (onboardChordButton.el.disabled)
+        onboardChordButton.el.textContent = "켜짐";
+}
+
+function openOnboarding() {
+    renderOnboarding();
+    openModal(onboardDialog.el);
+}
+
+function closeOnboarding() {
+    localStorage.setItem("oc:onboarded", "1");
+    closeModal(onboardDialog.el);
+}
+
 modalBackdrop.on("click", (event) => {
     if (event.target === modalBackdrop.el) closeAllModals();
 });
@@ -1437,7 +1738,7 @@ function renderState() {
             : "개발 버전";
 
     const visibleItems = visibleLibraryItems();
-    const filtered = Boolean(searchQuery) || favoritesOnly;
+    const filtered = isLibraryFiltered();
     libraryTitle.el.textContent = activeCollection?.name ?? "저장된 캡처";
     itemCount.el.textContent = filtered
         ? `${visibleItems.length}개 표시 · 전체 ${appState.totalItemCount}개`
@@ -1466,7 +1767,22 @@ function renderState() {
         action.disabled = selectedCount < 2 || selectedCount > 20;
     loadMoreButton.el.hidden = appState.items.length >= appState.totalItemCount;
     loadMoreButton.el.textContent = `더 불러오기 (${appState.items.length}/${appState.totalItemCount})`;
+    todayChip.el.classList.toggle("active", todayOnly);
+    todayChip.attr({ ariaPressed: String(todayOnly) });
+    ocrChip.el.classList.toggle("active", ocrOnly);
+    ocrChip.attr({ ariaPressed: String(ocrOnly) });
+    sortSelect.el.value = sortMode;
+    sizeSegment.el
+        .querySelectorAll<HTMLButtonElement>(".size-segment-button")
+        .forEach((seg, index) => {
+            const pressed = ["s", "m", "l"][index] === thumbSize;
+            seg.classList.toggle("active", pressed);
+            seg.setAttribute("aria-pressed", String(pressed));
+        });
+    itemGrid.el.dataset.size = thumbSize;
+    renderTagChips();
     renderItems(visibleItems);
+    if (quickLookDialog.el.open) renderQuickLook();
 }
 
 function visibleLibraryItems() {
@@ -1480,12 +1796,24 @@ function visibleLibraryItems() {
           )
         : appState.items;
     if (favoritesOnly) items = items.filter((item) => item.favorite);
+    if (todayOnly) {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const startTime = start.getTime();
+        items = items.filter((item) => Date.parse(item.createdAt) >= startTime);
+    }
+    if (ocrOnly) items = items.filter((item) => item.ocrDone);
+    if (activeTag)
+        items = items.filter((item) => item.tags?.includes(activeTag));
     if (searchQuery)
         items = items.filter((item) =>
-            `${item.name} ${item.note ?? ""}`
+            `${item.name} ${item.note ?? ""} ${item.ocrText ?? ""} ${(item.tags ?? []).join(" ")}`
                 .toLowerCase()
                 .includes(searchQuery),
         );
+    if (sortMode === "old") items = [...items].reverse();
+    else if (sortMode === "name")
+        items = [...items].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     return items;
 }
 
@@ -1539,6 +1867,20 @@ async function rebindShortcut(
     shortcut: OpenCaptureShortcut,
     key: string | null,
 ) {
+    if (key) {
+        const clash = appState.runtime.shortcuts.find(
+            (s) =>
+                s.id !== shortcut.id &&
+                (s.active === key || (s.custom ?? s.requested) === key),
+        );
+        if (clash) {
+            showToast(
+                `${clash.label}에 이미 등록된 단축키입니다. 다른 키를 눌러 주세요.`,
+                true,
+            );
+            return;
+        }
+    }
     try {
         await window.openCapture.action("configure-runtime", {
             shortcuts: { [shortcut.id]: key },
@@ -1649,7 +1991,7 @@ function renderRuntimeShortcuts() {
 function renderItems(items: OpenCaptureItem[]) {
     itemGrid.clear();
     if (!items.length) {
-        const filtered = Boolean(searchQuery) || favoritesOnly;
+        const filtered = isLibraryFiltered();
         itemGrid.add(
             filtered
                 ? view("y")
@@ -1715,10 +2057,16 @@ function renderItems(items: OpenCaptureItem[]) {
             });
         const itemCard = view("y")
             .class("item-card", selectedItemIds.has(item.id) ? "selected" : "")
-            .attr({ draggable: true })
+            .attr({ draggable: true, tabIndex: 0 })
             .on("dragstart", (event) => {
                 event.preventDefault();
                 window.openCapture.startDrag(item.id);
+            })
+            .on("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openQuickLook(item);
+                }
             })
             .add([
                 selectionInput,
@@ -1732,6 +2080,16 @@ function renderItems(items: OpenCaptureItem[]) {
                             label("small", formatDate(item.createdAt)),
                             ...(item.note
                                 ? [label("small", item.note).class("item-note")]
+                                : []),
+                            ...(item.tags?.length
+                                ? [
+                                      label(
+                                          "small",
+                                          item.tags
+                                              .map((tag) => `#${tag}`)
+                                              .join(" "),
+                                      ).class("item-tags"),
+                                  ]
                                 : []),
                         ]),
                         button()
@@ -1747,7 +2105,7 @@ function renderItems(items: OpenCaptureItem[]) {
                             }),
                     ]),
             ]);
-        itemCard.on("click", () => runAction("open-item", item.id));
+        itemCard.on("click", () => openQuickLook(item));
         itemGrid.add(itemCard);
     }
 }
@@ -1784,12 +2142,18 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
         .class("item-menu")
         .addInto(anchor.parentElement ?? document.body);
     const entries: [string, string, () => void][] = [
+        ["⌕", "미리보기", () => openQuickLook(item)],
         ["⌖", "화면에 고정", () => runAction("pin-item", item.id)],
         ["▣", "클립보드에 복사", () => runAction("copy-item", item.id)],
         ["✎", "주석·편집", () => runAction("open-item", item.id)],
         ["▨", "배경 꾸미기", () => openBeautify(item)],
         ["⤢", "업스케일", () => openUpscale(item)],
         ["☰", "메모", () => openNote(item)],
+        [
+            "T",
+            item.ocrDone ? "텍스트 다시 인식" : "텍스트 인식",
+            () => void requestOcrIndex(item.id),
+        ],
         ["✦", "배경 제거", () => runAction("remove-background", item.id)],
         ["T", "이름 바꾸기", () => openRename(item)],
         ["⧉", "복제", () => runAction("duplicate-item", item.id)],
@@ -1924,32 +2288,27 @@ function openModal(dialog: HTMLDialogElement) {
     dialog.showModal();
 }
 
+const allDialogs = [
+    shortcutDialog,
+    renameDialog,
+    noteDialog,
+    beautifyDialog,
+    upscaleDialog,
+    quickLookDialog,
+    onboardDialog,
+];
+
 function closeModal(dialog: HTMLDialogElement) {
     if (!dialog.open) return;
     dialog.close();
-    if (
-        ![
-            shortcutDialog,
-            renameDialog,
-            noteDialog,
-            beautifyDialog,
-            upscaleDialog,
-        ].some((d) => d.el.open)
-    ) {
+    if (!allDialogs.some((d) => d.el.open)) {
         modalBackdrop.el.hidden = true;
         document.body.classList.remove("modal-open");
     }
 }
 
 function closeAllModals() {
-    for (const dialog of [
-        shortcutDialog,
-        renameDialog,
-        noteDialog,
-        beautifyDialog,
-        upscaleDialog,
-    ])
-        if (dialog.el.open) dialog.el.close();
+    for (const dialog of allDialogs) if (dialog.el.open) dialog.el.close();
     modalBackdrop.el.hidden = true;
     document.body.classList.remove("modal-open");
 }
@@ -2272,11 +2631,139 @@ async function saveBeautified() {
     showToast("꾸민 이미지를 컬렉션에 저장했습니다.");
 }
 
+async function requestOcrIndex(id: string) {
+    pendingOcrIds.add(id);
+    setTimeout(() => pendingOcrIds.delete(id), 120_000);
+    await runAction("index-ocr", id);
+}
+
+function openQuickLook(item: OpenCaptureItem) {
+    quickLookId = item.id;
+    renderQuickLook();
+    openModal(quickLookDialog.el);
+    void loadQuickLookImage(item.id);
+}
+
+async function loadQuickLookImage(id: string) {
+    if (quickLookImages.has(id)) return;
+    try {
+        const data = await window.openCapture.getItemData(id);
+        if (quickLookImages.size > 12) {
+            const oldest = quickLookImages.keys().next().value;
+            if (oldest) quickLookImages.delete(oldest);
+        }
+        quickLookImages.set(id, data);
+        if (quickLookId === id && quickLookDialog.el.open) renderQuickLook();
+    } catch {
+        // 미리보기 로드 실패 시 썸네일로 대체 표시
+    }
+}
+
+function quickLookNavigate(step: 1 | -1) {
+    const items = visibleLibraryItems();
+    if (items.length < 2) return;
+    const index = items.findIndex((i) => i.id === quickLookId);
+    const next =
+        items[(Math.max(0, index) + step + items.length) % items.length];
+    quickLookId = next.id;
+    renderQuickLook();
+    void loadQuickLookImage(next.id);
+}
+
+function renderQuickLook() {
+    const item = appState.items.find((i) => i.id === quickLookId);
+    if (!item) {
+        if (quickLookDialog.el.open) closeModal(quickLookDialog.el);
+        quickLookId = null;
+        return;
+    }
+    qlName.el.textContent = item.name;
+    qlMeta.el.textContent = [
+        formatDate(item.createdAt),
+        item.note ? `메모: ${item.note}` : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
+    const full = quickLookImages.get(item.id);
+    qlImage.attr({ src: full ?? item.thumbnail ?? "" });
+    const multi = visibleLibraryItems().length > 1;
+    qlPrev.el.disabled = !multi;
+    qlNext.el.disabled = !multi;
+    qlTags.clear();
+    for (const tag of item.tags ?? []) {
+        qlTags.add(
+            button()
+                .class("tag-chip")
+                .attr({ type: "button", title: `${tag} 태그 제거` })
+                .add([label("span", `#${tag}`), label("span", "×")])
+                .on("click", async () => {
+                    await runAction("set-tags", {
+                        id: item.id,
+                        tags: (item.tags ?? []).filter((t) => t !== tag),
+                    });
+                }),
+        );
+    }
+    if (item.ocrDone) pendingOcrIds.delete(item.id);
+    if (item.ocrText) {
+        qlOcrStatus.el.textContent = `${item.ocrText.length.toLocaleString()}자 인식됨`;
+        qlOcrText.el.textContent = item.ocrText;
+        qlOcrText.el.hidden = false;
+    } else if (pendingOcrIds.has(item.id)) {
+        qlOcrStatus.el.textContent = "텍스트를 인식하는 중입니다…";
+        qlOcrText.el.hidden = true;
+    } else if (item.ocrDone) {
+        qlOcrStatus.el.textContent = "인식된 텍스트가 없습니다.";
+        qlOcrText.el.hidden = true;
+    } else {
+        qlOcrStatus.el.textContent =
+            "아직 인식하지 않았습니다. 텍스트 인식을 실행하면 검색에도 포함됩니다.";
+        qlOcrText.el.hidden = true;
+    }
+}
+
+function renderTagChips() {
+    tagChipRow.clear();
+    const counts = new Map<string, number>();
+    for (const item of appState.items)
+        for (const tag of item.tags ?? [])
+            counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    if (activeTag && !counts.has(activeTag)) activeTag = null;
+    for (const [tag, count] of [...counts.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0], "ko"),
+    )) {
+        tagChipRow.add(
+            button()
+                .class(
+                    "chip-button",
+                    "tag-filter",
+                    activeTag === tag ? "active" : "",
+                )
+                .attr({
+                    type: "button",
+                    ariaPressed: String(activeTag === tag),
+                })
+                .add([icon("#"), label("span", `${tag} ${count}`)])
+                .on("click", () => {
+                    activeTag = activeTag === tag ? null : tag;
+                    renderState();
+                }),
+        );
+    }
+}
+
+function isLibraryFiltered() {
+    return Boolean(
+        searchQuery || favoritesOnly || todayOnly || ocrOnly || activeTag,
+    );
+}
+
 function showCaptureToast(item: OpenCaptureItem) {
     showToast("이미지가 라이브러리에 추가되었습니다", false, [
         ["복사", () => runAction("copy-item", item.id)],
         ["고정", () => runAction("pin-item", item.id)],
         ["열기", () => runAction("open-item", item.id)],
+        ["메모", () => openNote(item)],
     ]);
 }
 
@@ -2359,6 +2846,13 @@ document.addEventListener("keydown", (event) => {
     const tag = (event.target as HTMLElement).tagName;
     if (event.key === "Escape" && !modalBackdrop.el.hidden) closeAllModals();
     if (
+        quickLookDialog.el.open &&
+        !["INPUT", "TEXTAREA", "SELECT"].includes(tag)
+    ) {
+        if (event.key === "ArrowLeft") quickLookNavigate(-1);
+        if (event.key === "ArrowRight") quickLookNavigate(1);
+    }
+    if (
         event.key === "?" &&
         !event.ctrlKey &&
         !event.metaKey &&
@@ -2366,6 +2860,19 @@ document.addEventListener("keydown", (event) => {
     )
         openShortcutSheet();
 });
+
+const loadObserver = new IntersectionObserver(
+    (entries) => {
+        if (
+            entries.some((entry) => entry.isIntersecting) &&
+            !loadMoreButton.el.hidden &&
+            !loadMoreButton.el.disabled
+        )
+            void loadMoreItems();
+    },
+    { root: content.el, rootMargin: "400px" },
+);
+loadObserver.observe(loadMoreButton.el);
 
 showPage(activePage);
 let libraryRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2380,5 +2887,7 @@ window.openCapture.onLibraryChanged(() => {
 });
 window.openCapture.onShowLibrary(() => showPage("library"));
 window.openCapture.onWorkflowError((message) => showToast(message, true));
-void refreshState();
+void refreshState().then(() => {
+    if (!localStorage.getItem("oc:onboarded")) openOnboarding();
+});
 void refreshTranslationStatus();

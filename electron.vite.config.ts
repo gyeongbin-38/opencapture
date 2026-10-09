@@ -13,14 +13,25 @@ export default defineConfig(({ mode }) => ({
     },
     preload: {
         build: {
-            rollupOptions: { input: { dashboard: path.resolve(__dirname, "src/preload/dashboard.ts") }, output: { entryFileNames: "[name].js", format: "cjs" } },
+            rollupOptions: {
+                input: {
+                    dashboard: path.resolve(
+                        __dirname,
+                        "src/preload/dashboard.ts",
+                    ),
+                },
+                output: { entryFileNames: "[name].js", format: "cjs" },
+            },
         },
     },
     renderer: {
         build: {
             rollupOptions: {
                 input: {
-                    dashboard: path.resolve(__dirname, "src/renderer/dashboard.html"),
+                    dashboard: path.resolve(
+                        __dirname,
+                        "src/renderer/dashboard.html",
+                    ),
                     editor: path.resolve(__dirname, "src/renderer/editor.html"),
                     clip: path.resolve(__dirname, "src/renderer/capture.html"),
                     setting: path.resolve(
@@ -59,6 +70,10 @@ export default defineConfig(({ mode }) => ({
                     aiVision: path.resolve(
                         __dirname,
                         "src/renderer/aiVision.html",
+                    ),
+                    ocr_worker: path.resolve(
+                        __dirname,
+                        "src/renderer/ocr_worker.html",
                     ),
                 },
             },
