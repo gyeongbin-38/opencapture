@@ -97,6 +97,7 @@ export default defineConfig(({ mode }) => ({
                 "hex-to-css-filter",
                 "hotkeys-js",
                 "mediabunny",
+                "myde-dbus",
                 "picture_match",
                 "remarkable",
                 "xtranslator",

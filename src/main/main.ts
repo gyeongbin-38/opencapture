@@ -1536,7 +1536,7 @@ function createClipWindow() {
         width: screen.getPrimaryDisplay().workAreaSize.width,
         height: screen.getPrimaryDisplay().workAreaSize.height,
         show: false,
-        alwaysOnTop: !dev, // 为了方便调试，调试模式就不居上了
+        alwaysOnTop: true,
         fullscreenable: true,
         transparent: true,
         frame: false,
@@ -1553,7 +1553,7 @@ function createClipWindow() {
         },
     });
 
-    if (!dev) _clipWindow.setAlwaysOnTop(true, "screen-saver");
+    _clipWindow.setAlwaysOnTop(true, "screen-saver");
 
     rendererPath(_clipWindow, "capture.html");
 
