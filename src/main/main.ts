@@ -645,6 +645,15 @@ function ocShortcutDefs(): ShortcutRequest[] {
                           sendCaptureEvent();
                       },
                   },
+                  {
+                      id: "delay",
+                      label: "3초 후 캡처",
+                      keys: [],
+                      run: async () => {
+                          await sleep(3000);
+                          sendCaptureEvent();
+                      },
+                  },
               ]
             : []),
         {
@@ -2992,6 +3001,7 @@ const defaultSetting: setting = {
                 number: "8",
                 arrow: "9",
                 mask: "3+e",
+                stamp: "3+t",
             },
         },
         filter: {

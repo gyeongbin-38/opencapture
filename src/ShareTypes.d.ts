@@ -232,7 +232,7 @@ export interface setting {
         };
     };
     保存: {
-        默认格式: "png" | "jpg" | "svg" | "webp" | "bmp";
+        默认格式: "png" | "jpg" | "svg" | "webp" | "bmp" | "pdf";
         保存路径: { 图片: string; 视频: string };
         快速保存: boolean;
         保存并复制: boolean;
@@ -455,7 +455,8 @@ type EditType = {
         | "text"
         | "number"
         | "arrow"
-        | "mask";
+        | "mask"
+        | "stamp";
     filter:
         | "pixelate"
         | "blur"

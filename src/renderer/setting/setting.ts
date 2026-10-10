@@ -948,6 +948,7 @@ const s: Partial<settingItem<SettingPath>> = {
                     { value: "jpg", name: "JPG" },
                     { value: "webp", name: "WebP" },
                     { value: "bmp", name: "BMP" },
+                    { value: "pdf", name: "PDF" },
                 ],
                 "截屏默认格式",
             ),
@@ -1398,6 +1399,10 @@ const s: Partial<settingItem<SettingPath>> = {
     "截屏编辑快捷键.shape.副.arrow": {
         name: "箭头",
         el: () => hotkeyP("arrow"),
+    },
+    "截屏编辑快捷键.shape.副.stamp": {
+        name: "스탬프",
+        el: () => hotkeyP("star"),
     },
     "大小栏快捷键.左上x": {
         name: "左上x",
@@ -2454,6 +2459,7 @@ const main: {
                     "截屏编辑快捷键.shape.副.text",
                     "截屏编辑快捷键.shape.副.number",
                     "截屏编辑快捷键.shape.副.arrow",
+                    "截屏编辑快捷键.shape.副.stamp",
                 ],
             },
             {

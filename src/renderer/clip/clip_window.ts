@@ -1102,6 +1102,15 @@ async function save(message: string) {
             height: data.height,
         }).data;
         dataBuffer = arrayBuffer;
+    } else if (_type === "pdf") {
+        const nc = getClipPhoto();
+        const f = await getBlob(nc, "image/jpeg", 0.92);
+        if (!f) return;
+        dataBuffer = imageToPdf(
+            Buffer.from(await f.arrayBuffer()),
+            nc.width,
+            nc.height,
+        );
     } else {
         let f: Blob | null = null;
         const nc = getClipPhoto();
@@ -1130,6 +1139,42 @@ async function save(message: string) {
             // todo error
         }
     });
+}
+
+/** 이미지 한 장을 담은 최소 PDF (JPEG DCTDecode) */
+function imageToPdf(jpeg: Buffer, w: number, h: number) {
+    const enc = new TextEncoder();
+    const parts: Uint8Array[] = [];
+    const offsets: number[] = [];
+    let len = 0;
+    const push = (s: string | Uint8Array) => {
+        const b = typeof s === "string" ? enc.encode(s) : s;
+        parts.push(b);
+        len += b.length;
+    };
+    push("%PDF-1.4\n");
+    offsets.push(len);
+    push("1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n");
+    offsets.push(len);
+    push("2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n");
+    offsets.push(len);
+    push(
+        `3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${w} ${h}]/Resources<</XObject<</Im1 4 0 R>>>>/Contents 5 0 R>>endobj\n`,
+    );
+    offsets.push(len);
+    push(
+        `4 0 obj<</Type/XObject/Subtype/Image/Width ${w}/Height ${h}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${jpeg.length}>>stream\n`,
+    );
+    push(jpeg);
+    push("\nendstream endobj\n");
+    offsets.push(len);
+    const cs = `q ${w} 0 0 ${h} 0 0 cm /Im1 Do Q\n`;
+    push(`5 0 obj<</Length ${cs.length}>>stream\n${cs}endstream endobj\n`);
+    const xref = len;
+    push("xref\n0 6\n0000000000 65535 f \n");
+    for (const o of offsets) push(`${String(o).padStart(10, "0")} 00000 n \n`);
+    push(`trailer<</Size 6/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF`);
+    return Buffer.concat(parts.map((p) => Buffer.from(p)));
 }
 
 function getClipPhotoSVG() {
@@ -2631,6 +2676,19 @@ function draw(
             canChangeFill: true,
             形状: "mask",
         });
+    } else if (shape === "stamp") {
+        // 드래그 영역에 맞춰 승인/피드백 기호를 찍는 스탬프 — IText라 더블클릭으로 기호 교체 가능
+        shapeX = new IText("✓", {
+            left: x,
+            top: y,
+            originX: "left",
+            originY: "top",
+            fontSize: Math.max(h, 24),
+            fill: fillColor || "#16a34a",
+            canChangeFill: true,
+            形状: "stamp",
+            fontFamily: 字体.主要字体,
+        });
     }
     if (shapeX) {
         shapes.push(shapeX);
@@ -3399,6 +3457,7 @@ const drawSideShapes = {
     number: iconEl("number").attr({ title: "序号" }),
     arrow: iconEl("arrow").attr({ title: "箭头" }),
     mask: iconEl("mask").attr({ title: "遮罩" }),
+    stamp: iconEl("star").attr({ title: "스탬프" }),
 } as const;
 
 const filterRangeEl = view().class("draw_filters_range");
@@ -3584,7 +3643,14 @@ const saveType = view()
     .attr({ id: "save_type" })
     .addInto(centerBarEl)
     .add(view().add(t("保存文件格式为")));
-const saveTypeList: (typeof type)[] = ["png", "jpg", "webp", "bmp", "svg"];
+const saveTypeList: (typeof type)[] = [
+    "png",
+    "jpg",
+    "webp",
+    "bmp",
+    "svg",
+    "pdf",
+];
 const suffixList = saveTypeList.map((i) =>
     view()
         .data({ value: i })

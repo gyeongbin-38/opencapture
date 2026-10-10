@@ -178,7 +178,7 @@ const els = {
     ]).sv(
         (() => {
             const format = store.get("保存.默认格式");
-            if (format === "svg") return "png";
+            if (format === "svg" || format === "pdf") return "png";
             return format;
         })(),
     ),
