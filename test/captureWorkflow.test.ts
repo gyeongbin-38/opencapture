@@ -50,12 +50,14 @@ describe("CaptureWorkflowQueue", () => {
             autoRemoveBackground: false,
             autoPin: false,
             autoOcr: false,
+            autoPreview: false,
         });
         const mutable = {
             autoCopy: true,
             autoRemoveBackground: true,
             autoPin: true,
             autoOcr: false,
+            autoPreview: false,
         };
         queue.enqueue("second.png", mutable);
         mutable.autoCopy = false;
@@ -100,6 +102,7 @@ describe("CaptureWorkflowQueue", () => {
             autoRemoveBackground: true,
             autoPin: true,
             autoOcr: false,
+            autoPreview: false,
         });
         await queue.whenIdle();
 
@@ -134,6 +137,7 @@ describe("CaptureWorkflowQueue", () => {
             autoRemoveBackground: false,
             autoPin: false,
             autoOcr: false,
+            autoPreview: false,
         };
 
         expect(queue.enqueue("first.png", preferences)).toBe(true);
@@ -159,6 +163,7 @@ describe("parseCaptureWorkflowPreferences", () => {
             autoRemoveBackground: false,
             autoPin: true,
             autoOcr: true,
+            autoPreview: false,
         });
         expect(() =>
             parseCaptureWorkflowPreferences({ upload: true }),

@@ -35,7 +35,10 @@ export type OpenCaptureActionName =
     | "save-composed"
     | "set-note"
     | "set-tags"
-    | "index-ocr";
+    | "index-ocr"
+    | "save-pin-set"
+    | "remove-pin-set"
+    | "pin-set";
 
 export type TranslationEngine = "local" | "deepl" | "google";
 
@@ -64,6 +67,13 @@ export interface OpenCaptureWorkflow {
     autoRemoveBackground: boolean;
     autoPin: boolean;
     autoOcr: boolean;
+    autoPreview: boolean;
+}
+
+export interface OpenCapturePinSet {
+    id: string;
+    name: string;
+    itemIds: string[];
 }
 
 export interface OpenCaptureShortcut {
@@ -100,6 +110,8 @@ export interface OpenCaptureState {
     workflow: OpenCaptureWorkflow;
     runtime: OpenCaptureRuntime;
     recoveryWarning?: string;
+    previewItemId?: string;
+    pinSets?: OpenCapturePinSet[];
 }
 
 export interface TranslationOptions {
@@ -143,6 +155,7 @@ export interface OpenCaptureApi {
     onShowLibrary(callback: () => void): () => void;
     onLibraryChanged(callback: () => void): () => void;
     onWorkflowError(callback: (message: string) => void): () => void;
+    onPreviewItem(callback: (id: string) => void): () => void;
 }
 
 declare global {

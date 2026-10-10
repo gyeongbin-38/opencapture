@@ -37,7 +37,9 @@ const emptyState: OpenCaptureState = {
         autoRemoveBackground: false,
         autoPin: false,
         autoOcr: true,
+        autoPreview: false,
     },
+    pinSets: [],
     runtime: { startAtLogin: false, shortcuts: [] },
 };
 
@@ -45,6 +47,7 @@ let appState = emptyState;
 let translationStatus: TranslationStatus | null = null;
 let activePage: PageName = "home";
 const selectedItemIds = new Set<string>();
+let lastSelectIndex: number | null = null;
 let searchQuery = "";
 let favoritesOnly = false;
 let todayOnly = false;
@@ -394,6 +397,9 @@ restorePins.add([
         .on("click", () => runAction("restore-pins")),
 ]);
 
+const pinSetSection = view("y").class("pinset-section").addInto(homePage);
+const pinSetRow = view("x", "wrap").class("pinset-row").addInto(pinSetSection);
+
 const workflowCard = view("y").class("workflow-card").addInto(homePage);
 workflowCard.add([
     view("y")
@@ -435,6 +441,11 @@ const workflowOptions: {
         title: "텍스트 자동 인식",
         description:
             "캡처 속 글자를 기기 안에서 인식해 라이브러리 검색에 활용합니다.",
+    },
+    {
+        key: "autoPreview",
+        title: "캡처 후 바로 보기",
+        description: "저장 직후 큰 미리보기를 열어 바로 작업할 수 있습니다.",
     },
 ];
 const workflowChoices = view("x", "wrap")
@@ -664,13 +675,38 @@ for (const [text, action, direction] of [
         })
         .addInto(selectionActions);
 }
+button("핀 세트 저장")
+    .class("outline-button", "compact", "bulk-action")
+    .attr({
+        type: "button",
+        title: "선택한 캡처를 한 번에 고정하는 세트로 저장",
+    })
+    .on("click", async () => {
+        const ids = [...selectedItemIds];
+        if (!ids.length) return;
+        await runAction("save-pin-set", { ids });
+    })
+    .addInto(selectionActions);
 button("번호 합치기")
     .class("outline-button", "compact", "combine-action")
     .attr({
         type: "button",
         title: "선택한 캡처를 번호가 붙은 순서 이미지로 합성",
     })
-    .on("click", () => void composeSteps([...selectedItemIds]))
+    .on("click", () => void composeLayout([...selectedItemIds], "steps"))
+    .addInto(selectionActions);
+button("비교 합치기")
+    .class("outline-button", "compact", "combine-action")
+    .attr({ type: "button", title: "선택한 캡처를 A/B 라벨로 나란히 합성" })
+    .on("click", () => void composeLayout([...selectedItemIds], "compare"))
+    .addInto(selectionActions);
+button("타임라인 합치기")
+    .class("outline-button", "compact", "combine-action")
+    .attr({
+        type: "button",
+        title: "선택한 캡처를 번호가 붙은 가로 타임라인으로 합성",
+    })
+    .on("click", () => void composeLayout([...selectedItemIds], "timeline"))
     .addInto(selectionActions);
 button("텍스트 인식")
     .class("outline-button", "compact", "bulk-action")
@@ -1433,6 +1469,69 @@ upscaleDialog.el.addEventListener("cancel", (event) => {
     closeModal(upscaleDialog.el);
 });
 
+const foldDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
+const foldHeader = view("x").class("dialog-header").addInto(foldDialog);
+const foldTitle = view("y").addInto(foldHeader);
+foldTitle.add([
+    label("h2", "중간 접기"),
+    label(
+        "small",
+        "긴 캡처의 중간 부분을 접어 짧게 표시합니다. 범위를 조절해 보세요.",
+    ),
+]);
+button()
+    .class("close-button")
+    .attr({ type: "button", ariaLabel: "닫기" })
+    .add(icon("×"))
+    .on("click", () => closeModal(foldDialog.el))
+    .addInto(foldHeader);
+const foldStage = view().class("fold-stage").addInto(foldDialog);
+const foldImgWrap = view().class("fold-image-wrap").addInto(foldStage);
+const foldImage = ele("img")
+    .class("fold-image")
+    .attr({ alt: "" })
+    .addInto(foldImgWrap);
+const foldShade = view().class("fold-shade").addInto(foldImgWrap);
+const foldControls = view("y").class("fold-controls").addInto(foldDialog);
+const foldStartInput = input("range")
+    .attr({
+        min: "0",
+        max: "95",
+        value: "30",
+        step: "1",
+        ariaLabel: "접기 시작",
+    })
+    .addInto(foldControls);
+const foldEndInput = input("range")
+    .attr({
+        min: "5",
+        max: "100",
+        value: "70",
+        step: "1",
+        ariaLabel: "접기 끝",
+    })
+    .addInto(foldControls);
+const foldInfo = label("small", "").class("fold-info").addInto(foldControls);
+foldDialog.add(
+    view("x")
+        .class("dialog-actions")
+        .add([
+            button("취소")
+                .class("outline-button")
+                .attr({ type: "button" })
+                .on("click", () => closeModal(foldDialog.el)),
+            button()
+                .class("primary-button")
+                .attr({ type: "button" })
+                .add([icon("⬍"), label("span", "접어서 저장")])
+                .on("click", () => void applyFold()),
+        ]),
+);
+foldDialog.el.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeModal(foldDialog.el);
+});
+
 const quickLookDialog = ele("dialog")
     .class("quicklook-dialog")
     .addInto(modalBackdrop);
@@ -1450,7 +1549,27 @@ button()
     .addInto(qlHeader);
 const qlBody = view("x").class("ql-body").addInto(quickLookDialog);
 const qlStage = view().class("ql-stage").addInto(qlBody);
-const qlImage = ele("img").class("ql-image").attr({ alt: "" }).addInto(qlStage);
+const qlImageWrap = view().class("ql-image-wrap").addInto(qlStage);
+const qlImage = ele("img")
+    .class("ql-image")
+    .attr({ alt: "" })
+    .addInto(qlImageWrap);
+const qlCropOverlay = view().class("ql-crop-overlay").addInto(qlImageWrap);
+qlCropOverlay.el.hidden = true;
+const qlCropRect = view().class("ql-crop-rect").addInto(qlCropOverlay);
+qlCropRect.el.hidden = true;
+const qlCropBar = view("x").class("ql-crop-bar").addInto(qlStage);
+qlCropBar.el.hidden = true;
+qlCropBar.add([
+    button("자르기 적용")
+        .class("primary-button", "compact")
+        .attr({ type: "button" })
+        .on("click", () => void applyQlCrop()),
+    button("취소")
+        .class("outline-button", "compact")
+        .attr({ type: "button" })
+        .on("click", () => exitQlCrop()),
+]);
 const qlPrev = button()
     .class("ql-nav", "ql-prev")
     .attr({ type: "button", ariaLabel: "이전 캡처" })
@@ -1469,6 +1588,8 @@ const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
     ["▣", "복사", (item) => runAction("copy-item", item.id)],
     ["⌖", "고정", (item) => runAction("pin-item", item.id)],
     ["✎", "주석·편집", (item) => runAction("open-item", item.id)],
+    ["⌗", "자르기", () => startQlCrop()],
+    ["⬍", "중간 접기", (item) => void openFold(item)],
     ["▨", "꾸미기", (item) => void openBeautify(item)],
     ["⤢", "업스케일", (item) => void openUpscale(item)],
     ["☰", "메모", (item) => openNote(item)],
@@ -1508,16 +1629,23 @@ qlTagInput.on("keydown", async (event) => {
         if (!value) return;
         qlTagInput.el.value = "";
         const tags = [...(item.tags ?? []), value];
-        await runAction("set-tags", { id: item.id, tags });
+        await runItemEdit(
+            ["set-tags", { id: item.id, tags }],
+            ["set-tags", { id: item.id, tags: item.tags ?? [] }],
+        );
     } else if (
         event.key === "Backspace" &&
         !qlTagInput.el.value &&
         item.tags?.length
     ) {
         const tags = item.tags.slice(0, -1);
-        await runAction("set-tags", { id: item.id, tags });
+        await runItemEdit(
+            ["set-tags", { id: item.id, tags }],
+            ["set-tags", { id: item.id, tags: item.tags }],
+        );
     }
 });
+const qlTagSuggest = view("x", "wrap").class("tag-suggest").addInto(qlSide);
 qlSide.add(label("small", "인식된 텍스트").class("eyebrow", "ql-eyebrow"));
 const qlOcrStatus = label("small", "").addInto(qlSide);
 const qlOcrText = ele("pre").class("ql-ocr-text").addInto(qlSide);
@@ -1693,6 +1821,39 @@ async function runAction(
     }
 }
 
+type ItemEditAction = [OpenCaptureActionName, unknown];
+
+async function runItemEdit(apply: ItemEditAction, undo: ItemEditAction | null) {
+    try {
+        const result = await window.openCapture.action(apply[0], apply[1]);
+        if (isState(result)) appState = result;
+        renderState();
+        if (undo)
+            showToast("적용했습니다.", false, [
+                [
+                    "되돌리기",
+                    () => {
+                        void (async () => {
+                            try {
+                                const restored =
+                                    await window.openCapture.action(
+                                        undo[0],
+                                        undo[1],
+                                    );
+                                if (isState(restored)) appState = restored;
+                                renderState();
+                            } catch (error) {
+                                showToast(errorMessage(error), true);
+                            }
+                        })();
+                    },
+                ],
+            ]);
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
 async function toggleSteps() {
     const was = appState.runtime.stepCapture ?? false;
     await runAction("steps", undefined, true);
@@ -1702,7 +1863,28 @@ async function toggleSteps() {
         );
 }
 
-async function composeSteps(ids: string[]) {
+function drawBadge(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    text: string,
+    size = 40,
+) {
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = "#2563eb";
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `600 ${size / 2 + 2}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + size / 2, y + size / 2 + 1);
+}
+
+async function composeLayout(
+    ids: string[],
+    mode: "steps" | "compare" | "timeline",
+) {
     const ordered = ids
         .map((id) => appState.items.find((i) => i.id === id))
         .filter((i): i is OpenCaptureItem => Boolean(i))
@@ -1718,48 +1900,64 @@ async function composeSteps(ids: string[]) {
             await img.decode();
             images.push(img);
         }
-        const width = Math.max(...images.map((i) => i.naturalWidth), 1);
         const gap = 28;
-        const badge = 40;
-        const scaled = images.map((img) => ({
-            img,
-            w: Math.round((img.naturalWidth * width) / img.naturalWidth),
-            h: Math.round((img.naturalHeight * width) / img.naturalWidth),
-        }));
-        const height = scaled.reduce((sum, i) => sum + i.h + gap, gap);
         const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("canvas");
-        ctx.fillStyle = "#f4f4f5";
-        ctx.fillRect(0, 0, width, height);
-        let y = gap;
-        scaled.forEach(({ img, w, h }, index) => {
-            ctx.drawImage(img, 0, y, w, h);
-            ctx.beginPath();
-            ctx.arc(
-                badge / 2 + 14,
-                y + badge / 2 + 14,
-                badge / 2,
-                0,
-                Math.PI * 2,
-            );
-            ctx.fillStyle = "#2563eb";
-            ctx.fill();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = `600 ${badge / 2 + 2}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(String(index + 1), badge / 2 + 14, y + badge / 2 + 15);
-            y += h + gap;
-        });
+        if (mode === "steps") {
+            const width = Math.max(...images.map((i) => i.naturalWidth), 1);
+            const scaled = images.map((img) => ({
+                img,
+                h: Math.round((img.naturalHeight * width) / img.naturalWidth),
+            }));
+            canvas.width = width;
+            canvas.height = scaled.reduce((sum, i) => sum + i.h + gap, gap);
+            ctx.fillStyle = "#f4f4f5";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            let y = gap;
+            scaled.forEach(({ img, h }, index) => {
+                ctx.drawImage(img, 0, y, width, h);
+                drawBadge(ctx, 14, y + 14, String(index + 1));
+                y += h + gap;
+            });
+        } else {
+            const height = Math.max(...images.map((i) => i.naturalHeight), 1);
+            const scaled = images.map((img) => ({
+                img,
+                w: Math.round((img.naturalWidth * height) / img.naturalHeight),
+            }));
+            canvas.height = height + gap * 2;
+            canvas.width = scaled.reduce((sum, i) => sum + i.w + gap, gap);
+            ctx.fillStyle = "#f4f4f5";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            let x = gap;
+            scaled.forEach(({ img, w }, index) => {
+                if (mode === "timeline" && index > 0) {
+                    ctx.strokeStyle = "#94a3b8";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(x - gap + 6, canvas.height / 2);
+                    ctx.lineTo(x - 6, canvas.height / 2);
+                    ctx.stroke();
+                }
+                ctx.drawImage(img, x, gap, w, height);
+                drawBadge(
+                    ctx,
+                    x + 14,
+                    gap + 14,
+                    mode === "compare"
+                        ? String.fromCharCode(65 + index)
+                        : String(index + 1),
+                );
+                x += w + gap;
+            });
+        }
         await runAction("save-composed", {
             id: ordered[0].id,
             dataURL: canvas.toDataURL("image/png"),
             label: "Steps",
         });
-        showToast("번호가 붙은 단계 이미지를 저장했습니다.");
+        showToast("합성 이미지를 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -1779,10 +1977,25 @@ async function refreshState() {
     try {
         appState = await window.openCapture.getState();
         if (appState.recoveryWarning) showToast(appState.recoveryWarning, true);
+        const previewId = appState.previewItemId;
         renderState();
+        if (previewId) void openPreviewById(previewId);
     } catch (error) {
         showToast(errorMessage(error), true);
     }
+}
+
+async function openPreviewById(id: string) {
+    if (!appState.items.some((i) => i.id === id)) {
+        try {
+            appState = await window.openCapture.getState();
+            renderState();
+        } catch {
+            return;
+        }
+    }
+    const item = appState.items.find((i) => i.id === id);
+    if (item) openQuickLook(item);
 }
 
 function renderState() {
@@ -1865,6 +2078,46 @@ function renderState() {
         stepsCard.classList.toggle("active", running);
         const link = stepsCard.querySelector<HTMLElement>(".action-link");
         if (link) link.textContent = running ? "중지" : "실행 →";
+    }
+    pinSetRow.clear();
+    const sets = appState.pinSets ?? [];
+    pinSetSection.el.style.display = sets.length ? "" : "none";
+    if (sets.length)
+        pinSetRow.add(
+            label("small", "핀 세트").class("eyebrow", "pinset-heading"),
+        );
+    for (const set of sets) {
+        pinSetRow.add(
+            view("x")
+                .class("pinset-chip")
+                .add([
+                    button()
+                        .class("pinset-run")
+                        .attr({
+                            type: "button",
+                            title: `${set.name} — ${set.itemIds.length}장을 화면에 고정`,
+                        })
+                        .add([
+                            icon("◇"),
+                            label(
+                                "span",
+                                `${set.name} · ${set.itemIds.length}장`,
+                            ),
+                        ])
+                        .on("click", () =>
+                            runAction("pin-set", { id: set.id }),
+                        ),
+                    button("×")
+                        .class("pinset-remove")
+                        .attr({
+                            type: "button",
+                            title: `${set.name} 세트 삭제`,
+                        })
+                        .on("click", () =>
+                            runAction("remove-pin-set", { id: set.id }),
+                        ),
+                ]),
+        );
     }
     todayChip.el.classList.toggle("active", todayOnly);
     todayChip.attr({ ariaPressed: String(todayOnly) });
@@ -2117,7 +2370,7 @@ function renderItems(items: OpenCaptureItem[]) {
         return;
     }
 
-    for (const item of items) {
+    for (const [itemIndex, item] of items.entries()) {
         const thumbnail = view().class("item-thumbnail");
         if (item.thumbnail) {
             thumbnail.add(
@@ -2134,9 +2387,22 @@ function renderItems(items: OpenCaptureItem[]) {
             });
         selectionInput.el.checked = selectedItemIds.has(item.id);
         selectionInput
-            .on("click", (event) => event.stopPropagation())
+            .on("click", (event) => {
+                event.stopPropagation();
+                if (event.shiftKey && lastSelectIndex !== null) {
+                    event.preventDefault();
+                    const [from, to] = [
+                        Math.min(lastSelectIndex, itemIndex),
+                        Math.max(lastSelectIndex, itemIndex),
+                    ];
+                    for (const range of items.slice(from, to + 1))
+                        selectedItemIds.add(range.id);
+                    renderState();
+                }
+            })
             .on("change", (event) => {
                 event.stopPropagation();
+                lastSelectIndex = itemIndex;
                 if (selectionInput.el.checked) selectedItemIds.add(item.id);
                 else selectedItemIds.delete(item.id);
                 renderState();
@@ -2247,6 +2513,7 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
         ["✎", "주석·편집", () => runAction("open-item", item.id)],
         ["▨", "배경 꾸미기", () => openBeautify(item)],
         ["⤢", "업스케일", () => openUpscale(item)],
+        ["⬍", "중간 접기", () => void openFold(item)],
         ["☰", "메모", () => openNote(item)],
         [
             "T",
@@ -2393,6 +2660,7 @@ const allDialogs = [
     noteDialog,
     beautifyDialog,
     upscaleDialog,
+    foldDialog,
     quickLookDialog,
     onboardDialog,
 ];
@@ -2439,8 +2707,12 @@ async function submitRename() {
         return;
     }
     const id = renameTargetId;
+    const previous = appState.items.find((i) => i.id === id)?.name;
     closeModal(renameDialog.el);
-    await runAction("rename-item", { id, name });
+    await runItemEdit(
+        ["rename-item", { id, name }],
+        previous ? ["rename-item", { id, name: previous }] : null,
+    );
 }
 
 function openNote(item: OpenCaptureItem) {
@@ -2453,8 +2725,12 @@ function openNote(item: OpenCaptureItem) {
 async function submitNote() {
     if (!noteTargetId) return;
     const id = noteTargetId;
+    const previous = appState.items.find((i) => i.id === id)?.note;
     closeModal(noteDialog.el);
-    await runAction("set-note", { id, note: noteInput.el.value });
+    await runItemEdit(
+        ["set-note", { id, note: noteInput.el.value }],
+        previous !== undefined ? ["set-note", { id, note: previous }] : null,
+    );
 }
 
 async function openBeautify(item: OpenCaptureItem) {
@@ -2738,9 +3014,204 @@ async function requestOcrIndex(id: string) {
 
 function openQuickLook(item: OpenCaptureItem) {
     quickLookId = item.id;
+    exitQlCrop();
     renderQuickLook();
     openModal(quickLookDialog.el);
     void loadQuickLookImage(item.id);
+}
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+let cropRect: { x: number; y: number; w: number; h: number } | null = null;
+let cropAnchor: { x: number; y: number } | null = null;
+
+function paintCropRect() {
+    if (!cropRect || cropRect.w < 0.005 || cropRect.h < 0.005) {
+        qlCropRect.el.hidden = true;
+        return;
+    }
+    qlCropRect.el.hidden = false;
+    qlCropRect.el.style.left = `${cropRect.x * 100}%`;
+    qlCropRect.el.style.top = `${cropRect.y * 100}%`;
+    qlCropRect.el.style.width = `${cropRect.w * 100}%`;
+    qlCropRect.el.style.height = `${cropRect.h * 100}%`;
+}
+
+function overlayPoint(event: PointerEvent) {
+    const box = qlCropOverlay.el.getBoundingClientRect();
+    return {
+        x: clamp01((event.clientX - box.left) / box.width),
+        y: clamp01((event.clientY - box.top) / box.height),
+    };
+}
+
+qlCropOverlay.el.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    qlCropOverlay.el.setPointerCapture(event.pointerId);
+    cropAnchor = overlayPoint(event);
+    cropRect = { x: cropAnchor.x, y: cropAnchor.y, w: 0, h: 0 };
+    paintCropRect();
+});
+qlCropOverlay.el.addEventListener("pointermove", (event) => {
+    if (!cropAnchor) return;
+    const point = overlayPoint(event);
+    cropRect = {
+        x: Math.min(cropAnchor.x, point.x),
+        y: Math.min(cropAnchor.y, point.y),
+        w: Math.abs(point.x - cropAnchor.x),
+        h: Math.abs(point.y - cropAnchor.y),
+    };
+    paintCropRect();
+});
+qlCropOverlay.el.addEventListener("pointerup", () => {
+    cropAnchor = null;
+    paintCropRect();
+});
+
+function startQlCrop() {
+    cropRect = null;
+    qlCropOverlay.el.hidden = false;
+    qlCropBar.el.hidden = false;
+    qlCropRect.el.hidden = true;
+    qlPrev.el.disabled = true;
+    qlNext.el.disabled = true;
+}
+
+function exitQlCrop() {
+    cropRect = null;
+    cropAnchor = null;
+    qlCropOverlay.el.hidden = true;
+    qlCropBar.el.hidden = true;
+    if (quickLookDialog.el.open) renderQuickLook();
+}
+
+async function applyQlCrop() {
+    const item = appState.items.find((i) => i.id === quickLookId);
+    const rect = cropRect;
+    if (!item || !rect || rect.w < 0.005 || rect.h < 0.005) {
+        exitQlCrop();
+        return;
+    }
+    try {
+        const data =
+            quickLookImages.get(item.id) ??
+            (await window.openCapture.getItemData(item.id));
+        const image = new Image();
+        image.src = data;
+        await image.decode();
+        const iw = image.naturalWidth;
+        const ih = image.naturalHeight;
+        const sx = Math.round(rect.x * iw);
+        const sy = Math.round(rect.y * ih);
+        const sw = Math.max(8, Math.round(rect.w * iw));
+        const sh = Math.max(8, Math.round(rect.h * ih));
+        const canvas = document.createElement("canvas");
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("canvas");
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
+        exitQlCrop();
+        await runAction("save-composed", {
+            id: item.id,
+            dataURL: canvas.toDataURL("image/png"),
+            label: "Crop",
+        });
+        showToast("자른 이미지를 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+let foldTarget: { id: string; image: HTMLImageElement } | null = null;
+
+function foldFractions() {
+    const rawStart = foldStartInput.el.valueAsNumber || 0;
+    const rawEnd = foldEndInput.el.valueAsNumber || 0;
+    const start = clamp01(Math.min(rawStart, rawEnd - 5) / 100);
+    const end = clamp01(Math.max(rawEnd, rawStart + 5) / 100);
+    return { start, end };
+}
+
+function renderFold() {
+    if (!foldTarget) return;
+    const { start, end } = foldFractions();
+    foldShade.el.style.top = `${start * 100}%`;
+    foldShade.el.style.height = `${(end - start) * 100}%`;
+    foldInfo.el.textContent = `접는 구간 ${Math.round(start * 100)}% – ${Math.round(end * 100)}%`;
+}
+foldStartInput.on("input", () => renderFold());
+foldEndInput.on("input", () => renderFold());
+
+async function openFold(item: OpenCaptureItem) {
+    try {
+        const data =
+            quickLookImages.get(item.id) ??
+            (await window.openCapture.getItemData(item.id));
+        const image = new Image();
+        image.src = data;
+        await image.decode();
+        foldTarget = { id: item.id, image };
+        foldImage.attr({ src: data });
+        openModal(foldDialog.el);
+        renderFold();
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function applyFold() {
+    const target = foldTarget;
+    if (!target) return;
+    try {
+        const { start, end } = foldFractions();
+        const img = target.image;
+        const iw = img.naturalWidth;
+        const ih = img.naturalHeight;
+        const topH = Math.round(ih * start);
+        const bottomY = Math.round(ih * end);
+        const bottomH = ih - bottomY;
+        if (bottomH <= 0 || topH <= 0)
+            throw new Error("접기 범위가 이미지를 벗어났습니다.");
+        const seam = Math.min(28, Math.max(14, Math.round(iw * 0.02)));
+        const canvas = document.createElement("canvas");
+        canvas.width = iw;
+        canvas.height = topH + seam + bottomH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("canvas");
+        ctx.fillStyle = "#f4f4f5";
+        ctx.fillRect(0, 0, iw, canvas.height);
+        ctx.drawImage(img, 0, 0, iw, topH, 0, 0, iw, topH);
+        ctx.drawImage(
+            img,
+            0,
+            bottomY,
+            iw,
+            bottomH,
+            0,
+            topH + seam,
+            iw,
+            bottomH,
+        );
+        ctx.beginPath();
+        ctx.moveTo(0, topH);
+        ctx.lineTo(iw, topH);
+        for (let x = iw; x >= 0; x -= 24) ctx.lineTo(x - 12, topH + seam);
+        ctx.closePath();
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        closeModal(foldDialog.el);
+        await runAction("save-composed", {
+            id: target.id,
+            dataURL: canvas.toDataURL("image/png"),
+            label: "Folded",
+        });
+        showToast("중간을 접은 이미지를 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
 }
 
 async function loadQuickLookImage(id: string) {
@@ -2761,6 +3232,10 @@ async function loadQuickLookImage(id: string) {
 function quickLookNavigate(step: 1 | -1) {
     const items = visibleLibraryItems();
     if (items.length < 2) return;
+    cropRect = null;
+    cropAnchor = null;
+    qlCropOverlay.el.hidden = true;
+    qlCropBar.el.hidden = true;
     const index = items.findIndex((i) => i.id === quickLookId);
     const next =
         items[(Math.max(0, index) + step + items.length) % items.length];
@@ -2796,13 +3271,52 @@ function renderQuickLook() {
                 .attr({ type: "button", title: `${tag} 태그 제거` })
                 .add([label("span", `#${tag}`), label("span", "×")])
                 .on("click", async () => {
-                    await runAction("set-tags", {
-                        id: item.id,
-                        tags: (item.tags ?? []).filter((t) => t !== tag),
-                    });
+                    await runItemEdit(
+                        [
+                            "set-tags",
+                            {
+                                id: item.id,
+                                tags: (item.tags ?? []).filter(
+                                    (t) => t !== tag,
+                                ),
+                            },
+                        ],
+                        ["set-tags", { id: item.id, tags: item.tags ?? [] }],
+                    );
                 }),
         );
     }
+    qlTagSuggest.clear();
+    const tagCounts = new Map<string, number>();
+    for (const other of appState.items)
+        for (const tag of other.tags ?? [])
+            if (!(item.tags ?? []).includes(tag))
+                tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+    for (const [tag] of [...tagCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6))
+        qlTagSuggest.add(
+            button()
+                .class("chip-button", "tag-suggest-chip")
+                .attr({ type: "button", title: `태그 추가: ${tag}` })
+                .add(label("span", `#${tag}`))
+                .on("click", async () => {
+                    const current = appState.items.find(
+                        (i) => i.id === item.id,
+                    );
+                    if (!current) return;
+                    await runItemEdit(
+                        [
+                            "set-tags",
+                            {
+                                id: item.id,
+                                tags: [...(current.tags ?? []), tag],
+                            },
+                        ],
+                        ["set-tags", { id: item.id, tags: current.tags ?? [] }],
+                    );
+                }),
+        );
     if (item.ocrDone) pendingOcrIds.delete(item.id);
     if (item.ocrText) {
         qlOcrStatus.el.textContent = `${item.ocrText.length.toLocaleString()}자 인식됨`;
@@ -2986,6 +3500,7 @@ window.openCapture.onLibraryChanged(() => {
 });
 window.openCapture.onShowLibrary(() => showPage("library"));
 window.openCapture.onWorkflowError((message) => showToast(message, true));
+window.openCapture.onPreviewItem((id) => void openPreviewById(id));
 void refreshState().then(() => {
     if (!localStorage.getItem("oc:onboarded")) openOnboarding();
 });

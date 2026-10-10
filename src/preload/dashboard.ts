@@ -34,6 +34,16 @@ const api: OpenCaptureApi = {
         ipcRenderer.on("oc:workflow-error", listener);
         return () => ipcRenderer.removeListener("oc:workflow-error", listener);
     },
+    onPreviewItem: (callback) => {
+        const listener = (
+            _event: Electron.IpcRendererEvent,
+            value: unknown,
+        ) => {
+            if (typeof value === "string") callback(value);
+        };
+        ipcRenderer.on("oc:preview-item", listener);
+        return () => ipcRenderer.removeListener("oc:preview-item", listener);
+    },
     action: (name: OpenCaptureActionName, payload?: unknown) =>
         ipcRenderer.invoke("oc:action", name, payload),
     getState: () => ipcRenderer.invoke("oc:state"),

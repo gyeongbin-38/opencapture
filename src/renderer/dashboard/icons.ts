@@ -308,6 +308,12 @@ const shapes: Record<string, readonly IconShape[]> = {
         ["line", { x1: "10", y1: "4", x2: "8.4", y2: "20" }],
         ["line", { x1: "15.6", y1: "4", x2: "14", y2: "20" }],
     ],
+    // fold — collapsed middle
+    "⬍": [
+        ["rect", { x: "4", y: "3.5", width: "16", height: "17", rx: "2" }],
+        ["line", { x1: "4", y1: "10.5", x2: "20", y2: "10.5" }],
+        ["line", { x1: "4", y1: "13.5", x2: "20", y2: "13.5" }],
+    ],
     // keyboard
     "⌨": [
         ["rect", { x: "2.5", y: "6", width: "19", height: "12", rx: "2" }],

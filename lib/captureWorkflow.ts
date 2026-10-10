@@ -3,6 +3,7 @@ export type CaptureWorkflowPreferences = {
     autoRemoveBackground: boolean;
     autoPin: boolean;
     autoOcr: boolean;
+    autoPreview: boolean;
 };
 
 export const defaultCaptureWorkflowPreferences: CaptureWorkflowPreferences = {
@@ -10,6 +11,7 @@ export const defaultCaptureWorkflowPreferences: CaptureWorkflowPreferences = {
     autoRemoveBackground: false,
     autoPin: false,
     autoOcr: true,
+    autoPreview: false,
 };
 
 export function parseCaptureWorkflowPreferences(
@@ -24,6 +26,7 @@ export function parseCaptureWorkflowPreferences(
         "autoRemoveBackground",
         "autoPin",
         "autoOcr",
+        "autoPreview",
     ]);
     if (Object.keys(input).some((key) => !allowed.has(key)))
         throw new Error("Unknown workflow setting.");

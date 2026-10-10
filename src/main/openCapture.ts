@@ -43,6 +43,12 @@ import {
     parseCaptureWorkflowPreferences,
     planImageCombination,
 } from "../../lib/captureWorkflow";
+import {
+    NOTE_MAX_LENGTH,
+    OCR_TEXT_LIMIT,
+    isValidTags,
+    normalizeTags,
+} from "../../lib/itemMeta";
 import { removeBackground } from "./backgroundRemoval";
 
 type Collection = { id: string; name: string; path: string };
@@ -60,11 +66,13 @@ type Item = {
     ocrText?: string;
     ocrDone?: boolean;
 };
+type PinSet = { id: string; name: string; itemIds: string[] };
 type Library = {
     collections: Collection[];
     items: Item[];
     activeCollectionId: string;
     workflow: CaptureWorkflowPreferences;
+    pinSets?: PinSet[];
 };
 
 type CaptureReceipt = {
@@ -155,16 +163,12 @@ export function isLibrary(value: unknown): value is Library {
                     typeof i.workflowComplete === "boolean") &&
                 (i.favorite === undefined || typeof i.favorite === "boolean") &&
                 (i.note === undefined ||
-                    (typeof i.note === "string" && i.note.length <= 2000)) &&
-                (i.tags === undefined ||
-                    (Array.isArray(i.tags) &&
-                        i.tags.length <= 12 &&
-                        i.tags.every(
-                            (t) => typeof t === "string" && t.length <= 30,
-                        ))) &&
+                    (typeof i.note === "string" &&
+                        i.note.length <= NOTE_MAX_LENGTH)) &&
+                (i.tags === undefined || isValidTags(i.tags)) &&
                 (i.ocrText === undefined ||
                     (typeof i.ocrText === "string" &&
-                        i.ocrText.length <= 50_000)) &&
+                        i.ocrText.length <= OCR_TEXT_LIMIT)) &&
                 (i.ocrDone === undefined || typeof i.ocrDone === "boolean") &&
                 (i.thumbnail === undefined || typeof i.thumbnail === "string"),
         ) &&
@@ -174,6 +178,19 @@ export function isLibrary(value: unknown): value is Library {
                 !Array.isArray(data.workflow) &&
                 Object.values(data.workflow).every(
                     (value) => typeof value === "boolean",
+                ))) &&
+        (data.pinSets === undefined ||
+            (Array.isArray(data.pinSets) &&
+                data.pinSets.length <= 50 &&
+                data.pinSets.every(
+                    (s) =>
+                        s &&
+                        typeof s.id === "string" &&
+                        typeof s.name === "string" &&
+                        s.name.length <= 40 &&
+                        Array.isArray(s.itemIds) &&
+                        s.itemIds.length <= 50 &&
+                        s.itemIds.every((id) => typeof id === "string"),
                 )))
     );
 }
@@ -427,6 +444,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             addRecoveryWarning(`Capture inbox: ${String(error)}`),
         );
         const scopedItemCount = activeItems().length;
+        const previewItemId = pendingPreviewItem;
+        pendingPreviewItem = undefined;
         return {
             ...library,
             items: await itemsPage(0, 80),
@@ -436,6 +455,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             version: app.getVersion(),
             recoveryWarning,
             runtime: hooks.runtimeState?.() ?? {},
+            pinSets: library.pinSets ?? [],
+            ...(previewItemId ? { previewItemId } : {}),
         };
     };
     const assertSender = (
@@ -471,6 +492,17 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         )
             throw new Error(`Select between 1 and ${maximum} unique items.`);
         return ids.map(getItem);
+    };
+    const getPinSet = (payload: unknown) => {
+        const id =
+            typeof payload === "string"
+                ? payload
+                : payload && typeof payload === "object"
+                  ? (payload as { id?: unknown }).id
+                  : undefined;
+        const set = (library.pinSets ?? []).find((s) => s.id === id);
+        if (!set) throw new Error("핀 세트를 찾을 수 없습니다.");
+        return set;
     };
     const writeClipboardImage = async (path: string) => {
         const image = nativeImage.createFromPath(path);
@@ -541,10 +573,24 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         )
             dashboard.webContents.send("oc:library-updated");
     };
+    let pendingPreviewItem: string | undefined;
+    const requestPreview = (id: string) => {
+        pendingPreviewItem = id;
+        const win = show();
+        const deliver = () => {
+            if (pendingPreviewItem !== id || win.isDestroyed()) return;
+            pendingPreviewItem = undefined;
+            win.webContents.send("oc:preview-item", id);
+        };
+        if (win.webContents.isLoading())
+            win.webContents.once("did-finish-load", deliver);
+        else deliver();
+    };
     function remember(
         path: string,
         createdAt = new Date().toISOString(),
         queueWorkflow = true,
+        preview = false,
     ) {
         if (!existsSync(path)) return false;
         const image = nativeImage.createFromPath(path);
@@ -583,6 +629,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         }
         notifyLibraryUpdated();
         if (queueWorkflow) workflowQueue.enqueue(path, library.workflow);
+        if (preview) requestPreview(item.id);
         return true;
     }
     function saveImage(
@@ -599,7 +646,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             `${label}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}.png`,
         );
         writeFileSync(path, image.toPNG(), { flag: "wx" });
-        if (applyWorkflow) remember(path);
+        if (applyWorkflow)
+            remember(path, undefined, true, library.workflow.autoPreview);
         else {
             const collection =
                 library.collections.find(
@@ -742,7 +790,9 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         if (item && job.ok === true) {
             item.ocrDone = true;
             const text =
-                typeof job.text === "string" ? job.text.slice(0, 50_000) : "";
+                typeof job.text === "string"
+                    ? job.text.slice(0, OCR_TEXT_LIMIT)
+                    : "";
             item.ocrText = text || undefined;
             persist();
             notifyLibraryUpdated();
@@ -864,6 +914,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     await workflowQueue.whenIdle();
                     if (!workflowQueue.enqueue(receipt.path, library.workflow))
                         continue;
+                    if (library.workflow.autoPreview) requestPreview(item.id);
                     await workflowQueue.whenIdle();
                     const previous = item.workflowComplete;
                     item.workflowComplete = true;
@@ -1300,16 +1351,33 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 const item = getItem(id);
                 if (!Array.isArray(rawTags))
                     throw new Error("태그 목록이 올바르지 않습니다.");
-                const tags = [
-                    ...new Set(
-                        rawTags
-                            .filter((t): t is string => typeof t === "string")
-                            .map((t) => t.trim().replace(/\p{C}/gu, ""))
-                            .filter(Boolean)
-                            .map((t) => t.slice(0, 30)),
-                    ),
-                ].slice(0, 12);
-                item.tags = tags.length ? tags : undefined;
+                item.tags = normalizeTags(rawTags);
+                persist();
+            } else if (name === "save-pin-set") {
+                const ids = selectedItems(payload, 50).map((i) => i.id);
+                if (!ids.length)
+                    throw new Error("핀 세트에 넣을 항목을 선택해 주세요.");
+                library.pinSets ??= [];
+                if (library.pinSets.length >= 50)
+                    throw new Error("핀 세트는 최대 50개까지 저장됩니다.");
+                library.pinSets.unshift({
+                    id: randomUUID(),
+                    name: `핀 세트 ${library.pinSets.length + 1}`,
+                    itemIds: ids,
+                });
+                persist();
+            } else if (name === "pin-set") {
+                const set = getPinSet(payload);
+                for (const itemId of set.itemIds) {
+                    const item = library.items.find((i) => i.id === itemId);
+                    if (item && existsSync(item.path))
+                        await hooks.pin(item.path);
+                }
+            } else if (name === "remove-pin-set") {
+                const set = getPinSet(payload);
+                library.pinSets = (library.pinSets ?? []).filter(
+                    (s) => s.id !== set.id,
+                );
                 persist();
             } else if (name === "index-ocr") {
                 const ids =
@@ -1338,14 +1406,15 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 const size = image.getSize();
                 if (size.width * size.height > 80_000_000)
                     throw new Error("이미지 해상도가 너무 큽니다.");
-                const fileLabel =
-                    label === "Upscale"
-                        ? "Upscale"
-                        : label === "Annotated"
-                          ? "Annotated"
-                          : label === "Steps"
-                            ? "Steps"
-                            : "Framed";
+                const fileLabel = [
+                    "Upscale",
+                    "Annotated",
+                    "Steps",
+                    "Crop",
+                    "Folded",
+                ].includes(label as string)
+                    ? (label as string)
+                    : "Framed";
                 saveImage(image, fileLabel, false, dirname(item.path));
             } else throw new Error("지원하지 않는 동작입니다.");
             return state();
