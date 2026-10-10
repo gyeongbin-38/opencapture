@@ -5,6 +5,26 @@ import type {
     TranslationConfiguration,
     TranslationOptions,
 } from "../../lib/openCaptureTypes";
+import koStrings from "../../lib/translate/ko.json";
+import sourceStrings from "../../lib/translate/source.json";
+
+const langMaps: Record<string, Record<string, string>> = {
+    ko: koStrings as Record<string, string>,
+};
+const source = sourceStrings as Record<string, string>;
+let dashboardLang = "ko";
+try {
+    const stored = ipcRenderer.sendSync("oc:lang");
+    if (typeof stored === "string" && stored) dashboardLang = stored;
+} catch {}
+const translations =
+    dashboardLang === "zh-HANS" ? null : (langMaps[dashboardLang] ?? null);
+const t = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || !translations) return text;
+    const id = source[trimmed];
+    return id ? (translations[id] ?? text) : text;
+};
 
 const api: OpenCaptureApi = {
     onLibraryChanged: (callback) => {
@@ -86,6 +106,7 @@ const api: OpenCaptureApi = {
     getItemData: (id: string) => ipcRenderer.invoke("oc:item-data", id),
     getItemFile: (id: string) => ipcRenderer.invoke("oc:item-file", id),
     startDrag: (id: string) => ipcRenderer.send("oc:drag", id),
+    t,
 };
 
 contextBridge.exposeInMainWorld("openCapture", api);

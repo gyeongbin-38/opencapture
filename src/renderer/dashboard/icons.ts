@@ -316,6 +316,11 @@ const shapes: Record<string, readonly IconShape[]> = {
     ],
     // chevron down — collapsible
     "▾": [["path", { d: "m6 9.5 6 6 6-6" }]],
+    // collapse sidebar — left chevrons
+    "⇤": [
+        ["path", { d: "m14 6-6 6 6 6" }],
+        ["line", { x1: "20", y1: "6", x2: "20", y2: "18" }],
+    ],
     // keyboard
     "⌨": [
         ["rect", { x: "2.5", y: "6", width: "19", height: "12", rx: "2" }],

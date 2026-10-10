@@ -977,6 +977,7 @@ app.whenReady().then(() => {
             stepCapture: stepCaptureActive,
         }),
         steps: toggleStepCapture,
+        language: () => store.get("语言.语言") || "ko",
         configureRuntime: (input) => {
             if (!input || typeof input !== "object")
                 throw new Error("올바른 설정이 아닙니다.");
@@ -2817,10 +2818,11 @@ mainOn("save_file_path", async ([type, isVideo]) => {
 
 mainOn("ok_save", ([arg, isVideo]) => {
     noti(arg);
-    if (!isVideo) openCapture?.remember(arg);
     if (isVideo) {
+        openCapture?.rememberMedia(arg);
         store.set("保存.保存路径.视频", dirname(arg));
     } else {
+        openCapture?.remember(arg);
         store.set("保存.保存路径.图片", dirname(arg));
     }
 });

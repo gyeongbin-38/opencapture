@@ -1,6 +1,4 @@
 import { button, ele, initDKH, input, p, select, textarea, view } from "dkh-ui";
-// @ts-expect-error
-import { GIFEncoder, applyPalette, quantize } from "gifenc";
 import type {
     OpenCaptureActionName,
     OpenCaptureItem,
@@ -10,7 +8,28 @@ import type {
     TranslationEngine,
     TranslationStatus,
 } from "../../../lib/openCaptureTypes";
+import {
+    type GifDecoder,
+    GifImageDecoder,
+    type PageName,
+    UPSCALE_MAX_PIXELS,
+    acceleratorFromEvent,
+    clamp01,
+    drawBadge,
+    emptyState,
+    errorMessage,
+    formatDate,
+    formatShortcut,
+    isGifItem,
+    isItemsPage,
+    isState,
+    isVideoItem,
+    mixChannel,
+    sampleEdgeColor,
+    unsharpMask,
+} from "./dashboard-utils";
 import { icon } from "./icons";
+import { t } from "./t";
 
 initDKH({ pureStyle: true });
 
@@ -24,26 +43,6 @@ const syncTransparencyPreference = () =>
     );
 syncTransparencyPreference();
 transparencyPreference.addEventListener("change", syncTransparencyPreference);
-
-type PageName = "home" | "library" | "translate" | "settings";
-
-const emptyState: OpenCaptureState = {
-    collections: [],
-    items: [],
-    activeCollectionId: null,
-    defaultFolder: "",
-    version: "",
-    totalItemCount: 0,
-    workflow: {
-        autoCopy: false,
-        autoRemoveBackground: false,
-        autoPin: false,
-        autoOcr: true,
-        autoPreview: false,
-    },
-    pinSets: [],
-    runtime: { startAtLogin: false, shortcuts: [] },
-};
 
 let appState = emptyState;
 let translationStatus: TranslationStatus | null = null;
@@ -73,6 +72,8 @@ const label = (
 view("x").class("window-titlebar").addInto();
 
 const shell = view("x").class("app-shell").addInto();
+if (localStorage.getItem("oc:nav-collapsed"))
+    shell.el.classList.add("nav-collapsed");
 const sidebar = ele("aside").class("sidebar").addInto(shell);
 const main = ele("main").class("main").addInto(shell);
 
@@ -84,17 +85,17 @@ brand.add(view().class("brand-mark").add(icon("⌁")));
 
 const navigation = ele("nav").class("navigation").addInto(sidebar);
 const navItems: { page: PageName; icon: string; text: string }[] = [
-    { page: "home", icon: "⌂", text: "홈" },
-    { page: "library", icon: "▧", text: "라이브러리" },
-    { page: "translate", icon: "文", text: "번역" },
-    { page: "settings", icon: "⚙", text: "설정" },
+    { page: "home", icon: "⌂", text: t("홈") },
+    { page: "library", icon: "▧", text: t("라이브러리") },
+    { page: "translate", icon: "文", text: t("번역") },
+    { page: "settings", icon: "⚙", text: t("설정") },
 ];
 
 const navButtons = new Map<PageName, HTMLButtonElement>();
 for (const item of navItems) {
     const navButton = button()
         .class("nav-button")
-        .attr({ type: "button", ariaLabel: item.text })
+        .attr({ type: "button", ariaLabel: item.text, title: item.text })
         .add([icon(item.icon), label("span", item.text)])
         .on("click", () => showPage(item.page))
         .addInto(navigation);
@@ -105,13 +106,34 @@ const sidebarBottom = view("y").class("sidebar-bottom").addInto(sidebar);
 const sidebarTools = view("x").class("sidebar-tools").addInto(sidebarBottom);
 button()
     .class("ghost-button", "compact", "icon-button")
-    .attr({ type: "button", title: "단축키 보기", ariaLabel: "단축키 보기" })
+    .attr({
+        type: "button",
+        title: t("사이드바 접기"),
+        ariaLabel: t("사이드바 접기"),
+    })
+    .add(icon("⇤"))
+    .on("click", () => {
+        const collapsed = shell.el.classList.toggle("nav-collapsed");
+        localStorage.setItem("oc:nav-collapsed", collapsed ? "1" : "");
+    })
+    .addInto(sidebarTools);
+button()
+    .class("ghost-button", "compact", "icon-button")
+    .attr({
+        type: "button",
+        title: t("단축키 보기"),
+        ariaLabel: t("단축키 보기"),
+    })
     .add(icon("?"))
     .on("click", () => openShortcutSheet())
     .addInto(sidebarTools);
 button()
     .class("ghost-button", "compact", "icon-button")
-    .attr({ type: "button", title: "시작 가이드", ariaLabel: "시작 가이드" })
+    .attr({
+        type: "button",
+        title: t("시작 가이드"),
+        ariaLabel: t("시작 가이드"),
+    })
     .add(icon("✦"))
     .on("click", () => openOnboarding())
     .addInto(sidebarTools);
@@ -120,24 +142,32 @@ const versionLabel = label("small", "").class("version").addInto(sidebarBottom);
 
 const topbar = view("x").class("topbar").addInto(main);
 const titleGroup = view("y").class("title-group").addInto(topbar);
-const pageTitle = label("h1", "캡처").addInto(titleGroup);
+const pageTitle = label("h1", t("캡처")).addInto(titleGroup);
 const topActions = view("x").class("top-actions").addInto(topbar);
 
 button()
     .class("ghost-button", "compact", "icon-button")
-    .attr({ type: "button", title: "간단히 보기", ariaLabel: "간단히 보기" })
+    .attr({
+        type: "button",
+        title: t("간단히 보기"),
+        ariaLabel: t("간단히 보기"),
+    })
     .add(icon("↙"))
     .on("click", () => runAction("toggle-compact"))
     .addInto(topActions);
 button()
     .class("ghost-button", "compact", "icon-button")
-    .attr({ type: "button", title: "창 숨기기", ariaLabel: "창 숨기기" })
+    .attr({ type: "button", title: t("창 숨기기"), ariaLabel: t("창 숨기기") })
     .add(icon("—"))
     .on("click", () => runAction("hide-window"))
     .addInto(topActions);
 button()
     .class("ghost-button", "compact", "icon-button")
-    .attr({ type: "button", title: "이미지 열기", ariaLabel: "이미지 열기" })
+    .attr({
+        type: "button",
+        title: t("이미지 열기"),
+        ariaLabel: t("이미지 열기"),
+    })
     .add(icon("＋"))
     .on("click", () => runAction("open-image"))
     .addInto(topActions);
@@ -170,75 +200,75 @@ const captureActions: {
     {
         name: "capture",
         icon: "⌗",
-        title: "영역 캡처",
-        description: "원하는 영역을 빠르게 선택해요",
+        title: t("영역 캡처"),
+        description: t("원하는 영역을 빠르게 선택해요"),
         shortcut: "Ctrl + Shift + A",
         featured: true,
     },
     {
         name: "fullscreen",
         icon: "▣",
-        title: "전체 화면",
-        description: "현재 화면 전체를 바로 저장해요",
+        title: t("전체 화면"),
+        description: t("현재 화면 전체를 바로 저장해요"),
     },
     {
         name: "window",
         icon: "▤",
-        title: "창 캡처",
-        description: "열려 있는 창 하나만 골라요",
+        title: t("창 캡처"),
+        description: t("열려 있는 창 하나만 골라요"),
     },
     {
         name: "scroll",
         icon: "↕",
-        title: "스크롤 캡처",
-        description: "긴 페이지를 한 장으로 이어 붙여요",
+        title: t("스크롤 캡처"),
+        description: t("긴 페이지를 한 장으로 이어 붙여요"),
     },
     {
         name: "record",
         icon: "●",
-        title: "화면 녹화",
-        description: "화면 움직임과 소리를 기록해요",
+        title: t("화면 녹화"),
+        description: t("화면 움직임과 소리를 기록해요"),
         shortcut: "Ctrl + Shift + R",
     },
     {
         name: "steps",
         icon: "≣",
-        title: "단계 캡처",
-        description: "클릭할 때마다 화면이 순서대로 저장돼요",
+        title: t("단계 캡처"),
+        description: t("클릭할 때마다 화면이 순서대로 저장돼요"),
     },
     {
         name: "ocr",
         icon: "T",
-        title: "텍스트 추출",
-        description: "화면 속 글자를 바로 복사해요",
+        title: t("텍스트 추출"),
+        description: t("화면 속 글자를 바로 복사해요"),
     },
     {
         name: "screen-translate",
         icon: "文",
-        title: "화면 번역",
-        description: "캡처한 문장을 선택한 언어로 번역해요",
+        title: t("화면 번역"),
+        description: t("캡처한 문장을 선택한 언어로 번역해요"),
     },
     {
         name: "pin-clipboard",
         icon: "◇",
-        title: "클립보드 고정",
-        description: "복사한 이미지를 화면 위에 띄워요",
+        title: t("클립보드 고정"),
+        description: t("복사한 이미지를 화면 위에 띄워요"),
     },
 ];
 
 const actionGroups: { key: string; title: string; names: string[] }[] = [
     {
         key: "capture",
-        title: "캡처",
+        title: t("캡처"),
         names: ["capture", "fullscreen", "window", "scroll"],
     },
-    { key: "record", title: "녹화", names: ["record", "steps"] },
+    { key: "record", title: t("녹화"), names: ["record", "steps"] },
     {
         key: "tools",
-        title: "도구",
+        title: t("도구"),
         names: ["ocr", "screen-translate", "pin-clipboard"],
     },
-    { key: "auto", title: "자동 작업", names: [] },
+    { key: "auto", title: t("자동 작업"), names: [] },
 ];
 const openGroups = new Set<string>(
     JSON.parse(localStorage.getItem("oc:action-groups") ?? '["capture"]'),
@@ -312,8 +342,11 @@ for (const group of actionGroups) {
         quickRow.add(pinSetRow);
         button()
             .class("ghost-button", "compact")
-            .attr({ type: "button", title: "화면에 고정된 이미지를 모두 복원" })
-            .add([icon("◇"), label("span", "핀 복원")])
+            .attr({
+                type: "button",
+                title: t("화면에 고정된 이미지를 모두 복원"),
+            })
+            .add([icon("◇"), label("span", t("핀 복원"))])
             .on("click", () => runAction("restore-pins"))
             .addInto(quickRow);
     }
@@ -340,29 +373,30 @@ const workflowOptions: {
 }[] = [
     {
         key: "autoCopy",
-        title: "클립보드에 복사",
-        description: "캡처가 끝나면 바로 붙여넣을 수 있습니다.",
+        title: t("클립보드에 복사"),
+        description: t("캡처가 끝나면 바로 붙여넣을 수 있습니다."),
     },
     {
         key: "autoRemoveBackground",
-        title: "배경 자동 제거",
-        description: "로컬에서 배경을 제거한 사본을 만듭니다.",
+        title: t("배경 자동 제거"),
+        description: t("로컬에서 배경을 제거한 사본을 만듭니다."),
     },
     {
         key: "autoPin",
-        title: "화면에 고정",
-        description: "완료된 이미지를 현재 화면 위에 띄웁니다.",
+        title: t("화면에 고정"),
+        description: t("완료된 이미지를 현재 화면 위에 띄웁니다."),
     },
     {
         key: "autoOcr",
-        title: "텍스트 자동 인식",
-        description:
+        title: t("텍스트 자동 인식"),
+        description: t(
             "캡처 속 글자를 기기 안에서 인식해 라이브러리 검색에 활용합니다.",
+        ),
     },
     {
         key: "autoPreview",
-        title: "캡처 후 바로 보기",
-        description: "저장 직후 큰 미리보기를 열어 바로 작업할 수 있습니다.",
+        title: t("캡처 후 바로 보기"),
+        description: t("저장 직후 큰 미리보기를 열어 바로 작업할 수 있습니다."),
     },
 ];
 const workflowChoices = view("x", "wrap")
@@ -390,7 +424,7 @@ const libraryToolbar = view("x").class("section-toolbar").addInto(libraryPage);
 const collectionGroup = view("y").class("field-group").addInto(libraryToolbar);
 const collectionSelect = select([])
     .class("select-control")
-    .attr({ ariaLabel: "컬렉션 선택" })
+    .attr({ ariaLabel: t("컬렉션 선택") })
     .on("change", (_event, element) => {
         const id = element.el.value;
         if (id) runAction("choose-collection", id, true);
@@ -402,8 +436,8 @@ searchField.add(view().class("search-icon").add(icon("⌕")));
 const searchInput = input("text")
     .class("search-input")
     .attr({
-        placeholder: "이름·메모·태그·본문 텍스트로 찾기",
-        ariaLabel: "캡처 검색",
+        placeholder: t("이름·메모·태그·본문 텍스트로 찾기"),
+        ariaLabel: t("캡처 검색"),
     })
     .on("input", () => {
         searchQuery = searchInput.el.value.trim().toLowerCase();
@@ -418,10 +452,10 @@ const favFilterButton = button()
     .attr({
         type: "button",
         ariaPressed: "false",
-        title: "즐겨찾기만 보기",
-        ariaLabel: "즐겨찾기만 보기",
+        title: t("즐겨찾기만 보기"),
+        ariaLabel: t("즐겨찾기만 보기"),
     })
-    .add([icon("★"), label("span", "즐겨찾기")])
+    .add([icon("★"), label("span", t("즐겨찾기"))])
     .on("click", () => {
         favoritesOnly = !favoritesOnly;
         favFilterButton.el.classList.toggle("active", favoritesOnly);
@@ -432,12 +466,12 @@ const favFilterButton = button()
 button()
     .class("outline-button", "folder-add-button")
     .attr({ type: "button" })
-    .add([icon("＋"), label("span", "폴더 추가")])
+    .add([icon("＋"), label("span", t("폴더 추가"))])
     .on("click", () => runAction("add-collection", undefined, true))
     .addInto(libraryButtons);
 const fileInput = input("file")
     .class("visually-hidden")
-    .attr({ multiple: true, accept: "image/*" });
+    .attr({ multiple: true, accept: "image/*,video/*" });
 fileInput.on("change", () => {
     const files = Array.from(fileInput.el.files ?? []);
     if (files.length) importFiles(files);
@@ -447,7 +481,7 @@ fileInput.addInto(libraryPage);
 button()
     .class("primary-button", "library-import-button")
     .attr({ type: "button" })
-    .add([icon("⇧"), label("span", "이미지 가져오기")])
+    .add([icon("⇧"), label("span", t("이미지 가져오기"))])
     .on("click", () => fileInput.el.click())
     .addInto(libraryButtons);
 
@@ -455,7 +489,7 @@ const filterBar = view("x", "wrap").class("filter-bar").addInto(libraryPage);
 const todayChip = button()
     .class("chip-button")
     .attr({ type: "button", ariaPressed: "false" })
-    .add([icon("◷"), label("span", "오늘")])
+    .add([icon("◷"), label("span", t("오늘"))])
     .on("click", () => {
         todayOnly = !todayOnly;
         renderState();
@@ -463,8 +497,12 @@ const todayChip = button()
     .addInto(filterBar);
 const ocrChip = button()
     .class("chip-button")
-    .attr({ type: "button", ariaPressed: "false", title: "텍스트 인식된 캡처" })
-    .add([icon("T"), label("span", "텍스트")])
+    .attr({
+        type: "button",
+        ariaPressed: "false",
+        title: t("텍스트 인식된 캡처"),
+    })
+    .add([icon("T"), label("span", t("텍스트"))])
     .on("click", () => {
         ocrOnly = !ocrOnly;
         renderState();
@@ -473,12 +511,12 @@ const ocrChip = button()
 const tagChipRow = view("x", "wrap").class("tag-chip-row").addInto(filterBar);
 const filterBarEnd = view("x").class("filter-bar-end").addInto(filterBar);
 const sortSelect = select([
-    { value: "new", name: "최신순" },
-    { value: "old", name: "오래된순" },
-    { value: "name", name: "이름순" },
+    { value: "new", name: t("최신순") },
+    { value: "old", name: t("오래된순") },
+    { value: "name", name: t("이름순") },
 ])
     .class("select-control", "sort-select")
-    .attr({ ariaLabel: "정렬" })
+    .attr({ ariaLabel: t("정렬") })
     .on("change", (_event, element) => {
         sortMode = element.el.value as typeof sortMode;
         renderState();
@@ -486,12 +524,12 @@ const sortSelect = select([
     .addInto(filterBarEnd);
 const sizeSegment = view("x")
     .class("size-segment")
-    .attr({ role: "group", ariaLabel: "썸네일 크기" })
+    .attr({ role: "group", ariaLabel: t("썸네일 크기") })
     .addInto(filterBarEnd);
 for (const [size, text] of [
-    ["s", "작게"],
-    ["m", "보통"],
-    ["l", "크게"],
+    ["s", t("작게")],
+    ["m", t("보통")],
+    ["l", t("크게")],
 ] as const) {
     button(text)
         .class("size-segment-button")
@@ -506,11 +544,11 @@ for (const [size, text] of [
 
 const dropZone = view("y")
     .class("drop-zone")
-    .attr({ role: "button", tabIndex: 0, ariaLabel: "이미지 가져오기" })
+    .attr({ role: "button", tabIndex: 0, ariaLabel: t("이미지 가져오기") })
     .add([
         view().class("drop-icon").add(icon("⇩")),
-        label("strong", "이미지를 여기에 놓으세요"),
-        button("파일 선택")
+        label("strong", t("이미지를 여기에 놓으세요")),
+        button(t("파일 선택"))
             .class("text-button")
             .attr({ type: "button", tabIndex: -1 }),
     ])
@@ -538,16 +576,18 @@ const dropZone = view("y")
 const libraryMeta = view("x")
     .class("section-heading", "library-meta")
     .addInto(libraryPage);
-const libraryTitle = label("h2", "저장된 캡처").addInto(libraryMeta);
+const libraryTitle = label("h2", t("저장된 캡처")).addInto(libraryMeta);
 const itemCount = label("small", "").class("count-badge").addInto(libraryMeta);
 const selectionToolbar = view("x")
     .class("selection-toolbar")
     .addInto(libraryPage);
-const selectionStatus = label("strong", "선택 없음").addInto(selectionToolbar);
+const selectionStatus = label("strong", t("선택 없음")).addInto(
+    selectionToolbar,
+);
 const selectionActions = view("x", "wrap")
     .class("selection-actions")
     .addInto(selectionToolbar);
-const selectDisplayedButton = button("표시된 항목 모두 선택")
+const selectDisplayedButton = button(t("표시된 항목 모두 선택"))
     .class("text-button")
     .attr({ type: "button" })
     .on("click", () => {
@@ -555,7 +595,7 @@ const selectDisplayedButton = button("표시된 항목 모두 선택")
         renderState();
     })
     .addInto(selectionActions);
-const clearSelectionButton = button("선택 해제")
+const clearSelectionButton = button(t("선택 해제"))
     .class("text-button")
     .attr({ type: "button" })
     .on("click", () => {
@@ -564,10 +604,10 @@ const clearSelectionButton = button("선택 해제")
     })
     .addInto(selectionActions);
 for (const [text, action, direction] of [
-    ["내보내기", "export-items"],
-    ["고정", "pin-items"],
-    ["세로 합치기", "combine-items", "vertical"],
-    ["가로 합치기", "combine-items", "horizontal"],
+    [t("내보내기"), "export-items"],
+    [t("고정"), "pin-items"],
+    [t("세로 합치기"), "combine-items", "vertical"],
+    [t("가로 합치기"), "combine-items", "horizontal"],
 ] as [string, OpenCaptureActionName, "vertical" | "horizontal" | undefined][]) {
     button(text)
         .class(
@@ -584,11 +624,11 @@ for (const [text, action, direction] of [
         })
         .addInto(selectionActions);
 }
-button("핀 세트 저장")
+button(t("핀 세트 저장"))
     .class("outline-button", "compact", "bulk-action")
     .attr({
         type: "button",
-        title: "선택한 캡처를 한 번에 고정하는 세트로 저장",
+        title: t("선택한 캡처를 한 번에 고정하는 세트로 저장"),
     })
     .on("click", async () => {
         const ids = [...selectedItemIds];
@@ -596,30 +636,33 @@ button("핀 세트 저장")
         await runAction("save-pin-set", { ids });
     })
     .addInto(selectionActions);
-button("번호 합치기")
+button(t("번호 합치기"))
     .class("outline-button", "compact", "combine-action")
     .attr({
         type: "button",
-        title: "선택한 캡처를 번호가 붙은 순서 이미지로 합성",
+        title: t("선택한 캡처를 번호가 붙은 순서 이미지로 합성"),
     })
     .on("click", () => void composeLayout([...selectedItemIds], "steps"))
     .addInto(selectionActions);
-button("비교 합치기")
+button(t("비교 합치기"))
     .class("outline-button", "compact", "combine-action")
-    .attr({ type: "button", title: "선택한 캡처를 A/B 라벨로 나란히 합성" })
+    .attr({ type: "button", title: t("선택한 캡처를 A/B 라벨로 나란히 합성") })
     .on("click", () => void composeLayout([...selectedItemIds], "compare"))
     .addInto(selectionActions);
-button("타임라인 합치기")
+button(t("타임라인 합치기"))
     .class("outline-button", "compact", "combine-action")
     .attr({
         type: "button",
-        title: "선택한 캡처를 번호가 붙은 가로 타임라인으로 합성",
+        title: t("선택한 캡처를 번호가 붙은 가로 타임라인으로 합성"),
     })
     .on("click", () => void composeLayout([...selectedItemIds], "timeline"))
     .addInto(selectionActions);
-button("텍스트 인식")
+button(t("텍스트 인식"))
     .class("outline-button", "compact", "bulk-action")
-    .attr({ type: "button", title: "선택한 캡처의 글자를 인식해 검색에 추가" })
+    .attr({
+        type: "button",
+        title: t("선택한 캡처의 글자를 인식해 검색에 추가"),
+    })
     .on("click", async () => {
         const ids = [...selectedItemIds];
         if (!ids.length) return;
@@ -631,7 +674,7 @@ button("텍스트 인식")
     })
     .addInto(selectionActions);
 const itemGrid = view("x", "wrap").class("item-grid").addInto(libraryPage);
-const loadMoreButton = button("더 불러오기")
+const loadMoreButton = button(t("더 불러오기"))
     .class("outline-button", "load-more")
     .attr({ type: "button" })
     .on("click", () => loadMoreItems())
@@ -647,9 +690,9 @@ const translateControls = view("x")
     .class("language-row")
     .addInto(translatorMain);
 const languageOptions = [
-    { value: "auto", name: "언어 자동 감지" },
-    { value: "ko", name: "한국어" },
-    { value: "en", name: "영어" },
+    { value: "auto", name: t("언어 자동 감지") },
+    { value: "ko", name: t("한국어") },
+    { value: "en", name: t("영어") },
 ];
 const sourceLanguage = select(languageOptions)
     .class("select-control")
@@ -657,7 +700,11 @@ const sourceLanguage = select(languageOptions)
 sourceLanguage.el.value = "auto";
 button()
     .class("swap-button")
-    .attr({ type: "button", title: "언어 바꾸기", ariaLabel: "언어 바꾸기" })
+    .attr({
+        type: "button",
+        title: t("언어 바꾸기"),
+        ariaLabel: t("언어 바꾸기"),
+    })
     .add(icon("⇄"))
     .on("click", () => {
         if (sourceLanguage.el.value === "auto") return;
@@ -677,11 +724,10 @@ const translationEditors = view("x")
 const sourceEditor = view("y")
     .class("translation-editor")
     .addInto(translationEditors);
-sourceEditor.add(label("small", "원문"));
 const sourceText = ele("textarea")
     .class("translation-textarea")
     .attr({
-        placeholder: "번역할 내용을 입력하세요",
+        placeholder: t("번역할 내용을 입력하세요"),
         spellcheck: false,
         maxLength: 5000,
     })
@@ -691,7 +737,7 @@ const characterCount = label("small", "0 / 5,000").addInto(sourceFooter);
 sourceText.on("input", () => {
     characterCount.el.textContent = `${sourceText.el.value.length.toLocaleString()} / 5,000`;
 });
-button("번역하기")
+button(t("번역하기"))
     .class("primary-button")
     .attr({ type: "button" })
     .on("click", () => translateText())
@@ -700,16 +746,15 @@ button("번역하기")
 const resultEditor = view("y")
     .class("translation-editor", "result-editor")
     .addInto(translationEditors);
-resultEditor.add(label("small", "번역 결과"));
 const resultText = ele("textarea")
     .class("translation-textarea")
-    .attr({ placeholder: "번역 결과가 여기에 표시됩니다", readOnly: true })
+    .attr({ placeholder: t("번역 결과가 여기에 표시됩니다"), readOnly: true })
     .addInto(resultEditor);
 const resultFooter = view("x").class("editor-footer").addInto(resultEditor);
 button()
     .class("text-button")
     .attr({ type: "button" })
-    .add([icon("▣"), label("span", "결과 복사")])
+    .add([icon("▣"), label("span", t("결과 복사"))])
     .on("click", async () => {
         if (!resultText.el.value) return;
         await navigator.clipboard.writeText(resultText.el.value);
@@ -719,9 +764,9 @@ button()
 
 const modelPanel = view("y").class("model-panel").addInto(translatorLayout);
 const engineChoice = select<TranslationEngine>([
-    { value: "local", name: "로컬 · 오프라인" },
-    { value: "deepl", name: "DeepL · 온라인" },
-    { value: "google", name: "Google · 온라인" },
+    { value: "local", name: t("로컬 · 오프라인") },
+    { value: "deepl", name: t("DeepL · 온라인") },
+    { value: "google", name: t("Google · 온라인") },
 ])
     .class("select-control")
     .on("change", async () => {
@@ -737,27 +782,29 @@ const engineChoice = select<TranslationEngine>([
 modelPanel.add([engineChoice]);
 const statusRow = view("x").class("status-row").addInto(modelPanel);
 const modelStatusDot = ele("span").class("status-dot").addInto(statusRow);
-const modelStatusText = label("strong", "상태 확인 중").addInto(statusRow);
-const modelDetails = p("설치 상태를 확인하고 있습니다.")
+const modelStatusText = label("strong", t("상태 확인 중")).addInto(statusRow);
+const modelDetails = p(t("설치 상태를 확인하고 있습니다."))
     .class("model-details")
     .addInto(modelPanel);
 const installButton = button()
     .class("primary-button", "wide")
     .attr({ type: "button" })
-    .add([icon("⇩"), label("span", "로컬 모델 설치")])
+    .add([icon("⇩"), label("span", t("로컬 모델 설치"))])
     .on("click", () => installModels())
     .addInto(modelPanel);
 
 const settingsLayout = view("y").class("settings-layout").addInto(settingsPage);
 const storageCard = view("y").class("settings-card").addInto(settingsLayout);
 storageCard.add([
-    view("x").class("settings-card-heading").add(label("h2", "저장 위치")),
+    view("x")
+        .class("settings-card-heading")
+        .add(label("h2", t("저장 위치"))),
 ]);
 const folderRow = view("x").class("folder-row").addInto(storageCard);
 const folderPath = ele("code")
-    .attr({ textContent: "확인 중…" })
+    .attr({ textContent: t("확인 중…") })
     .addInto(folderRow);
-button("폴더 추가")
+button(t("폴더 추가"))
     .class("outline-button")
     .attr({ type: "button" })
     .on("click", () => runAction("add-collection", undefined, true))
@@ -767,10 +814,12 @@ const convenienceCard = view("y")
     .class("settings-card")
     .addInto(settingsLayout);
 convenienceCard.add(
-    view("x").class("settings-card-heading").add(label("h2", "빠른 실행")),
+    view("x")
+        .class("settings-card-heading")
+        .add(label("h2", t("빠른 실행"))),
 );
 const startAtLoginInput = input("checkbox").attr({
-    ariaLabel: "로그인할 때 OpenCapture 시작",
+    ariaLabel: t("로그인할 때 OpenCapture 시작"),
 });
 startAtLoginInput.on("change", async () => {
     startAtLoginInput.el.disabled = true;
@@ -782,15 +831,15 @@ startAtLoginInput.on("change", async () => {
 });
 ele("label")
     .class("toggle-option", "login-toggle")
-    .add([startAtLoginInput, label("strong", "로그인할 때 시작")])
+    .add([startAtLoginInput, label("strong", t("로그인할 때 시작"))])
     .addInto(convenienceCard);
 
 const mouseChordSelect = select([
-    { value: "关闭", name: "끄기" },
-    { value: "截屏", name: "영역 캡처" },
-    { value: "快速截屏", name: "빠른 캡처" },
-    { value: "录屏", name: "화면 녹화" },
-    { value: "起始页", name: "시작 화면 열기" },
+    { value: "关闭", name: t("끄기") },
+    { value: "截屏", name: t("영역 캡처") },
+    { value: "快速截屏", name: t("빠른 캡처") },
+    { value: "录屏", name: t("화면 녹화") },
+    { value: "起始页", name: t("시작 화면 열기") },
 ]).class("select-control", "chord-select");
 mouseChordSelect.on("change", async () => {
     mouseChordSelect.el.disabled = true;
@@ -802,10 +851,10 @@ mouseChordSelect.on("change", async () => {
 });
 ele("label")
     .class("toggle-option")
-    .attr({ title: "왼쪽과 오른쪽 버튼을 함께 누르면 바로 실행됩니다." })
+    .attr({ title: t("왼쪽과 오른쪽 버튼을 함께 누르면 바로 실행됩니다.") })
     .add([
         view().class("option-icon").add(icon("◉")),
-        label("strong", "마우스 좌·우 동시 클릭"),
+        label("strong", t("마우스 좌·우 동시 클릭")),
         mouseChordSelect,
     ])
     .addInto(convenienceCard);
@@ -815,7 +864,9 @@ const runtimeShortcutList = view("y")
 
 const providerCard = view("y").class("settings-card").addInto(settingsLayout);
 providerCard.add(
-    view("x").class("settings-card-heading").add(label("h2", "외부 번역 연결")),
+    view("x")
+        .class("settings-card-heading")
+        .add(label("h2", t("외부 번역 연결"))),
 );
 const providerForm = view("x").class("provider-form").addInto(providerCard);
 const providerSelect = select([
@@ -826,14 +877,14 @@ const providerSelect = select([
     .addInto(providerForm);
 const apiKeyInput = input("password")
     .class("text-control")
-    .attr({ placeholder: "새 API 키 입력", autocomplete: "new-password" })
+    .attr({ placeholder: t("새 API 키 입력"), autocomplete: "new-password" })
     .addInto(providerForm);
-button("저장")
+button(t("저장"))
     .class("primary-button")
     .attr({ type: "button" })
     .on("click", () => saveProvider())
     .addInto(providerForm);
-const providerStatus = p("연결 상태를 확인하고 있습니다.")
+const providerStatus = p(t("연결 상태를 확인하고 있습니다."))
     .class("helper-text")
     .addInto(providerCard);
 
@@ -842,7 +893,7 @@ const aboutCard = view("x")
     .addInto(settingsLayout);
 aboutCard.add([
     view("x").class("settings-card-heading").add(label("h2", "OpenCapture")),
-    label("small", "버전 확인 중").class("version-pill"),
+    label("small", t("버전 확인 중")).class("version-pill"),
 ]);
 
 const modalBackdrop = view()
@@ -854,28 +905,30 @@ const shortcutDialog = ele("dialog")
     .addInto(modalBackdrop);
 const shortcutHeader = view("x").class("dialog-header").addInto(shortcutDialog);
 shortcutHeader.add([
-    view("y").add(label("h2", "단축키")),
+    view("y").add(label("h2", t("단축키"))),
     button()
         .class("close-button")
-        .attr({ type: "button", ariaLabel: "닫기" })
+        .attr({ type: "button", ariaLabel: t("닫기") })
         .add(icon("×"))
         .on("click", () => closeShortcutSheet()),
 ]);
 const shortcutList = view("y").class("shortcut-list").addInto(shortcutDialog);
 const shortcutDescriptions: Record<string, string> = {
-    toggle: "OpenCapture 열기",
-    capture: "화면의 원하는 부분 선택",
-    record: "영역을 선택해 녹화 시작",
-    dropzone: "드래그 중 라이브러리 열기",
-    selection: "선택된 텍스트 복사 후 번역",
-    restore: "포커스와 클릭 통과 해제",
+    toggle: t("OpenCapture 열기"),
+    capture: t("화면의 원하는 부분 선택"),
+    record: t("영역을 선택해 녹화 시작"),
+    dropzone: t("드래그 중 라이브러리 열기"),
+    selection: t("선택된 텍스트 복사 후 번역"),
+    restore: t("포커스와 클릭 통과 해제"),
 };
 
 function renderShortcutSheet() {
     shortcutList.clear();
     for (const sc of appState.runtime.shortcuts) {
         const keyText = sc.active ?? sc.requested ?? "";
-        const keys = keyText ? formatShortcut(keyText).split(" + ") : ["끄기"];
+        const keys = keyText
+            ? formatShortcut(keyText).split(" + ")
+            : [t("끄기")];
         shortcutList.add(
             view("x")
                 .class("shortcut-row")
@@ -895,10 +948,10 @@ function renderShortcutSheet() {
         );
     }
     const chordNames: Record<string, string> = {
-        截屏: "영역 캡처",
-        快速截屏: "빠른 캡처",
-        录屏: "화면 녹화",
-        起始页: "시작 화면 열기",
+        截屏: t("영역 캡처"),
+        快速截屏: t("빠른 캡처"),
+        录屏: t("화면 녹화"),
+        起始页: t("시작 화면 열기"),
     };
     const chord = appState.runtime.mouseChord ?? "关闭";
     if (chord !== "关闭")
@@ -907,7 +960,7 @@ function renderShortcutSheet() {
                 .class("shortcut-row")
                 .add([
                     view("y").add([
-                        label("strong", "마우스 좌·우 동시 클릭"),
+                        label("strong", t("마우스 좌·우 동시 클릭")),
                         label("small", chordNames[chord] ?? ""),
                     ]),
                     view("x")
@@ -919,7 +972,7 @@ function renderShortcutSheet() {
                 ]),
         );
 }
-button("닫기")
+button(t("닫기"))
     .class("primary-button", "wide")
     .attr({ type: "button" })
     .on("click", () => closeShortcutSheet())
@@ -932,10 +985,10 @@ renameDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add(label("h2", "이름 바꾸기")),
+            view("y").add(label("h2", t("이름 바꾸기"))),
             button()
                 .class("close-button")
-                .attr({ type: "button", ariaLabel: "닫기" })
+                .attr({ type: "button", ariaLabel: t("닫기") })
                 .add(icon("×"))
                 .on("click", () => closeModal(renameDialog.el)),
         ]),
@@ -944,8 +997,8 @@ const renameInput = input("text")
     .class("text-control", "rename-input")
     .attr({
         maxLength: 100,
-        ariaLabel: "새 파일 이름",
-        placeholder: "새 이름 입력",
+        ariaLabel: t("새 파일 이름"),
+        placeholder: t("새 이름 입력"),
     })
     .addInto(renameDialog);
 renameInput.on("keydown", (event) => {
@@ -955,11 +1008,11 @@ renameDialog.add(
     view("x")
         .class("dialog-actions")
         .add([
-            button("취소")
+            button(t("취소"))
                 .class("text-button")
                 .attr({ type: "button" })
                 .on("click", () => closeModal(renameDialog.el)),
-            button("저장")
+            button(t("저장"))
                 .class("primary-button")
                 .attr({ type: "button" })
                 .on("click", () => void submitRename()),
@@ -977,10 +1030,10 @@ noteDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add(label("h2", "메모")),
+            view("y").add(label("h2", t("메모"))),
             button()
                 .class("close-button")
-                .attr({ type: "button", ariaLabel: "닫기" })
+                .attr({ type: "button", ariaLabel: t("닫기") })
                 .add(icon("×"))
                 .on("click", () => closeModal(noteDialog.el)),
         ]),
@@ -990,19 +1043,19 @@ const noteInput = textarea()
     .attr({
         maxLength: 2000,
         rows: 4,
-        ariaLabel: "메모 내용",
-        placeholder: "예: 결제 화면 참고용, 보고서에 넣을 이미지",
+        ariaLabel: t("메모 내용"),
+        placeholder: t("예: 결제 화면 참고용, 보고서에 넣을 이미지"),
     })
     .addInto(noteDialog);
 noteDialog.add(
     view("x")
         .class("dialog-actions")
         .add([
-            button("취소")
+            button(t("취소"))
                 .class("text-button")
                 .attr({ type: "button" })
                 .on("click", () => closeModal(noteDialog.el)),
-            button("저장")
+            button(t("저장"))
                 .class("primary-button")
                 .attr({ type: "button" })
                 .on("click", () => void submitNote()),
@@ -1026,41 +1079,41 @@ const beautifyBackgrounds: {
     css: string;
     fill: [string, string] | null;
 }[] = [
-    { id: "auto", name: "이미지에서 추출", css: "", fill: null },
-    { id: "transparent", name: "투명", css: "", fill: null },
+    { id: "auto", name: t("이미지에서 추출"), css: "", fill: null },
+    { id: "transparent", name: t("투명"), css: "", fill: null },
     {
         id: "sky",
-        name: "하늘",
+        name: t("하늘"),
         css: "linear-gradient(135deg,#64F1E2,#79A7FF)",
         fill: ["#64F1E2", "#79A7FF"],
     },
     {
         id: "violet",
-        name: "보라",
+        name: t("보라"),
         css: "linear-gradient(135deg,#C1A9FF,#FF9BB8)",
         fill: ["#C1A9FF", "#FF9BB8"],
     },
     {
         id: "sunset",
-        name: "노을",
+        name: t("노을"),
         css: "linear-gradient(135deg,#FFBF83,#FF9BB8)",
         fill: ["#FFBF83", "#FF9BB8"],
     },
     {
         id: "night",
-        name: "밤",
+        name: t("밤"),
         css: "linear-gradient(135deg,#0B1526,#264D5E)",
         fill: ["#0B1526", "#264D5E"],
     },
     {
         id: "paper",
-        name: "종이",
+        name: t("종이"),
         css: "#F4F1EA",
         fill: ["#F4F1EA", "#E9E3D5"],
     },
 ];
 const beautifyRatios: [string, number][] = [
-    ["자유", 0],
+    [t("자유"), 0],
     ["1:1", 1],
     ["4:5", 0.8],
     ["16:9", 16 / 9],
@@ -1074,10 +1127,10 @@ beautifyDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add(label("h2", "배경 꾸미기")),
+            view("y").add(label("h2", t("배경 꾸미기"))),
             button()
                 .class("close-button")
-                .attr({ type: "button", ariaLabel: "닫기" })
+                .attr({ type: "button", ariaLabel: t("닫기") })
                 .add(icon("×"))
                 .on("click", () => closeModal(beautifyDialog.el)),
         ]),
@@ -1089,7 +1142,7 @@ const beautifyControls = view("y")
     .class("beautify-controls")
     .addInto(beautifyBody);
 
-beautifyControls.add(label("small", "비율").class("control-label"));
+beautifyControls.add(label("small", t("비율")).class("control-label"));
 const ratioChipRow = view("x", "wrap")
     .class("chip-row")
     .addInto(beautifyControls);
@@ -1111,7 +1164,7 @@ for (const [name, ratio] of beautifyRatios) {
     ratioChips.push(chip.el);
 }
 
-beautifyControls.add(label("small", "배경").class("control-label"));
+beautifyControls.add(label("small", t("배경")).class("control-label"));
 const bgSwatchRow = view("x", "wrap")
     .class("swatch-row")
     .addInto(beautifyControls);
@@ -1177,13 +1230,13 @@ function beautifySlider(
         ])
         .addInto(beautifyControls);
 }
-beautifySlider("여백", 0, 200, beautifyOptions.padding, (v) => {
+beautifySlider(t("여백"), 0, 200, beautifyOptions.padding, (v) => {
     beautifyOptions.padding = v;
 });
-beautifySlider("둥글기", 0, 120, beautifyOptions.radius, (v) => {
+beautifySlider(t("둥글기"), 0, 120, beautifyOptions.radius, (v) => {
     beautifyOptions.radius = v;
 });
-beautifySlider("그림자", 0, 120, beautifyOptions.shadow, (v) => {
+beautifySlider(t("그림자"), 0, 120, beautifyOptions.shadow, (v) => {
     beautifyOptions.shadow = v;
 });
 
@@ -1194,12 +1247,12 @@ beautifyDialog.add(
             button()
                 .class("outline-button")
                 .attr({ type: "button" })
-                .add([icon("▣"), label("span", "이미지 복사")])
+                .add([icon("▣"), label("span", t("이미지 복사"))])
                 .on("click", () => void copyCanvas(beautifyCanvas.el)),
             button()
                 .class("primary-button")
                 .attr({ type: "button" })
-                .add([icon("⇩"), label("span", "컬렉션에 저장")])
+                .add([icon("⇩"), label("span", t("컬렉션에 저장"))])
                 .on("click", () => void saveBeautified()),
         ]),
 );
@@ -1210,7 +1263,6 @@ beautifyDialog.el.addEventListener("cancel", (event) => {
 
 const upscaleOptions = { scale: 2, sharpen: true };
 const upscaleScales = [2, 3, 4];
-const UPSCALE_MAX_PIXELS = 24_000_000;
 
 const upscaleDialog = ele("dialog")
     .class("shortcut-dialog", "beautify-dialog")
@@ -1219,10 +1271,10 @@ upscaleDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add(label("h2", "업스케일")),
+            view("y").add(label("h2", t("업스케일"))),
             button()
                 .class("close-button")
-                .attr({ type: "button", ariaLabel: "닫기" })
+                .attr({ type: "button", ariaLabel: t("닫기") })
                 .add(icon("×"))
                 .on("click", () => closeModal(upscaleDialog.el)),
         ]),
@@ -1234,7 +1286,7 @@ const upscaleControls = view("y")
     .class("beautify-controls")
     .addInto(upscaleBody);
 
-upscaleControls.add(label("small", "배율").class("control-label"));
+upscaleControls.add(label("small", t("배율")).class("control-label"));
 const upscaleChipRow = view("x", "wrap")
     .class("chip-row")
     .addInto(upscaleControls);
@@ -1255,11 +1307,11 @@ for (const scale of upscaleScales) {
         .addInto(upscaleChipRow);
     upscaleChips.push(chip.el);
 }
-const sharpenInput = input("checkbox").attr({ ariaLabel: "선명하게" });
+const sharpenInput = input("checkbox").attr({ ariaLabel: t("선명하게") });
 sharpenInput.el.checked = true;
 const sharpenRow = view("x")
     .class("slider-row", "check-row")
-    .add([label("span", "선명하게").class("slider-title"), sharpenInput])
+    .add([label("span", t("선명하게")).class("slider-title"), sharpenInput])
     .addInto(upscaleControls);
 sharpenInput.on("change", () => {
     upscaleOptions.sharpen = sharpenInput.el.checked;
@@ -1277,13 +1329,14 @@ upscaleDialog.add(
             button()
                 .class("outline-button")
                 .attr({ type: "button" })
-                .add([icon("▣"), label("span", "이미지 복사")])
+                .add([icon("▣"), label("span", t("이미지 복사"))])
                 .on("click", () => {
                     const target = upscaleTarget;
                     if (!target) return;
                     if (upscaleOversized()) {
-                        upscaleError.el.textContent =
-                            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.";
+                        upscaleError.el.textContent = t(
+                            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.",
+                        );
                         return;
                     }
                     void copyCanvas(upscaleFull(target));
@@ -1291,7 +1344,7 @@ upscaleDialog.add(
             button()
                 .class("primary-button")
                 .attr({ type: "button" })
-                .add([icon("⇩"), label("span", "컬렉션에 저장")])
+                .add([icon("⇩"), label("span", t("컬렉션에 저장"))])
                 .on("click", () => void saveUpscaled()),
         ]),
 );
@@ -1303,10 +1356,10 @@ upscaleDialog.el.addEventListener("cancel", (event) => {
 const foldDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
 const foldHeader = view("x").class("dialog-header").addInto(foldDialog);
 const foldTitle = view("y").addInto(foldHeader);
-foldTitle.add([label("h2", "중간 접기")]);
+foldTitle.add([label("h2", t("중간 접기"))]);
 button()
     .class("close-button")
-    .attr({ type: "button", ariaLabel: "닫기" })
+    .attr({ type: "button", ariaLabel: t("닫기") })
     .add(icon("×"))
     .on("click", () => closeModal(foldDialog.el))
     .addInto(foldHeader);
@@ -1324,7 +1377,7 @@ const foldStartInput = input("range")
         max: "95",
         value: "30",
         step: "1",
-        ariaLabel: "접기 시작",
+        ariaLabel: t("접기 시작"),
     })
     .addInto(foldControls);
 const foldEndInput = input("range")
@@ -1333,7 +1386,7 @@ const foldEndInput = input("range")
         max: "100",
         value: "70",
         step: "1",
-        ariaLabel: "접기 끝",
+        ariaLabel: t("접기 끝"),
     })
     .addInto(foldControls);
 const foldInfo = label("small", "").class("fold-info").addInto(foldControls);
@@ -1341,14 +1394,14 @@ foldDialog.add(
     view("x")
         .class("dialog-actions")
         .add([
-            button("취소")
+            button(t("취소"))
                 .class("outline-button")
                 .attr({ type: "button" })
                 .on("click", () => closeModal(foldDialog.el)),
             button()
                 .class("primary-button")
                 .attr({ type: "button" })
-                .add([icon("⬍"), label("span", "접어서 저장")])
+                .add([icon("⬍"), label("span", t("접어서 저장"))])
                 .on("click", () => void applyFold()),
         ]),
 );
@@ -1357,30 +1410,13 @@ foldDialog.el.addEventListener("cancel", (event) => {
     closeModal(foldDialog.el);
 });
 
-type GifDecoder = {
-    tracks: {
-        ready: Promise<void>;
-        selectedTrack: { frameCount: number } | null;
-    };
-    decode(options: { frameIndex: number }): Promise<ImageDecodeResult>;
-    close(): void;
-};
-const GifImageDecoder = (
-    globalThis as unknown as {
-        ImageDecoder?: new (init: {
-            data: BufferSource;
-            type: string;
-        }) => GifDecoder;
-    }
-).ImageDecoder;
-
 const gifDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
 const gifHeader = view("x").class("dialog-header").addInto(gifDialog);
 const gifTitle = view("y").addInto(gifHeader);
-gifTitle.add([label("h2", "GIF 트림")]);
+gifTitle.add([label("h2", t("GIF 트림"))]);
 button()
     .class("close-button")
-    .attr({ type: "button", ariaLabel: "닫기" })
+    .attr({ type: "button", ariaLabel: t("닫기") })
     .add(icon("×"))
     .on("click", () => closeModal(gifDialog.el))
     .addInto(gifHeader);
@@ -1393,12 +1429,18 @@ const gifStartInput = input("range")
         max: "1",
         value: "0",
         step: "1",
-        ariaLabel: "시작 프레임",
+        ariaLabel: t("시작 프레임"),
     })
     .on("input", () => void renderGifPreview())
     .addInto(gifControls);
 const gifEndInput = input("range")
-    .attr({ min: "0", max: "1", value: "1", step: "1", ariaLabel: "끝 프레임" })
+    .attr({
+        min: "0",
+        max: "1",
+        value: "1",
+        step: "1",
+        ariaLabel: t("끝 프레임"),
+    })
     .on("input", () => void renderGifPreview())
     .addInto(gifControls);
 const gifInfo = label("small", "").class("fold-info").addInto(gifControls);
@@ -1406,14 +1448,14 @@ gifDialog.add(
     view("x")
         .class("dialog-actions")
         .add([
-            button("취소")
+            button(t("취소"))
                 .class("outline-button")
                 .attr({ type: "button" })
                 .on("click", () => closeModal(gifDialog.el)),
             button()
                 .class("primary-button")
                 .attr({ type: "button" })
-                .add([icon("≣"), label("span", "GIF로 저장")])
+                .add([icon("≣"), label("span", t("GIF로 저장"))])
                 .on("click", () => void applyGifTrim()),
         ]),
 );
@@ -1435,7 +1477,7 @@ const qlName = label("h2", "").addInto(qlTitle);
 const qlMeta = label("small", "").addInto(qlTitle);
 button()
     .class("close-button")
-    .attr({ type: "button", ariaLabel: "닫기" })
+    .attr({ type: "button", ariaLabel: t("닫기") })
     .add(icon("×"))
     .on("click", () => closeModal(quickLookDialog.el))
     .addInto(qlHeader);
@@ -1453,38 +1495,38 @@ qlCropRect.el.hidden = true;
 const qlCropBar = view("x").class("ql-crop-bar").addInto(qlStage);
 qlCropBar.el.hidden = true;
 qlCropBar.add([
-    button("자르기 적용")
+    button(t("자르기 적용"))
         .class("primary-button", "compact")
         .attr({ type: "button" })
         .on("click", () => void applyQlCrop()),
-    button("취소")
+    button(t("취소"))
         .class("outline-button", "compact")
         .attr({ type: "button" })
         .on("click", () => exitQlCrop()),
 ]);
 const qlPrev = button()
     .class("ql-nav", "ql-prev")
-    .attr({ type: "button", ariaLabel: "이전 캡처" })
+    .attr({ type: "button", ariaLabel: t("이전 캡처") })
     .add(label("span", "‹"))
     .on("click", () => quickLookNavigate(-1))
     .addInto(qlStage);
 const qlNext = button()
     .class("ql-nav", "ql-next")
-    .attr({ type: "button", ariaLabel: "다음 캡처" })
+    .attr({ type: "button", ariaLabel: t("다음 캡처") })
     .add(label("span", "›"))
     .on("click", () => quickLookNavigate(1))
     .addInto(qlStage);
 const qlSide = view("y").class("ql-side").addInto(qlBody);
 const qlActions = view("x", "wrap").class("ql-actions").addInto(qlSide);
 const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
-    ["▣", "복사", (item) => runAction("copy-item", item.id)],
-    ["⌖", "고정", (item) => runAction("pin-item", item.id)],
-    ["✎", "주석·편집", (item) => runAction("open-item", item.id)],
-    ["⌗", "자르기", () => startQlCrop()],
-    ["⬍", "중간 접기", (item) => void openFold(item)],
+    ["▣", t("복사"), (item) => runAction("copy-item", item.id)],
+    ["⌖", t("고정"), (item) => runAction("pin-item", item.id)],
+    ["✎", t("주석·편집"), (item) => runAction("open-item", item.id)],
+    ["⌗", t("자르기"), () => startQlCrop()],
+    ["⬍", t("중간 접기"), (item) => void openFold(item)],
     [
         "≣",
-        "GIF 트림",
+        t("GIF 트림"),
         (item) => {
             if (!isGifItem(item)) {
                 showToast("GIF 항목에서만 사용할 수 있습니다.", true);
@@ -1493,14 +1535,14 @@ const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
             void openGifTrim(item);
         },
     ],
-    ["▨", "꾸미기", (item) => void openBeautify(item)],
-    ["⤢", "업스케일", (item) => void openUpscale(item)],
-    ["✧", "AI 업스케일", (item) => runAiUpscale(item)],
-    ["☰", "메모", (item) => openNote(item)],
-    ["✦", "배경 제거", (item) => runAction("remove-background", item.id)],
-    ["T", "이름", (item) => openRename(item)],
-    ["⧉", "복제", (item) => runAction("duplicate-item", item.id)],
-    ["▤", "폴더", (item) => runAction("reveal-item", item.id)],
+    ["▨", t("꾸미기"), (item) => void openBeautify(item)],
+    ["⤢", t("업스케일"), (item) => void openUpscale(item)],
+    ["✧", t("AI 업스케일"), (item) => runAiUpscale(item)],
+    ["☰", t("메모"), (item) => openNote(item)],
+    ["✦", t("배경 제거"), (item) => runAction("remove-background", item.id)],
+    ["T", t("이름"), (item) => openRename(item)],
+    ["⧉", t("복제"), (item) => runAction("duplicate-item", item.id)],
+    ["▤", t("폴더"), (item) => runAction("reveal-item", item.id)],
 ];
 for (const [glyph, text, run] of qlActionList) {
     button()
@@ -1513,14 +1555,14 @@ for (const [glyph, text, run] of qlActionList) {
         })
         .addInto(qlActions);
 }
-qlSide.add(label("small", "태그").class("eyebrow", "ql-eyebrow"));
+qlSide.add(label("small", t("태그")).class("eyebrow", "ql-eyebrow"));
 const qlTags = view("x", "wrap").class("ql-tags").addInto(qlSide);
 const qlTagInput = input("text")
     .class("text-control", "tag-input")
     .attr({
-        placeholder: "태그 입력 후 Enter",
+        placeholder: t("태그 입력 후 Enter"),
         maxLength: 30,
-        ariaLabel: "태그 추가",
+        ariaLabel: t("태그 추가"),
     })
     .addInto(qlSide);
 qlTagInput.on("keydown", async (event) => {
@@ -1550,14 +1592,14 @@ qlTagInput.on("keydown", async (event) => {
     }
 });
 const qlTagSuggest = view("x", "wrap").class("tag-suggest").addInto(qlSide);
-qlSide.add(label("small", "인식된 텍스트").class("eyebrow", "ql-eyebrow"));
+qlSide.add(label("small", t("인식된 텍스트")).class("eyebrow", "ql-eyebrow"));
 const qlOcrStatus = label("small", "").addInto(qlSide);
 const qlOcrText = ele("pre").class("ql-ocr-text").addInto(qlSide);
 const qlOcrActions = view("x").class("ql-ocr-actions").addInto(qlSide);
 button()
     .class("outline-button", "compact")
     .attr({ type: "button" })
-    .add([icon("▣"), label("span", "텍스트 복사")])
+    .add([icon("▣"), label("span", t("텍스트 복사"))])
     .on("click", async () => {
         const item = appState.items.find((i) => i.id === quickLookId);
         if (!item?.ocrText) return;
@@ -1568,7 +1610,7 @@ button()
 button()
     .class("text-button", "compact")
     .attr({ type: "button" })
-    .add([icon("T"), label("span", "텍스트 인식")])
+    .add([icon("T"), label("span", t("텍스트 인식"))])
     .on("click", async () => {
         const item = appState.items.find((i) => i.id === quickLookId);
         if (!item) return;
@@ -1588,10 +1630,10 @@ onboardDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add(label("h2", "OpenCapture 시작하기")),
+            view("y").add(label("h2", t("OpenCapture 시작하기"))),
             button()
                 .class("close-button")
-                .attr({ type: "button", ariaLabel: "닫기" })
+                .attr({ type: "button", ariaLabel: t("닫기") })
                 .add(icon("×"))
                 .on("click", () => closeOnboarding()),
         ]),
@@ -1604,43 +1646,44 @@ const onboardCaptureKeys = view("x")
     .addInto(
         view("y")
             .class("onboard-card")
+            .attr({ title: t("언제든 이 단축키로 화면을 선택하세요.") })
             .add([
                 view().class("onboard-icon").add(icon("⌗")),
-                label("strong", "한 번에 캡처"),
-                label("small", "언제든 이 단축키로 화면을 선택하세요."),
+                label("strong", t("한 번에 캡처")),
             ])
             .addInto(onboardGrid),
     );
 const onboardChordCard = view("y")
     .class("onboard-card")
+    .attr({ title: t("좌·우 버튼을 함께 누르면 캡처가 시작됩니다.") })
     .add([
         view().class("onboard-icon").add(icon("◉")),
-        label("strong", "마우스로도 바로"),
-        label("small", "좌·우 버튼을 함께 누르면 캡처가 시작됩니다."),
+        label("strong", t("마우스로도 바로")),
     ])
     .addInto(onboardGrid);
-const onboardChordButton = button("지금 켜기")
+const onboardChordButton = button(t("지금 켜기"))
     .class("outline-button", "compact")
     .attr({ type: "button" })
     .on("click", async () => {
         onboardChordButton.el.disabled = true;
         await runAction("configure-runtime", { mouseChord: "截屏" });
         await refreshState();
-        onboardChordButton.el.textContent = "켜짐";
+        onboardChordButton.el.textContent = t("켜짐");
     })
     .addInto(onboardChordCard);
 view("y")
     .class("onboard-card")
-    .add([
-        view().class("onboard-icon").add(icon("✦")),
-        label("strong", "한 장에서 모두"),
-        label(
-            "small",
+    .attr({
+        title: t(
             "캡처 하나로 복사·고정·주석·번역·업스케일·태그·검색까지 바로 이어집니다.",
         ),
+    })
+    .add([
+        view().class("onboard-icon").add(icon("✦")),
+        label("strong", t("한 장에서 모두")),
     ])
     .addInto(onboardGrid);
-button("시작하기")
+button(t("시작하기"))
     .class("primary-button", "wide")
     .attr({ type: "button" })
     .on("click", () => closeOnboarding())
@@ -1660,7 +1703,7 @@ function renderOnboarding() {
         appState.runtime.mouseChord !== undefined &&
         appState.runtime.mouseChord !== "关闭";
     if (onboardChordButton.el.disabled)
-        onboardChordButton.el.textContent = "켜짐";
+        onboardChordButton.el.textContent = t("켜짐");
 }
 
 function openOnboarding() {
@@ -1695,7 +1738,7 @@ const srToast = ele("div")
 const srToastText = ele("span").addInto(srToast);
 
 function runAiUpscale(item: OpenCaptureItem) {
-    srToastText.el.textContent = "AI 업스케일을 준비하고 있습니다…";
+    srToastText.el.textContent = t("AI 업스케일을 준비하고 있습니다…");
     srToast.el.classList.add("visible");
     void runAction("ai-upscale", item.id).then(() => {
         srToast.el.classList.remove("visible");
@@ -1705,10 +1748,10 @@ function runAiUpscale(item: OpenCaptureItem) {
 function showPage(page: PageName) {
     activePage = page;
     const titles: Record<PageName, string> = {
-        home: "캡처",
-        library: "라이브러리",
-        translate: "번역",
-        settings: "설정",
+        home: t("캡처"),
+        library: t("라이브러리"),
+        translate: t("번역"),
+        settings: t("설정"),
     };
     for (const [name, element] of pages)
         element.classList.toggle("active", name === page);
@@ -1729,8 +1772,10 @@ async function runAction(
         if (isState(result)) appState = result;
         else if (refresh) await refreshState();
         renderState();
+        return true;
     } catch (error) {
         showToast(errorMessage(error), true);
+        return false;
     }
 }
 
@@ -1744,7 +1789,7 @@ async function runItemEdit(apply: ItemEditAction, undo: ItemEditAction | null) {
         if (undo)
             showToast("적용했습니다.", false, [
                 [
-                    "되돌리기",
+                    t("되돌리기"),
                     () => {
                         void (async () => {
                             try {
@@ -1772,26 +1817,10 @@ async function toggleSteps() {
     await runAction("steps", undefined, true);
     if ((appState.runtime.stepCapture ?? false) && !was)
         showToast(
-            "클릭할 때마다 화면이 저장됩니다. 카드를 다시 누르면 중지합니다.",
+            t(
+                "클릭할 때마다 화면이 저장됩니다. 카드를 다시 누르면 중지합니다.",
+            ),
         );
-}
-
-function drawBadge(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    text: string,
-    size = 40,
-) {
-    ctx.beginPath();
-    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-    ctx.fillStyle = "#2563eb";
-    ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `600 ${size / 2 + 2}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, x + size / 2, y + size / 2 + 1);
 }
 
 async function composeLayout(
@@ -1865,12 +1894,14 @@ async function composeLayout(
                 x += w + gap;
             });
         }
-        await runAction("save-composed", {
-            id: ordered[0].id,
-            dataURL: canvas.toDataURL("image/png"),
-            label: "Steps",
-        });
-        showToast("합성 이미지를 저장했습니다.");
+        if (
+            await runAction("save-composed", {
+                id: ordered[0].id,
+                dataURL: canvas.toDataURL("image/png"),
+                label: "Steps",
+            })
+        )
+            showToast("합성 이미지를 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -1886,10 +1917,23 @@ async function importFiles(files: File[]) {
     }
 }
 
+let shortcutWarned = false;
+
 async function refreshState() {
     try {
         appState = await window.openCapture.getState();
         if (appState.recoveryWarning) showToast(appState.recoveryWarning, true);
+        if (!shortcutWarned) {
+            shortcutWarned = true;
+            const failed = appState.runtime.shortcuts.filter(
+                (s) => !s.available && s.requested,
+            );
+            if (failed.length)
+                showToast(
+                    `단축키 등록 실패: ${failed.map((s) => s.label).join(", ")}. 다른 앱이 점유 중입니다. 설정에서 다시 지정하세요.`,
+                    true,
+                );
+        }
         const previewId = appState.previewItemId;
         renderState();
         if (previewId) void openPreviewById(previewId);
@@ -1922,7 +1966,7 @@ function renderState() {
         collectionSelect.add(
             ele("option").attr({
                 value: "",
-                textContent: "컬렉션 없음",
+                textContent: t("컬렉션 없음"),
                 disabled: true,
                 selected: true,
             }),
@@ -1942,7 +1986,7 @@ function renderState() {
     folderPath.el.textContent =
         activeCollection?.path ||
         appState.defaultFolder ||
-        "저장 폴더가 설정되지 않았습니다.";
+        t("저장 폴더가 설정되지 않았습니다.");
     versionLabel.el.textContent = appState.version
         ? `OpenCapture ${appState.version}`
         : "OpenCapture";
@@ -1951,11 +1995,11 @@ function renderState() {
     if (versionPill)
         versionPill.textContent = appState.version
             ? `v${appState.version}`
-            : "개발 버전";
+            : t("개발 버전");
 
     const visibleItems = visibleLibraryItems();
     const filtered = isLibraryFiltered();
-    libraryTitle.el.textContent = activeCollection?.name ?? "저장된 캡처";
+    libraryTitle.el.textContent = activeCollection?.name ?? t("저장된 캡처");
     itemCount.el.textContent = filtered
         ? `${visibleItems.length}개 표시 · 전체 ${appState.totalItemCount}개`
         : appState.totalItemCount > appState.items.length
@@ -1968,7 +2012,7 @@ function renderState() {
     const selectedCount = selectedItemIds.size;
     selectionStatus.el.textContent = selectedCount
         ? `${selectedCount}개 선택됨`
-        : "선택 없음";
+        : t("선택 없음");
     selectionToolbar.el.classList.toggle("has-selection", selectedCount > 0);
     clearSelectionButton.el.disabled = !selectedCount;
     clearSelectionButton.el.hidden = !selectedCount;
@@ -1992,14 +2036,14 @@ function renderState() {
         const running = appState.runtime.stepCapture ?? false;
         stepsCard.classList.toggle("active", running);
         const title = stepsCard.querySelector<HTMLElement>("h3");
-        if (title) title.textContent = running ? "중지" : "단계 캡처";
+        if (title) title.textContent = running ? t("중지") : t("단계 캡처");
     }
     pinSetRow.clear();
     const sets = appState.pinSets ?? [];
     pinSetRow.el.style.display = sets.length ? "" : "none";
     if (sets.length)
         pinSetRow.add(
-            label("small", "핀 세트").class("eyebrow", "pinset-heading"),
+            label("small", t("핀 세트")).class("eyebrow", "pinset-heading"),
         );
     for (const set of sets) {
         pinSetRow.add(
@@ -2085,51 +2129,6 @@ function visibleLibraryItems() {
 }
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
-const KEY_NAME_MAP: Record<string, string> = {
-    " ": "Space",
-    ArrowUp: "Up",
-    ArrowDown: "Down",
-    ArrowLeft: "Left",
-    ArrowRight: "Right",
-    Escape: "Esc",
-    Enter: "Enter",
-    Tab: "Tab",
-    Backspace: "Backspace",
-    Delete: "Delete",
-    Home: "Home",
-    End: "End",
-    PageUp: "PageUp",
-    PageDown: "PageDown",
-    Insert: "Insert",
-    "+": "Plus",
-    ";": ";",
-    "=": "=",
-    ",": ",",
-    "-": "-",
-    ".": ".",
-    "/": "/",
-    "`": "`",
-    "[": "[",
-    "]": "]",
-    "\\": "\\",
-    "'": "'",
-};
-
-function acceleratorFromEvent(e: KeyboardEvent): string | null {
-    const parts: string[] = [];
-    if (e.ctrlKey || e.metaKey) parts.push("CommandOrControl");
-    if (e.altKey) parts.push("Alt");
-    if (e.shiftKey) parts.push("Shift");
-    let key = "";
-    if (/^.$/u.test(e.key)) key = (KEY_NAME_MAP[e.key] ?? e.key).toUpperCase();
-    else if (/^F\d{1,2}$/.test(e.key)) key = e.key;
-    else key = KEY_NAME_MAP[e.key] ?? "";
-    if (!key) return null;
-    if (!parts.length && !/^F\d{1,2}$/.test(key)) return null;
-    parts.push(key);
-    return parts.join("+");
-}
-
 async function rebindShortcut(
     shortcut: OpenCaptureShortcut,
     key: string | null,
@@ -2177,16 +2176,18 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
         .attr({
             readOnly: true,
             value: shortcut.custom ?? shortcut.requested ?? "",
-            placeholder: "단축키 없음",
+            placeholder: t("단축키 없음"),
             ariaLabel: `${shortcut.label} 단축키`,
-            title: "클릭 후 새 단축키를 누르세요. Backspace는 끄기, Esc는 취소",
+            title: t(
+                "클릭 후 새 단축키를 누르세요. Backspace는 끄기, Esc는 취소",
+            ),
         });
     const reset = button()
         .class("shortcut-reset")
         .attr({
             type: "button",
-            ariaLabel: "기본값으로 되돌리기",
-            title: "기본값",
+            ariaLabel: t("기본값으로 되돌리기"),
+            title: t("기본값"),
         })
         .add(label("span", "↺"))
         .on("click", () => void rebindShortcut(shortcut, null));
@@ -2228,7 +2229,7 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
     const status = !shortcut.available
         ? `충돌 · ${formatShortcut(shortcut.requested)}`
         : shortcut.active === null
-          ? "꺼짐"
+          ? t("꺼짐")
           : shortcut.custom != null
             ? `기본: ${formatShortcut(shortcut.default || shortcut.requested || "—")}`
             : formatShortcut(shortcut.active);
@@ -2248,7 +2249,7 @@ function renderRuntimeShortcuts() {
     runtimeShortcutList.clear();
     mouseChordSelect.el.value = appState.runtime.mouseChord ?? "关闭";
     if (!appState.runtime.shortcuts.length) {
-        runtimeShortcutList.add(p("등록된 시스템 단축키가 없습니다."));
+        runtimeShortcutList.add(p(t("등록된 시스템 단축키가 없습니다.")));
         return;
     }
     for (const shortcut of appState.runtime.shortcuts)
@@ -2265,18 +2266,24 @@ function renderItems(items: OpenCaptureItem[]) {
                       .class("empty-state")
                       .add([
                           view().class("empty-icon").add(icon("⌕")),
-                          label("h3", "조건에 맞는 캡처가 없어요"),
-                          p("검색어를 바꾸거나 즐겨찾기 필터를 해제해 보세요."),
+                          label("h3", t("조건에 맞는 캡처가 없어요")),
+                          p(
+                              t(
+                                  "검색어를 바꾸거나 즐겨찾기 필터를 해제해 보세요.",
+                              ),
+                          ),
                       ])
                 : view("y")
                       .class("empty-state")
                       .add([
                           view().class("empty-icon").add(icon("▧")),
-                          label("h3", "아직 저장된 캡처가 없어요"),
+                          label("h3", t("아직 저장된 캡처가 없어요")),
                           p(
-                              "새로 캡처하거나 이미지를 가져오면 여기에 모입니다.",
+                              t(
+                                  "새로 캡처하거나 이미지를 가져오면 여기에 모입니다.",
+                              ),
                           ),
-                          button("첫 캡처 시작")
+                          button(t("첫 캡처 시작"))
                               .class("primary-button")
                               .attr({ type: "button" })
                               .on("click", () => runAction("capture")),
@@ -2285,14 +2292,22 @@ function renderItems(items: OpenCaptureItem[]) {
         return;
     }
 
+    const fragment = document.createDocumentFragment();
     for (const [itemIndex, item] of items.entries()) {
         const thumbnail = view().class("item-thumbnail");
         if (item.thumbnail) {
             thumbnail.add(
                 ele("img")
-                    .attr({ src: item.thumbnail, alt: "" })
+                    .attr({
+                        src: item.thumbnail,
+                        alt: "",
+                        loading: "lazy",
+                        decoding: "async",
+                    })
                     .on("error", (_event, image) => image.el.remove()),
             );
+        } else if (isVideoItem(item)) {
+            thumbnail.add(view().class("item-video-badge").add(icon("v")));
         }
         const selectionInput = input("checkbox")
             .class("item-select")
@@ -2328,7 +2343,7 @@ function renderItems(items: OpenCaptureItem[]) {
                 type: "button",
                 ariaLabel: `${item.name} 즐겨찾기`,
                 ariaPressed: String(Boolean(item.favorite)),
-                title: item.favorite ? "즐겨찾기 해제" : "즐겨찾기",
+                title: item.favorite ? t("즐겨찾기 해제") : t("즐겨찾기"),
             })
             .add(icon("★"))
             .on("click", (event) => {
@@ -2385,9 +2400,14 @@ function renderItems(items: OpenCaptureItem[]) {
                             }),
                     ]),
             ]);
-        itemCard.on("click", () => openQuickLook(item));
-        itemGrid.add(itemCard);
+        itemCard.on("click", () =>
+            isVideoItem(item)
+                ? void runAction("open-item", item.id)
+                : openQuickLook(item),
+        );
+        fragment.append(itemCard.el);
     }
+    itemGrid.el.append(fragment);
 }
 
 async function loadMoreItems() {
@@ -2398,7 +2418,7 @@ async function loadMoreItems() {
             limit: 200,
         });
         if (!isItemsPage(result))
-            throw new Error("라이브러리 응답을 확인할 수 없습니다.");
+            throw new Error(t("라이브러리 응답을 확인할 수 없습니다."));
         const itemsById = new Map(
             appState.items.map((item) => [item.id, item] as const),
         );
@@ -2421,33 +2441,57 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
     const menu = view("y")
         .class("item-menu")
         .addInto(anchor.parentElement ?? document.body);
-    const entries: [string, string, () => void][] = [
-        ["⌕", "미리보기", () => openQuickLook(item)],
-        ["⌖", "화면에 고정", () => runAction("pin-item", item.id)],
-        ["▣", "클립보드에 복사", () => runAction("copy-item", item.id)],
-        ["✎", "주석·편집", () => runAction("open-item", item.id)],
-        ["▨", "배경 꾸미기", () => openBeautify(item)],
-        ["⤢", "업스케일", () => openUpscale(item)],
-        ["✧", "AI 업스케일", () => runAiUpscale(item)],
-        ["⬍", "중간 접기", () => void openFold(item)],
-        ...(isGifItem(item)
-            ? ([["≣", "GIF 트림", () => void openGifTrim(item)]] as [
-                  string,
-                  string,
-                  () => void,
-              ][])
-            : []),
-        ["☰", "메모", () => openNote(item)],
-        [
-            "T",
-            item.ocrDone ? "텍스트 다시 인식" : "텍스트 인식",
-            () => void requestOcrIndex(item.id),
-        ],
-        ["✦", "배경 제거", () => runAction("remove-background", item.id)],
-        ["T", "이름 바꾸기", () => openRename(item)],
-        ["⧉", "복제", () => runAction("duplicate-item", item.id)],
-        ["▤", "폴더에서 보기", () => runAction("reveal-item", item.id)],
-    ];
+    const entries: [string, string, () => void][] = isVideoItem(item)
+        ? [
+              ["v", t("재생"), () => runAction("open-item", item.id)],
+              ["☰", t("메모"), () => openNote(item)],
+              ["T", t("이름 바꾸기"), () => openRename(item)],
+              ["⧉", t("복제"), () => runAction("duplicate-item", item.id)],
+              [
+                  "▤",
+                  t("폴더에서 보기"),
+                  () => runAction("reveal-item", item.id),
+              ],
+          ]
+        : [
+              ["⌕", t("미리보기"), () => openQuickLook(item)],
+              ["⌖", t("화면에 고정"), () => runAction("pin-item", item.id)],
+              [
+                  "▣",
+                  t("클립보드에 복사"),
+                  () => runAction("copy-item", item.id),
+              ],
+              ["✎", t("주석·편집"), () => runAction("open-item", item.id)],
+              ["▨", t("배경 꾸미기"), () => openBeautify(item)],
+              ["⤢", t("업스케일"), () => openUpscale(item)],
+              ["✧", t("AI 업스케일"), () => runAiUpscale(item)],
+              ["⬍", t("중간 접기"), () => void openFold(item)],
+              ...(isGifItem(item)
+                  ? ([["≣", t("GIF 트림"), () => void openGifTrim(item)]] as [
+                        string,
+                        string,
+                        () => void,
+                    ][])
+                  : []),
+              ["☰", t("메모"), () => openNote(item)],
+              [
+                  "T",
+                  item.ocrDone ? t("텍스트 다시 인식") : t("텍스트 인식"),
+                  () => void requestOcrIndex(item.id),
+              ],
+              [
+                  "✦",
+                  t("배경 제거"),
+                  () => runAction("remove-background", item.id),
+              ],
+              ["T", t("이름 바꾸기"), () => openRename(item)],
+              ["⧉", t("복제"), () => runAction("duplicate-item", item.id)],
+              [
+                  "▤",
+                  t("폴더에서 보기"),
+                  () => runAction("reveal-item", item.id),
+              ],
+          ];
     for (const [glyph, text, run] of entries) {
         menu.add(
             button()
@@ -2471,9 +2515,10 @@ async function refreshTranslationStatus() {
         translationStatus = await window.openCapture.translationStatus();
         renderTranslationStatus();
     } catch {
-        modelStatusText.el.textContent = "상태를 확인할 수 없음";
-        modelDetails.el.textContent =
-            "번역 서비스를 시작한 뒤 다시 확인해 주세요.";
+        modelStatusText.el.textContent = t("상태를 확인할 수 없음");
+        modelDetails.el.textContent = t(
+            "번역 서비스를 시작한 뒤 다시 확인해 주세요.",
+        );
     }
 }
 
@@ -2485,29 +2530,29 @@ function renderTranslationStatus() {
     modelStatusDot.el.classList.toggle("ready", local.installed);
     modelStatusDot.el.classList.toggle("pending", Boolean(local.installing));
     modelStatusText.el.textContent = local.installing
-        ? "모델 설치 중"
+        ? t("모델 설치 중")
         : local.installed
-          ? "로컬 모델 사용 가능"
-          : "로컬 모델 설치 필요";
-    const sizeText = local.size ? `약 ${local.size}` : "필요한 모델 파일";
+          ? t("로컬 모델 사용 가능")
+          : t("로컬 모델 설치 필요");
+    const sizeText = local.size ? `약 ${local.size}` : t("필요한 모델 파일");
     modelDetails.el.textContent = local.installed
-        ? "다운로드된 모델로 오프라인 번역을 사용할 수 있습니다."
+        ? t("다운로드된 모델로 오프라인 번역을 사용할 수 있습니다.")
         : `${sizeText}을 내려받습니다. 설치 후에는 오프라인으로 동작합니다.`;
     installButton.el.hidden = local.installed;
     installButton.el.disabled = Boolean(local.installing);
     providerStatus.el.textContent = [
         translationStatus.providers.deepl.configured
-            ? "DeepL 연결됨"
-            : "DeepL 미연결",
+            ? t("DeepL 연결됨")
+            : t("DeepL 미연결"),
         translationStatus.providers.google.configured
-            ? "Google 연결됨"
-            : "Google 미연결",
+            ? t("Google 연결됨")
+            : t("Google 미연결"),
     ].join(" · ");
 }
 
 async function installModels() {
     installButton.el.disabled = true;
-    modelStatusText.el.textContent = "모델 설치 중";
+    modelStatusText.el.textContent = t("모델 설치 중");
     modelStatusDot.el.classList.add("pending");
     try {
         translationStatus = await window.openCapture.installModels();
@@ -2527,7 +2572,7 @@ async function translateText() {
         showToast("번역할 내용을 입력해 주세요.", true);
         return;
     }
-    resultText.el.value = "번역 중…";
+    resultText.el.value = t("번역 중…");
     try {
         const translated = await window.openCapture.translate({
             texts: [text],
@@ -2677,33 +2722,6 @@ async function openUpscale(item: OpenCaptureItem) {
     }
 }
 
-function unsharpMask(
-    canvas: HTMLCanvasElement,
-    radius: number,
-    amount: number,
-) {
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-    const blur = document.createElement("canvas");
-    blur.width = canvas.width;
-    blur.height = canvas.height;
-    const bctx = blur.getContext("2d");
-    if (!bctx) return;
-    bctx.filter = `blur(${radius}px)`;
-    bctx.drawImage(canvas, 0, 0);
-    const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const soft = bctx.getImageData(0, 0, canvas.width, canvas.height);
-    const s = source.data;
-    const b = soft.data;
-    for (let i = 0; i < s.length; i += 4) {
-        for (let c = 0; c < 3; c++) {
-            const v = s[i + c] + (s[i + c] - b[i + c]) * amount;
-            s[i + c] = v < 0 ? 0 : v > 255 ? 255 : v;
-        }
-    }
-    ctx.putImageData(source, 0, 0);
-}
-
 function upscaleOversized() {
     const target = upscaleTarget;
     if (!target) return false;
@@ -2726,7 +2744,7 @@ function renderUpscale() {
     const tooLarge = upscaleOversized();
     upscaleInfo.el.textContent = `${iw}×${ih} → ${outW}×${outH}`;
     upscaleError.el.textContent = tooLarge
-        ? "결과 크기가 너무 큽니다. 배율을 낮춰 주세요."
+        ? t("결과 크기가 너무 큽니다. 배율을 낮춰 주세요.")
         : "";
     const canvas = upscaleCanvas.el;
     const pv = Math.min(1, 700 / Math.max(outW, outH));
@@ -2762,57 +2780,21 @@ async function saveUpscaled() {
     const target = upscaleTarget;
     if (!target) return;
     if (upscaleOversized()) {
-        upscaleError.el.textContent =
-            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.";
+        upscaleError.el.textContent = t(
+            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.",
+        );
         return;
     }
     const dataURL = upscaleFull(target).toDataURL("image/png");
     closeModal(upscaleDialog.el);
-    await runAction("save-composed", {
-        id: target.id,
-        dataURL,
-        label: "Upscale",
-    });
-    showToast("업스케일 이미지를 컬렉션에 저장했습니다.");
-}
-
-function sampleEdgeColor(image: HTMLImageElement): [number, number, number] {
-    const size = 32;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return [38, 60, 74];
-    ctx.drawImage(image, 0, 0, size, size);
-    const { data } = ctx.getImageData(0, 0, size, size);
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    let n = 0;
-    for (let y = 0; y < size; y++)
-        for (let x = 0; x < size; x++) {
-            if (y > 2 && y < size - 3 && x > 2 && x < size - 3) continue;
-            const i = (y * size + x) * 4;
-            const a = data[i + 3] / 255;
-            r += data[i] * a;
-            g += data[i + 1] * a;
-            b += data[i + 2] * a;
-            n += a;
-        }
-    if (!n) return [38, 60, 74];
-    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
-}
-
-function mixChannel(
-    from: [number, number, number],
-    to: [number, number, number],
-    t: number,
-): [number, number, number] {
-    return [
-        Math.round(from[0] + (to[0] - from[0]) * t),
-        Math.round(from[1] + (to[1] - from[1]) * t),
-        Math.round(from[2] + (to[2] - from[2]) * t),
-    ];
+    if (
+        await runAction("save-composed", {
+            id: target.id,
+            dataURL,
+            label: "Upscale",
+        })
+    )
+        showToast("업스케일 이미지를 컬렉션에 저장했습니다.");
 }
 
 function beautifyFill(): [string, string] | null {
@@ -2903,7 +2885,7 @@ async function copyCanvas(canvas: HTMLCanvasElement) {
         const blob = await new Promise<Blob | null>((resolve) =>
             canvas.toBlob(resolve, "image/png"),
         );
-        if (!blob) throw new Error("이미지를 만들지 못했습니다.");
+        if (!blob) throw new Error(t("이미지를 만들지 못했습니다."));
         await navigator.clipboard.write([
             new ClipboardItem({ "image/png": blob }),
         ]);
@@ -2918,8 +2900,8 @@ async function saveBeautified() {
     if (!target) return;
     const dataURL = beautifyCanvas.el.toDataURL("image/png");
     closeModal(beautifyDialog.el);
-    await runAction("save-composed", { id: target.id, dataURL });
-    showToast("꾸민 이미지를 컬렉션에 저장했습니다.");
+    if (await runAction("save-composed", { id: target.id, dataURL }))
+        showToast("꾸민 이미지를 컬렉션에 저장했습니다.");
 }
 
 async function requestOcrIndex(id: string) {
@@ -2936,7 +2918,6 @@ function openQuickLook(item: OpenCaptureItem) {
     void loadQuickLookImage(item.id);
 }
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 let cropRect: { x: number; y: number; w: number; h: number } | null = null;
 let cropAnchor: { x: number; y: number } | null = null;
 
@@ -3027,12 +3008,14 @@ async function applyQlCrop() {
         if (!ctx) throw new Error("canvas");
         ctx.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
         exitQlCrop();
-        await runAction("save-composed", {
-            id: item.id,
-            dataURL: canvas.toDataURL("image/png"),
-            label: "Crop",
-        });
-        showToast("자른 이미지를 저장했습니다.");
+        if (
+            await runAction("save-composed", {
+                id: item.id,
+                dataURL: canvas.toDataURL("image/png"),
+                label: "Crop",
+            })
+        )
+            showToast("자른 이미지를 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -3087,7 +3070,7 @@ async function applyFold() {
         const bottomY = Math.round(ih * end);
         const bottomH = ih - bottomY;
         if (bottomH <= 0 || topH <= 0)
-            throw new Error("접기 범위가 이미지를 벗어났습니다.");
+            throw new Error(t("접기 범위가 이미지를 벗어났습니다."));
         const seam = Math.min(28, Math.max(14, Math.round(iw * 0.02)));
         const canvas = document.createElement("canvas");
         canvas.width = iw;
@@ -3119,19 +3102,17 @@ async function applyFold() {
         ctx.lineWidth = 1.5;
         ctx.stroke();
         closeModal(foldDialog.el);
-        await runAction("save-composed", {
-            id: target.id,
-            dataURL: canvas.toDataURL("image/png"),
-            label: "Folded",
-        });
-        showToast("중간을 접은 이미지를 저장했습니다.");
+        if (
+            await runAction("save-composed", {
+                id: target.id,
+                dataURL: canvas.toDataURL("image/png"),
+                label: "Folded",
+            })
+        )
+            showToast("중간을 접은 이미지를 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }
-}
-
-function isGifItem(item: OpenCaptureItem) {
-    return item.name.toLowerCase().endsWith(".gif");
 }
 
 async function openGifTrim(item: OpenCaptureItem) {
@@ -3149,7 +3130,7 @@ async function openGifTrim(item: OpenCaptureItem) {
         const count = decoder.tracks.selectedTrack?.frameCount ?? 0;
         if (count < 2) {
             decoder.close();
-            throw new Error("프레임이 2개 이상인 GIF만 트림할 수 있습니다.");
+            throw new Error(t("프레임이 2개 이상인 GIF만 트림할 수 있습니다."));
         }
         gifTarget?.decoder.close();
         gifTarget = { id: item.id, decoder, count };
@@ -3193,6 +3174,9 @@ async function applyGifTrim() {
     let end = Number(gifEndInput.el.value) || 0;
     if (start > end) [start, end] = [end, start];
     try {
+        const { GIFEncoder, applyPalette, quantize } =
+            // @ts-expect-error
+            (await import("gifenc")) as typeof import("gifenc");
         const gif = GIFEncoder();
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -3227,11 +3211,13 @@ async function applyGifTrim() {
         for (let i = 0; i < bytes.length; i += chunk)
             binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
         closeModal(gifDialog.el);
-        await runAction("save-gif", {
-            id: target.id,
-            dataURL: `data:image/gif;base64,${btoa(binary)}`,
-        });
-        showToast("GIF 클립을 저장했습니다.");
+        if (
+            await runAction("save-gif", {
+                id: target.id,
+                dataURL: `data:image/gif;base64,${btoa(binary)}`,
+            })
+        )
+            showToast("GIF 클립을 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -3346,14 +3332,15 @@ function renderQuickLook() {
         qlOcrText.el.textContent = item.ocrText;
         qlOcrText.el.hidden = false;
     } else if (pendingOcrIds.has(item.id)) {
-        qlOcrStatus.el.textContent = "텍스트를 인식하는 중입니다…";
+        qlOcrStatus.el.textContent = t("텍스트를 인식하는 중입니다…");
         qlOcrText.el.hidden = true;
     } else if (item.ocrDone) {
-        qlOcrStatus.el.textContent = "인식된 텍스트가 없습니다.";
+        qlOcrStatus.el.textContent = t("인식된 텍스트가 없습니다.");
         qlOcrText.el.hidden = true;
     } else {
-        qlOcrStatus.el.textContent =
-            "아직 인식하지 않았습니다. 텍스트 인식을 실행하면 검색에도 포함됩니다.";
+        qlOcrStatus.el.textContent = t(
+            "아직 인식하지 않았습니다. 텍스트 인식을 실행하면 검색에도 포함됩니다.",
+        );
         qlOcrText.el.hidden = true;
     }
 }
@@ -3396,10 +3383,10 @@ function isLibraryFiltered() {
 
 function showCaptureToast(item: OpenCaptureItem) {
     showToast("이미지가 라이브러리에 추가되었습니다", false, [
-        ["복사", () => runAction("copy-item", item.id)],
-        ["고정", () => runAction("pin-item", item.id)],
-        ["열기", () => runAction("open-item", item.id)],
-        ["메모", () => openNote(item)],
+        [t("복사"), () => runAction("copy-item", item.id)],
+        [t("고정"), () => runAction("pin-item", item.id)],
+        [t("열기"), () => runAction("open-item", item.id)],
+        [t("메모"), () => openNote(item)],
     ]);
 }
 
@@ -3427,54 +3414,6 @@ function showToast(
     toastTimer = window.setTimeout(
         () => toast.el.classList.remove("visible"),
         actions.length ? 8000 : 3200,
-    );
-}
-
-function errorMessage(error: unknown) {
-    return error instanceof Error
-        ? error.message
-        : "요청을 처리하지 못했습니다.";
-}
-
-function formatDate(value: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "날짜 정보 없음";
-    return new Intl.DateTimeFormat("ko-KR", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    }).format(date);
-}
-
-function formatShortcut(value: string) {
-    return value
-        .replaceAll(
-            "CommandOrControl",
-            navigator.platform.startsWith("Mac") ? "Cmd" : "Ctrl",
-        )
-        .replaceAll("Escape", "Esc")
-        .replaceAll("+", " + ");
-}
-
-function isState(value: unknown): value is OpenCaptureState {
-    if (!value || typeof value !== "object") return false;
-    const candidate = value as Partial<OpenCaptureState>;
-    return (
-        Array.isArray(candidate.collections) &&
-        Array.isArray(candidate.items) &&
-        typeof candidate.totalItemCount === "number" &&
-        Boolean(candidate.workflow) &&
-        Boolean(candidate.runtime)
-    );
-}
-
-function isItemsPage(value: unknown): value is OpenCaptureItemsPage {
-    if (!value || typeof value !== "object") return false;
-    const candidate = value as Partial<OpenCaptureItemsPage>;
-    return (
-        Array.isArray(candidate.items) &&
-        typeof candidate.totalItemCount === "number"
     );
 }
 
@@ -3525,7 +3464,7 @@ window.openCapture.onShowLibrary(() => showPage("library"));
 window.openCapture.onWorkflowError((message) => showToast(message, true));
 window.openCapture.onSrProgress(({ phase, percent }) => {
     if (phase === "download")
-        srToastText.el.textContent = "AI 모델을 다운로드하고 있습니다…";
+        srToastText.el.textContent = t("AI 모델을 다운로드하고 있습니다…");
     else if (phase === "run")
         srToastText.el.textContent = `AI 업스케일 처리 중 ${percent}%`;
     else {

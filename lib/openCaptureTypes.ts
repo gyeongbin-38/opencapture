@@ -155,6 +155,7 @@ export interface OpenCaptureApi {
     getItemData(id: string): Promise<string>;
     getItemFile(id: string): Promise<Uint8Array>;
     startDrag(id: string): void;
+    t(text: string): string;
     onShowLibrary(callback: () => void): () => void;
     onLibraryChanged(callback: () => void): () => void;
     onWorkflowError(callback: (message: string) => void): () => void;

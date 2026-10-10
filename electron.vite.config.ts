@@ -81,6 +81,27 @@ export default defineConfig(({ mode }) => ({
             minify: false,
             sourcemap: true,
         },
+        optimizeDeps: {
+            include: [
+                "@erase2d/fabric",
+                "@pdf-lib/upng",
+                "bmp-js",
+                "chroma-js",
+                "diff-match-patch",
+                "diff-match-patch-line-and-word",
+                "dkh-ui",
+                "edge_det",
+                "fabric",
+                "fuse.js",
+                "gifenc",
+                "hex-to-css-filter",
+                "hotkeys-js",
+                "mediabunny",
+                "picture_match",
+                "remarkable",
+                "xtranslator",
+            ],
+        },
         plugins: [
             ViteImageOptimizer({
                 cache: true,

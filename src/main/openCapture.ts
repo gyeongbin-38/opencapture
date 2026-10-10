@@ -52,6 +52,17 @@ import {
 import { removeBackground } from "./backgroundRemoval";
 import { createSuperResolution } from "./superResolution";
 
+const VIDEO_EXTENSIONS = new Set([
+    ".mp4",
+    ".webm",
+    ".mov",
+    ".mkv",
+    ".avi",
+    ".ts",
+]);
+const isVideoPath = (path: string) =>
+    VIDEO_EXTENSIONS.has(extname(path).toLowerCase());
+
 type Collection = { id: string; name: string; path: string };
 type Item = {
     id: string;
@@ -209,6 +220,7 @@ type Hooks = {
     runtimeState?: () => object;
     configureRuntime?: (input: unknown) => object | Promise<object>;
     steps?: () => void;
+    language?: () => string;
 };
 
 export function isTrustedPage(pageUrl: string, root: string, devUrl?: string) {
@@ -652,6 +664,15 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         else insertSavedItem(path, tags);
         return path;
     }
+    function rememberMedia(path: string) {
+        if (!existsSync(path) || !isVideoPath(path)) return false;
+        const existing = library.items.find(
+            (item) => pathKey(item.path) === pathKey(path),
+        );
+        if (existing) return true;
+        insertSavedItem(path);
+        return true;
+    }
     function insertSavedItem(path: string, tags?: string[]) {
         const collection =
             library.collections.find(
@@ -1007,21 +1028,34 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         )
             throw new Error("이미지를 한 번에 20개까지 가져올 수 있습니다.");
         for (const path of paths) {
+            const video = isVideoPath(path);
+            const fileSize = statSync(path).size;
             if (
-                !/\.(png|jpe?g|webp|bmp|gif)$/i.test(extname(path)) ||
-                statSync(path).size > 50 * 1024 * 1024
+                (!video &&
+                    !/\.(png|jpe?g|webp|bmp|gif)$/i.test(extname(path))) ||
+                fileSize > (video ? 500 * 1024 * 1024 : 50 * 1024 * 1024)
             )
                 throw new Error(
-                    "50MB 이하 PNG/JPEG/WebP/BMP/GIF 파일을 선택해 주세요.",
+                    "50MB 이하 이미지 또는 500MB 이하 영상 파일을 선택해 주세요.",
                 );
+            const label = basename(path, extname(path))
+                .replace(/[^\p{L}\p{N}_-]/gu, "_")
+                .slice(0, 60);
+            if (video) {
+                mkdirSync(active().path, { recursive: true });
+                const target = uniqueExportPath(
+                    active().path,
+                    `${label || "recording"}${extname(path).toLowerCase()}`,
+                );
+                copyFileSync(path, target);
+                insertSavedItem(target);
+                continue;
+            }
             const image = nativeImage.createFromPath(path);
             if (image.isEmpty()) throw new Error("읽을 수 없는 이미지입니다.");
             const size = image.getSize();
             if (size.width * size.height > 80_000_000)
                 throw new Error("이미지 해상도가 너무 큽니다.");
-            const label = basename(path, extname(path))
-                .replace(/[^\p{L}\p{N}_-]/gu, "_")
-                .slice(0, 60);
             if (extname(path).toLowerCase() === ".gif") {
                 mkdirSync(active().path, { recursive: true });
                 const target = uniqueExportPath(
@@ -1117,6 +1151,14 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     ipcMain.handle("oc:state", (event) => {
         assertSender(event, true);
         return state();
+    });
+    ipcMain.on("oc:lang", (event) => {
+        try {
+            assertSender(event, true);
+            event.returnValue = hooks.language?.() ?? "ko";
+        } catch {
+            event.returnValue = "ko";
+        }
     });
     ipcMain.handle("oc:import-files", (event, paths) => {
         assertSender(event, true);
@@ -1300,7 +1342,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     properties: ["openFile", "multiSelections"],
                     filters: [
                         {
-                            name: "이미지",
+                            name: "이미지·영상",
                             extensions: [
                                 "png",
                                 "jpg",
@@ -1308,13 +1350,17 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                                 "webp",
                                 "bmp",
                                 "gif",
+                                ...[...VIDEO_EXTENSIONS].map((e) => e.slice(1)),
                             ],
                         },
                     ],
                 });
                 if (!picked.canceled) importPaths(picked.filePaths);
-            } else if (name === "open-item") hooks.edit(getItem(payload).path);
-            else if (name === "pin-item")
+            } else if (name === "open-item") {
+                const item = getItem(payload);
+                if (isVideoPath(item.path)) await shell.openPath(item.path);
+                else hooks.edit(item.path);
+            } else if (name === "pin-item")
                 await hooks.pin(getItem(payload).path);
             else if (name === "reveal-item")
                 shell.showItemInFolder(getItem(payload).path);
@@ -1527,6 +1573,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             else notify();
         },
         remember,
+        rememberMedia,
         saveImage,
         state,
         importPaths,
