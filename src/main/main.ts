@@ -1514,6 +1514,7 @@ function pushLog(op: (typeof logs)[0]) {
 // 截屏窗口
 let clipWindow: BrowserWindow | null = null;
 let clipWindowLoaded = false;
+let pendingClipInit: [Buffer | undefined, 功能 | undefined] | null = null;
 const getClipWin = async () => {
     if (clipWindowLoaded && !clipWindow?.isDestroyed())
         return clipWindow as BrowserWindow;
@@ -1571,6 +1572,15 @@ function createClipWindow() {
     });
     _clipWindow.webContents.once("did-finish-load", () => {
         clipWindowLoaded = true;
+    });
+    _clipWindow.webContents.on("did-finish-load", () => {
+        if (pendingClipInit)
+            mainSend(_clipWindow.webContents, "clip_init", [
+                screen.getAllDisplays(),
+                pendingClipInit[0],
+                screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
+                pendingClipInit[1],
+            ]);
     });
     _clipWindow.webContents.on("console-message", (d) => {
         if (d.level !== "debug")
@@ -1694,6 +1704,7 @@ async function fullScreen() {
 }
 
 async function sendCaptureEvent(data?: Buffer, type?: 功能) {
+    pendingClipInit = [data, type];
     mainSend((await getClipWin())?.webContents, "clip_init", [
         screen.getAllDisplays(),
         data,
@@ -1704,6 +1715,7 @@ async function sendCaptureEvent(data?: Buffer, type?: 功能) {
 
 /** 关闭或隐藏截屏 */
 function exitFullScreen() {
+    pendingClipInit = null;
     if (keepClip) {
         clipWindow?.setSimpleFullScreen(false);
         clipWindow?.hide();
@@ -1719,6 +1731,7 @@ function exitFullScreen() {
 
 /** 隐藏截屏窗口 */
 function hideClip() {
+    pendingClipInit = null;
     clipWindow?.setSimpleFullScreen(false);
     clipWindow?.hide();
 }

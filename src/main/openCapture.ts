@@ -1049,13 +1049,13 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             height: compact ? 560 : 810,
             minWidth: compact ? 360 : 850,
             minHeight: compact ? 480 : 640,
-            backgroundColor: "#0b2636",
+            backgroundColor: "#0c0c0e",
             ...(process.platform === "win32"
                 ? {
                       titleBarStyle: "hidden" as const,
                       titleBarOverlay: {
-                          color: "#0b2636",
-                          symbolColor: "#e9f5f8",
+                          color: "#0c0c0e",
+                          symbolColor: "#f2f2f4",
                           height: 36,
                       },
                   }
