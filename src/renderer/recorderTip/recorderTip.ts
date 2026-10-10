@@ -126,6 +126,12 @@ function initRecord() {
         uIOhook.on("mousedown", (e) => {
             const b = e.button as 1 | 2 | 3;
             m2m[b].el.style.backgroundColor = "#00f";
+            const ripple = document.createElement("div");
+            ripple.className = "click_ripple";
+            ripple.style.left = recorderMouseEl.style.left;
+            ripple.style.top = recorderMouseEl.style.top;
+            document.body.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 600);
         });
         uIOhook.on("mouseup", (e) => {
             const b = e.button as 1 | 2 | 3;

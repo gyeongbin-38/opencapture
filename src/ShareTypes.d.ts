@@ -341,6 +341,7 @@ export interface setting {
             关键帧间隔: number;
             缩放: number;
             格式: string;
+            质量: "high" | "medium" | "low";
             导出后关闭: boolean;
         };
     };
@@ -426,6 +427,7 @@ type 功能列表 = [
     "close",
     "screens",
     "ocr",
+    "ocrcopy",
     "search",
     "QR",
     "open",
@@ -443,7 +445,7 @@ type 功能 = 功能列表[number];
 
 type EditType = {
     select: "rect" | "free" | "draw";
-    draw: "free" | "eraser" | "spray";
+    draw: "free" | "eraser" | "spray" | "highlighter";
     shape:
         | "line"
         | "circle"

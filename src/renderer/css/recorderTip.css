@@ -80,6 +80,25 @@ body {
     height: 100%;
 }
 
+.click_ripple {
+    position: fixed;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%) scale(0.5);
+    border-radius: 50%;
+    border: 3px solid #ff0;
+    opacity: 0.9;
+    pointer-events: none;
+    animation: click_ripple 0.55s ease-out forwards;
+}
+
+@keyframes click_ripple {
+    to {
+        transform: translate(-50%, -50%) scale(2.2);
+        opacity: 0;
+    }
+}
+
 .wheel_u {
     clip-path: polygon(50% 0, 0% 100%, 100% 100%);
 }

@@ -551,7 +551,6 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     ) => {
         const images: Electron.NativeImage[] = [];
         const sizes: Electron.Size[] = [];
-        let plan = planImageCombination(sizes, direction);
         for (const item of items) {
             const image = nativeImage.createFromPath(item.path);
             if (image.isEmpty())
@@ -559,16 +558,105 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     "One of the selected images could not be read.",
                 );
             const size = image.getSize();
-            plan = planImageCombination([...sizes, size], direction);
+            planImageCombination([...sizes, size], direction);
             images.push(image);
             sizes.push(size);
         }
-        const { width, height } = plan;
+        /** 이어진 두 이미지의 겹침 품질 — 스크롤 캡처 이어붙이기용 경계 대역 비교 */
+        const bandDiff = (
+            a: Buffer,
+            aw: number,
+            ah: number,
+            b: Buffer,
+            bw: number,
+            bh: number,
+            overlap: number,
+            vertical: boolean,
+        ) => {
+            const band = Math.min(16, overlap);
+            let sum = 0;
+            let count = 0;
+            const diff = (ai: number, bi: number) => {
+                sum +=
+                    Math.abs(a[ai] - b[bi]) +
+                    Math.abs(a[ai + 1] - b[bi + 1]) +
+                    Math.abs(a[ai + 2] - b[bi + 2]);
+                count += 3;
+            };
+            if (vertical) {
+                const w = Math.min(aw, bw);
+                for (let y = 0; y < band; y += 2)
+                    for (let x = 0; x < w; x += 6)
+                        diff(
+                            ((ah - overlap + y) * aw + x) * 4,
+                            (y * bw + x) * 4,
+                        );
+            } else {
+                const h = Math.min(ah, bh);
+                for (let y = 0; y < h; y += 2)
+                    for (let x = 0; x < band; x += 2)
+                        diff((y * aw + aw - overlap + x) * 4, (y * bw + x) * 4);
+            }
+            return count ? sum / count : Number.POSITIVE_INFINITY;
+        };
+        const findOverlap = (
+            a: Buffer,
+            aw: number,
+            ah: number,
+            b: Buffer,
+            bw: number,
+            bh: number,
+            vertical: boolean,
+        ) => {
+            const along = vertical ? Math.min(ah, bh) : Math.min(aw, bw);
+            const maxK = Math.min(along, 600);
+            let bestK = 0;
+            let bestDiff = Number.POSITIVE_INFINITY;
+            for (let k = maxK; k >= 8; k -= 4) {
+                const d = bandDiff(a, aw, ah, b, bw, bh, k, vertical);
+                if (d < bestDiff) {
+                    bestDiff = d;
+                    bestK = k;
+                }
+                if (d < 2) break;
+            }
+            return bestDiff < 6 ? bestK : 0;
+        };
+        const bitmaps = images.map((i) => i.toBitmap());
+        const vertical = direction === "vertical";
+        const overlaps = bitmaps.map((b, i) =>
+            i === 0
+                ? 0
+                : findOverlap(
+                      bitmaps[i - 1],
+                      sizes[i - 1].width,
+                      sizes[i - 1].height,
+                      b,
+                      sizes[i].width,
+                      sizes[i].height,
+                      vertical,
+                  ),
+        );
+        const totalSpan = sizes.reduce(
+            (s, size, i) =>
+                s + (vertical ? size.height : size.width) - overlaps[i],
+            0,
+        );
+        const across = sizes.reduce(
+            (m, size) => Math.max(m, vertical ? size.width : size.height),
+            0,
+        );
+        const width = vertical ? across : totalSpan;
+        const height = vertical ? totalSpan : across;
+        if (width * height > 40_000_000)
+            throw new Error(
+                "The combined image exceeds the 40MP output limit.",
+            );
         const output = Buffer.alloc(width * height * 4);
         let offsetX = 0;
         let offsetY = 0;
         for (let index = 0; index < images.length; index++) {
-            const source = images[index].toBitmap();
+            const source = bitmaps[index];
             const size = sizes[index];
             for (let row = 0; row < size.height; row++) {
                 const sourceStart = row * size.width * 4;
@@ -580,8 +668,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     sourceStart + size.width * 4,
                 );
             }
-            if (direction === "horizontal") offsetX += size.width;
-            else offsetY += size.height;
+            if (vertical) offsetY += size.height - overlaps[index];
+            else offsetX += size.width - overlaps[index];
         }
         return nativeImage.createFromBitmap(output, { width, height });
     };
@@ -812,25 +900,34 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         )
             dashboard.webContents.send("oc:workflow-error", message);
     };
-    const ocrQueue: string[] = [];
+    type OcrJob = {
+        id: string;
+        path: string;
+        once?: (text: string | null) => void;
+    };
+    const ocrQueue: OcrJob[] = [];
+    let ocrCurrentJob: OcrJob | undefined;
     let ocrWorker: BrowserWindow | null = null;
     let ocrBusy = false;
     let ocrJobTimer: ReturnType<typeof setTimeout> | undefined;
     let ocrWorkerReady = false;
     const pumpOcrQueue = () => {
         if (ocrBusy) return;
-        const id = ocrQueue.shift();
-        if (id === undefined) return;
-        const item = library.items.find((i) => i.id === id);
-        if (!item || !existsSync(item.path)) {
+        const job = ocrQueue.shift();
+        if (!job) return;
+        if (!existsSync(job.path)) {
+            job.once?.(null);
             pumpOcrQueue();
             return;
         }
+        ocrCurrentJob = job;
         ocrBusy = true;
         if (ocrJobTimer) clearTimeout(ocrJobTimer);
         ocrJobTimer = setTimeout(() => {
             ocrJobTimer = undefined;
             ocrBusy = false;
+            ocrCurrentJob?.once?.(null);
+            ocrCurrentJob = undefined;
             ocrWorker?.destroy();
             ocrWorker = null;
             ocrWorkerReady = false;
@@ -840,8 +937,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         const dispatch = () => {
             if (!ocrWorker || ocrWorker.isDestroyed()) return;
             ocrWorker.webContents.send("oc:ocr-job", {
-                id: item.id,
-                path: item.path,
+                id: job.id,
+                path: job.path,
             });
         };
         if (ocrWorker && !ocrWorker.isDestroyed() && ocrWorkerReady) dispatch();
@@ -888,10 +985,27 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     };
     const enqueueOcrIndex = (id: string) => {
         const item = library.items.find((i) => i.id === id);
-        if (!item || ocrQueue.includes(id) || ocrQueue.length >= 200) return;
-        ocrQueue.push(id);
+        if (
+            !item ||
+            ocrQueue.some((job) => job.id === id) ||
+            ocrQueue.length >= 200
+        )
+            return;
+        ocrQueue.push({ id: item.id, path: item.path });
         pumpOcrQueue();
     };
+    const ocrOnce = (path: string) =>
+        new Promise<string>((resolve, reject) => {
+            ocrQueue.push({
+                id: `once-${randomUUID()}`,
+                path,
+                once: (text) =>
+                    text === null
+                        ? reject(new Error("텍스트를 인식하지 못했습니다."))
+                        : resolve(text),
+            });
+            pumpOcrQueue();
+        });
     ipcMain.on("oc:ocr-result", (event, payload: unknown) => {
         if (
             !ocrWorker ||
@@ -903,6 +1017,17 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         ocrJobTimer = undefined;
         ocrBusy = false;
         const job = payload as { id?: unknown; ok?: unknown; text?: unknown };
+        const currentJob = ocrCurrentJob;
+        ocrCurrentJob = undefined;
+        if (currentJob?.once) {
+            currentJob.once(
+                job?.ok === true && typeof job.text === "string"
+                    ? job.text
+                    : null,
+            );
+            pumpOcrQueue();
+            return;
+        }
         const item = library.items.find((i) => i.id === job?.id);
         if (item && job.ok === true) {
             item.ocrDone = true;
@@ -1685,6 +1810,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         remember,
         rememberMedia,
         saveImage,
+        ocrOnce,
         state,
         importPaths,
         activeFolder: () => active().path,

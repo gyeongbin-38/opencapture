@@ -46,6 +46,7 @@ type Message = {
     clip_show: () => void;
     clip_close: () => void;
     clip_ocr: (img: string, type: string) => void;
+    clip_ocr_clipboard: (img: string, type: string) => void;
     clip_search: (img: string, type: string) => void;
     clip_qr: (img: string) => void;
     clip_hide: () => void;

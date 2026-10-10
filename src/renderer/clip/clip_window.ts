@@ -534,6 +534,12 @@ function runOcr() {
     toolsX.close.f();
 }
 
+function runOcrCopy() {
+    const c = getClipPhoto();
+    renderSend("clip_ocr_clipboard", [c.toDataURL(), ocr引擎.gv]);
+    toolsX.close.f();
+}
+
 function runSearch() {
     const type = 识图引擎.gv;
     if (
@@ -2248,7 +2254,7 @@ function getShapePro(name: keyof typeof shapePro) {
         sw: strokeWidth,
         shadow: 0,
     };
-    const free: (typeof name)[] = ["free", "eraser", "spray"];
+    const free: (typeof name)[] = ["free", "eraser", "spray", "highlighter"];
     if (free.includes(name)) {
         v.sc = freeColor;
         v.sw = freeWidth;
@@ -2337,6 +2343,9 @@ function setEditType<T extends keyof EditType>(
         }
         if (type === "spray") {
             freeSprayElClick();
+        }
+        if (type === "highlighter") {
+            highlighterElClick();
         }
         exitShape();
         exitFilter();
@@ -2440,26 +2449,60 @@ function freeSprayElClick() {
     fabricCanvas.freeDrawingBrush.color = getShapePro("spray").sc;
     fabricCanvas.freeDrawingBrush.width = getShapePro("spray").sw;
 }
+const HIGHLIGHTER_ALPHA = 0.4;
+function alphaColor(color: string, alpha: number) {
+    const hex = /^#([0-9a-f]{3,8})$/i.exec(color.trim());
+    if (hex) {
+        let h = hex[1];
+        if (h.length === 3 || h.length === 4)
+            h = [...h].map((c) => c + c).join("");
+        return `rgba(${Number.parseInt(h.slice(0, 2), 16)},${Number.parseInt(h.slice(2, 4), 16)},${Number.parseInt(h.slice(4, 6), 16)},${alpha})`;
+    }
+    const rgb = /^rgba?\(([^)]+)\)$/.exec(color.trim());
+    if (rgb) {
+        const p = rgb[1].split(",").map((s) => s.trim());
+        return `rgba(${p[0]},${p[1]},${p[2]},${alpha})`;
+    }
+    return color;
+}
+function highlighterElClick() {
+    const pro = getShapePro("highlighter");
+    const brush = new PencilBrush(fabricCanvas);
+    brush.color = alphaColor(pro.sc, HIGHLIGHTER_ALPHA);
+    brush.width = pro.sw;
+    brush.strokeLineCap = "round";
+    brush.strokeLineJoin = "round";
+    brush.shadow = null;
+    fabricCanvas.freeDrawingBrush = brush;
+}
 function freeShadow() {
     if (fabricCanvas.freeDrawingBrush)
-        fabricCanvas.freeDrawingBrush.shadow = new Shadow({
-            blur: getShapePro("free").shadow,
-            color: getShapePro("free").sc,
-        });
+        fabricCanvas.freeDrawingBrush.shadow =
+            mode === "highlighter"
+                ? null
+                : new Shadow({
+                      blur: getShapePro("free").shadow,
+                      color: getShapePro("free").sc,
+                  });
 }
 
 function freeDrawCursor() {
-    if (mode === "free" || mode === "eraser") {
-        let svgW = freeWidth;
+    if (mode === "free" || mode === "eraser" || mode === "highlighter") {
+        const pro = getShapePro(mode);
+        let svgW = pro.sw;
         let hW = svgW / 2;
-        const r = freeWidth / 2;
+        const r = pro.sw / 2;
         if (svgW < 10) {
             svgW = 10;
             hW = 5;
         }
         let svg = "";
-        if (mode === "free") {
-            svg = `<svg width="${svgW}" height="${svgW}" xmlns="http://www.w3.org/2000/svg"><line x1="0" x2="${svgW}" y1="${hW}" y2="${hW}" stroke="#000"/><line y1="0" y2="${svgW}" x1="${hW}" x2="${hW}" stroke="#000"/><circle style="fill:${freeColor};" cx="${hW}" cy="${hW}" r="${r}"/></svg>`;
+        if (mode === "free" || mode === "highlighter") {
+            const c =
+                mode === "highlighter"
+                    ? alphaColor(pro.sc, HIGHLIGHTER_ALPHA)
+                    : pro.sc;
+            svg = `<svg width="${svgW}" height="${svgW}" xmlns="http://www.w3.org/2000/svg"><line x1="0" x2="${svgW}" y1="${hW}" y2="${hW}" stroke="#000"/><line y1="0" y2="${svgW}" x1="${hW}" x2="${hW}" stroke="#000"/><circle style="fill:${c};" cx="${hW}" cy="${hW}" r="${r}"/></svg>`;
         } else {
             svg = `<svg width="${svgW}" height="${svgW}" xmlns="http://www.w3.org/2000/svg"><line x1="0" x2="${svgW}" y1="${hW}" y2="${hW}" stroke="#000"/><line y1="0" y2="${svgW}" x1="${hW}" x2="${hW}" stroke="#000"/><circle style="stroke-width:1;stroke:#000;fill:none" cx="${hW}" cy="${hW}" r="${r}"/></svg>`;
         }
@@ -2925,7 +2968,10 @@ function setFObjectV(
         /* 画笔 */
         if (stroke) {
             if (fabricCanvas.freeDrawingBrush)
-                fabricCanvas.freeDrawingBrush.color = stroke;
+                fabricCanvas.freeDrawingBrush.color =
+                    mode === "highlighter"
+                        ? alphaColor(stroke, HIGHLIGHTER_ALPHA)
+                        : stroke;
             const s = shapePro[editType.draw];
             if (s) s.sc = stroke;
         }
@@ -3122,6 +3168,7 @@ const tools: 功能列表 = [
     "close",
     "screens",
     "ocr",
+    "ocrcopy",
     "search",
     "QR",
     "open",
@@ -3153,6 +3200,13 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
             })),
         ),
         f: () => runOcr(),
+    },
+    ocrcopy: {
+        el: iconEl("copy").attr({
+            title: "复制文字",
+            role: "button",
+        }),
+        f: () => runOcrCopy(),
     },
     search: {
         el: selectEl(iconEl("search"), t("以图搜图"), [
@@ -3322,6 +3376,7 @@ const drawSideFree = {
     pencil: iconEl("draw").attr({ title: "画笔" }),
     eraser: iconEl("eraser").attr({ title: "橡皮" }),
     spray: iconEl("spray").attr({ title: "喷刷" }),
+    highlighter: iconEl("highlighter").attr({ title: "荧光笔" }),
 } as const;
 
 const drawShadowBlur = view().attr({ id: "shadow_blur" });
@@ -3802,6 +3857,7 @@ const drawSideEls: {
         free: drawSideFree.pencil,
         eraser: drawSideFree.eraser,
         spray: drawSideFree.spray,
+        highlighter: drawSideFree.highlighter,
     },
     filter: drawSideFiltersAll,
     shape: drawSideShapes,

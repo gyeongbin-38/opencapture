@@ -19,6 +19,7 @@ import {
     emptyState,
     errorMessage,
     formatDate,
+    formatRelativeTime,
     formatShortcut,
     isGifItem,
     isItemsPage,
@@ -225,6 +226,12 @@ const captureActions: {
         description: t("긴 페이지를 한 장으로 이어 붙여요"),
     },
     {
+        name: "previous",
+        icon: "⧉",
+        title: t("이전 영역"),
+        description: t("마지막으로 캡처한 영역을 그대로 다시 찍어요"),
+    },
+    {
         name: "record",
         icon: "●",
         title: t("화면 녹화"),
@@ -261,7 +268,7 @@ const actionGroups: { key: string; title: string; names: string[] }[] = [
     {
         key: "capture",
         title: t("캡처"),
-        names: ["capture", "fullscreen", "window", "scroll"],
+        names: ["capture", "fullscreen", "window", "scroll", "previous"],
     },
     { key: "record", title: t("녹화"), names: ["record", "steps"] },
     {
@@ -949,6 +956,13 @@ function renderShortcutSheet() {
         const keys = keyText
             ? formatShortcut(keyText).split(" + ")
             : [t("끄기")];
+        const status = !sc.requested
+            ? ""
+            : sc.available
+              ? sc.lastUsed
+                  ? formatRelativeTime(sc.lastUsed)
+                  : t("아직 사용하지 않음")
+              : t("등록 실패 — 다른 앱이 점유 중일 수 있습니다");
         shortcutList.add(
             view("x")
                 .class("shortcut-row")
@@ -956,6 +970,12 @@ function renderShortcutSheet() {
                     view("y").add([
                         label("strong", sc.label),
                         label("small", shortcutDescriptions[sc.id] ?? ""),
+                        status
+                            ? label("small", status).class(
+                                  "shortcut-status",
+                                  sc.available ? "" : "conflict",
+                              )
+                            : view(),
                     ]),
                     view("x")
                         .class("key-group")
@@ -1131,12 +1151,39 @@ const beautifyBackgrounds: {
         css: "#F4F1EA",
         fill: ["#F4F1EA", "#E9E3D5"],
     },
+    {
+        id: "mint",
+        name: t("민트"),
+        css: "linear-gradient(135deg,#9EE6B8,#4CC9F0)",
+        fill: ["#9EE6B8", "#4CC9F0"],
+    },
+    {
+        id: "peach",
+        name: t("피치"),
+        css: "linear-gradient(135deg,#FFD3A5,#FD6585)",
+        fill: ["#FFD3A5", "#FD6585"],
+    },
+    {
+        id: "aurora",
+        name: t("오로라"),
+        css: "linear-gradient(135deg,#43E97B,#38F9D7)",
+        fill: ["#43E97B", "#38F9D7"],
+    },
+    {
+        id: "mono",
+        name: t("모노"),
+        css: "linear-gradient(135deg,#232526,#414345)",
+        fill: ["#232526", "#414345"],
+    },
 ];
 const beautifyRatios: [string, number][] = [
     [t("자유"), 0],
     ["1:1", 1],
     ["4:5", 0.8],
+    ["3:2", 1.5],
     ["16:9", 16 / 9],
+    ["1.91:1", 1.91],
+    ["2:1", 2],
     ["9:16", 9 / 16],
 ];
 
@@ -1702,6 +1749,44 @@ view("y")
         view().class("onboard-icon").add(icon("✦")),
         label("strong", t("한 장에서 모두")),
     ])
+    .addInto(onboardGrid);
+const onboardTestResult = label(
+    "small",
+    t("여기를 누르고 단축키를 눌러보세요"),
+);
+const onboardTestPad = view("y")
+    .class("onboard-card", "onboard-test")
+    .attr({
+        tabIndex: 0,
+        role: "button",
+        title: t("눌러서 캡처 단축키를 직접 테스트하세요."),
+    })
+    .add([
+        view().class("onboard-icon").add(icon("⌨")),
+        label("strong", t("키 테스트")),
+        onboardTestResult,
+    ])
+    .on("keydown", (e) => {
+        const acc = acceleratorFromEvent(e);
+        if (!acc) return;
+        e.preventDefault();
+        const capture = appState.runtime.shortcuts.find(
+            (s) => s.id === "capture",
+        );
+        const shown = formatShortcut(acc);
+        if (acc === capture?.active)
+            onboardTestResult.attr({
+                textContent: `${shown} — ${t("정상 등록됨")}`,
+            });
+        else if (acc === capture?.requested && !capture.available)
+            onboardTestResult.attr({
+                textContent: `${shown} — ${t("등록 실패 상태입니다")}`,
+            });
+        else
+            onboardTestResult.attr({
+                textContent: shown,
+            });
+    })
     .addInto(onboardGrid);
 button(t("시작하기"))
     .class("primary-button", "wide")
@@ -3253,6 +3338,35 @@ async function applyGifTrim() {
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
         if (!ctx) throw new Error("canvas");
         let palette: [number, number, number][] | undefined;
+        let wrotePalette = false;
+        const framesSimilar = (a: Uint8ClampedArray, b: Uint8ClampedArray) => {
+            if (a.length !== b.length) return false;
+            let diff = 0;
+            let n = 0;
+            for (let i = 0; i < a.length; i += 64) {
+                diff += Math.abs(a[i] - b[i]);
+                n++;
+            }
+            return n > 0 && diff / n < 2;
+        };
+        let pending:
+            | { data: Uint8ClampedArray; w: number; h: number; delay: number }
+            | undefined;
+        const flushPending = () => {
+            if (!pending) return;
+            palette ??= quantize(pending.data, 256) as [
+                number,
+                number,
+                number,
+            ][];
+            const index = applyPalette(pending.data, palette);
+            gif.writeFrame(index, pending.w, pending.h, {
+                palette: wrotePalette ? undefined : palette,
+                delay: pending.delay,
+            });
+            wrotePalette = true;
+            pending = undefined;
+        };
         for (let i = start; i <= end; i++) {
             const { image } = await target.decoder.decode({
                 frameIndex: i,
@@ -3260,7 +3374,10 @@ async function applyGifTrim() {
             canvas.width = image.codedWidth;
             canvas.height = image.codedHeight;
             ctx.drawImage(image, 0, 0);
-            const delay = image.duration;
+            const delay = Math.max(
+                20,
+                Math.round((image.duration ?? 100_000) / 1000),
+            );
             image.close();
             const data = ctx.getImageData(
                 0,
@@ -3268,13 +3385,19 @@ async function applyGifTrim() {
                 canvas.width,
                 canvas.height,
             ).data;
-            palette ??= quantize(data, 256) as [number, number, number][];
-            const index = applyPalette(data, palette);
-            gif.writeFrame(index, canvas.width, canvas.height, {
-                palette: i === start ? palette : undefined,
-                delay: Math.max(20, Math.round((delay ?? 100_000) / 1000)),
-            });
+            if (pending && framesSimilar(data, pending.data)) {
+                pending.delay += delay;
+                continue;
+            }
+            flushPending();
+            pending = {
+                data,
+                w: canvas.width,
+                h: canvas.height,
+                delay,
+            };
         }
+        flushPending();
         gif.finish();
         const bytes = gif.bytes();
         let binary = "";

@@ -117,10 +117,13 @@ const initPromise = Promise.withResolvers<superInit>();
 const zeroPoint = [0, 0] as const;
 
 let lastUiData: uiData | null = null;
-const lastTransOpt: { codec: string; size: string } = {
+const lastTransOpt: { codec: string; size: string; quality: string } = {
     codec: "",
     size: "0x0",
+    quality: "",
 };
+
+const exportQualityFactor = { high: 2, medium: 1, low: 0.4 } as const;
 
 let lastEncodedChunks: (EncodedVideoChunk | null)[] = [];
 
@@ -1237,6 +1240,7 @@ async function runTransform(
     const joinOp = {
         codec: baseCodec,
         size: `${outputV.width}x${outputV.height}`,
+        quality: exportQuality.gv,
         ...op,
     };
 
@@ -1448,6 +1452,12 @@ async function runTransform(
             width: outputV.width,
             height: outputV.height,
             framerate: srcRate,
+            bitrate: Math.round(
+                bitrate *
+                    (exportQualityFactor[
+                        joinOp.quality as keyof typeof exportQualityFactor
+                    ] ?? 1),
+            ),
         });
         decoder.configure(decoderVideoConfig);
 
@@ -3714,6 +3724,16 @@ const exportConfigEls = {
 
 const exportPx = dynamicSelect();
 
+const exportQuality = select([
+    { value: "high", name: t("高画质") },
+    { value: "medium", name: t("标准") },
+    { value: "low", name: t("小文件") },
+] as const)
+    .sv(store.get("录屏.超级录屏.质量") ?? "medium")
+    .on("change", (_, el) => {
+        store.set("录屏.超级录屏.质量", el.gv);
+    });
+
 // 新建 Record 变量存储 UI 元素
 const exportEls = {
     type: select(outputType.map((t) => ({ value: t.type, name: t.name }))).on(
@@ -3741,6 +3761,7 @@ const exportEl = frame("export", {
     },
     exportConfig: exportEls.exportConfig,
     _s: spacer(),
+    quality: exportQuality,
     px: exportPx.el,
     editClip: iconBEl("draw", "编辑").on("click", async () => {
         // 统一内容获取：渲染中的帧等完成，保证快照内容最新

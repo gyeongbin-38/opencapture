@@ -1,0 +1,15 @@
+<svg
+   width="240"
+   height="240"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg">
+  <path
+     style="fill:none;stroke:#000000;stroke-width:26;stroke-linecap:round;stroke-linejoin:round;stroke-opacity:0.22"
+     d="M 40,196 H 200" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:14;stroke-linecap:round;stroke-linejoin:round"
+     d="M 82,150 170,62 198,90 110,178 72,188 Z" />
+  <path
+     style="fill:none;stroke:#000000;stroke-width:20;stroke-linecap:round;stroke-linejoin:round"
+     d="M 176,56 206,30" />
+</svg>

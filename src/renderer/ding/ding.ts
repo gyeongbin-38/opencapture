@@ -33,6 +33,7 @@ setTitle(t("贴图"));
 
 let lo: import("esearch-ocr").initType;
 let translateE: ((input: string[]) => Promise<string[]>) | undefined;
+let NodeScreenshots: typeof import("node-screenshots") | undefined;
 
 type PinShareMessage =
     | { type: "focus"; id: string }
@@ -267,6 +268,145 @@ const setNewDing = (
 
     toolBarC.add(sizeEl);
 
+    const sizePresets = [50, 75, 100, 150];
+    sizeEl.el.oncontextmenu = (e) => {
+        e.preventDefault();
+        const cur = Number(sizeInput.gv);
+        const next =
+            sizePresets[
+                (sizePresets.findIndex((p) => p >= cur) + 1) %
+                    sizePresets.length
+            ];
+        sizeInput.sv(String(next));
+        sizeChange();
+    };
+    sizeEl.el.title = `${sizeEl.el.title} (우클릭: ${sizePresets.join("/")})`;
+
+    const pinFx = { rot: 0, flip: false };
+    const applyPinFx = () => {
+        img.el.style.transformOrigin = "center";
+        img.el.style.transform = `rotate(${pinFx.rot}deg) scaleX(${pinFx.flip ? -1 : 1})`;
+    };
+
+    const drawCanvas = document.createElement("canvas");
+    drawCanvas.style.cssText =
+        "position:absolute;inset:0;z-index:1;pointer-events:none;";
+    imageP.el.appendChild(drawCanvas);
+    const drawCtx = drawCanvas.getContext("2d")!;
+    const strokes: { pts: [number, number][] }[] = [];
+    let pinDrawing = false;
+    let drawMode = false;
+    const redrawPinStrokes = () => {
+        const w = div.el.clientWidth;
+        const h = div.el.clientHeight;
+        drawCanvas.width = w;
+        drawCanvas.height = h;
+        drawCtx.lineWidth = Math.max(2, w / 240);
+        drawCtx.lineCap = "round";
+        drawCtx.lineJoin = "round";
+        drawCtx.strokeStyle = "#ff3355";
+        for (const s of strokes) {
+            if (s.pts.length < 2) continue;
+            drawCtx.beginPath();
+            for (const [i, p] of s.pts.entries())
+                i
+                    ? drawCtx.lineTo(p[0] * w, p[1] * h)
+                    : drawCtx.moveTo(p[0] * w, p[1] * h);
+            drawCtx.stroke();
+        }
+    };
+    drawCanvas.addEventListener("pointerdown", (e) => {
+        if (!drawMode || e.button !== 0) return;
+        e.stopPropagation();
+        pinDrawing = true;
+        strokes.push({
+            pts: [
+                [e.offsetX / drawCanvas.width, e.offsetY / drawCanvas.height],
+            ],
+        });
+        drawCanvas.setPointerCapture(e.pointerId);
+    });
+    drawCanvas.addEventListener("pointermove", (e) => {
+        if (!pinDrawing) return;
+        const pts = strokes.at(-1)?.pts;
+        if (!pts) return;
+        const w = drawCanvas.width;
+        const h = drawCanvas.height;
+        const nx = e.offsetX / w;
+        const ny = e.offsetY / h;
+        const last = pts.at(-1)!;
+        pts.push([nx, ny]);
+        drawCtx.beginPath();
+        drawCtx.moveTo(last[0] * w, last[1] * h);
+        drawCtx.lineTo(nx * w, ny * h);
+        drawCtx.stroke();
+    });
+    const endPinStroke = () => {
+        pinDrawing = false;
+    };
+    drawCanvas.addEventListener("pointerup", endPinStroke);
+    drawCanvas.addEventListener("pointercancel", endPinStroke);
+    drawCanvas.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        strokes.length = 0;
+        redrawPinStrokes();
+    });
+    const drawButton = button(iconEl("draw"))
+        .attr({ title: "그리기 (우클릭 지우기)" })
+        .on("click", () => {
+            drawMode = !drawMode;
+            drawCanvas.style.pointerEvents = drawMode ? "auto" : "none";
+            drawButton.el.style.background = drawMode
+                ? "var(--bar-focus-color)"
+                : "";
+            if (drawMode) redrawPinStrokes();
+        });
+    div.el.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && drawMode) drawButton.el.click();
+    });
+    new ResizeObserver(() => {
+        if (strokes.length) redrawPinStrokes();
+    }).observe(div.el);
+
+    let linkTimer: NodeJS.Timeout | null = null;
+    let linkedApp = "";
+    const focusedApp = () => {
+        try {
+            NodeScreenshots ??= require("node-screenshots");
+            const w = NodeScreenshots?.Window.all().find((w) => w.isFocused());
+            return w ? { app: w.appName(), pid: w.pid() } : null;
+        } catch {
+            return null;
+        }
+    };
+    const linkButton = button(iconEl("link"))
+        .attr({
+            title: "다음에 포커스하는 앱에 연결 (그 앱에서만 핀 표시)",
+            ariaPressed: "false",
+        })
+        .on("click", () => {
+            if (linkTimer) {
+                clearInterval(linkTimer);
+                linkTimer = null;
+                div.el.style.visibility = "";
+                linkButton.el.style.background = "";
+                linkButton.el.setAttribute("aria-pressed", "false");
+                return;
+            }
+            linkedApp = "";
+            linkButton.el.style.background = "var(--bar-focus-color)";
+            linkButton.el.setAttribute("aria-pressed", "true");
+            linkTimer = setInterval(() => {
+                const c = focusedApp();
+                if (!c) return;
+                if (!linkedApp && c.pid !== process.pid) linkedApp = c.app;
+                div.el.style.visibility =
+                    c.pid === process.pid || c.app === linkedApp
+                        ? ""
+                        : "hidden";
+            }, 700);
+        });
+
     // 滚轮缩放
     div.el.onwheel = (e) => {
         if (e.deltaY !== 0) {
@@ -377,6 +517,20 @@ const setNewDing = (
                 blinkButton,
                 ignoreButton,
                 ocrTextButton,
+                drawButton,
+                button(iconEl("reload"))
+                    .attr({ title: "90° 회전" })
+                    .on("click", () => {
+                        pinFx.rot = (pinFx.rot + 90) % 360;
+                        applyPinFx();
+                    }),
+                button(iconEl("mirror"))
+                    .attr({ title: "좌우 반전" })
+                    .on("click", () => {
+                        pinFx.flip = !pinFx.flip;
+                        applyPinFx();
+                    }),
+                linkButton,
                 button(iconEl("free_draw"))
                     .attr({ title: "编辑" })
                     .on("click", () => {

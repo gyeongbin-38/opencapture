@@ -47,6 +47,25 @@ export function formatDate(value: string) {
     }).format(date);
 }
 
+export function formatRelativeTime(value: number) {
+    const diff = Date.now() - value;
+    if (diff < 60_000) return t("방금 사용");
+    if (diff < 3_600_000)
+        return t("{n}분 전 사용").replace(
+            "{n}",
+            String(Math.floor(diff / 60_000)),
+        );
+    if (diff < 86_400_000)
+        return t("{n}시간 전 사용").replace(
+            "{n}",
+            String(Math.floor(diff / 3_600_000)),
+        );
+    return t("{n}일 전 사용").replace(
+        "{n}",
+        String(Math.floor(diff / 86_400_000)),
+    );
+}
+
 export function formatShortcut(value: string) {
     return value
         .replaceAll(

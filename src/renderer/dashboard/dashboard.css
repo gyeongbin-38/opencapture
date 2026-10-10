@@ -2621,6 +2621,16 @@ body {
     color: var(--muted);
     line-height: 1.5;
 }
+.onboard-test {
+    cursor: pointer;
+}
+.onboard-test:focus {
+    border-color: var(--primary);
+    outline: none;
+}
+.onboard-test:focus .onboard-icon {
+    color: var(--primary);
+}
 .onboard-icon {
     width: 34px;
     height: 34px;

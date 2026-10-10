@@ -87,6 +87,7 @@ export interface OpenCaptureShortcut {
     available: boolean;
     custom?: string | null;
     default?: string;
+    lastUsed?: number | null;
 }
 
 export type MouseChordAction = "关闭" | "截屏" | "快速截屏" | "录屏" | "起始页";

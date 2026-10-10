@@ -38,6 +38,7 @@ import minimist from "minimist";
 import initScreenShots from "../renderer/screenShot/screenShot";
 
 import { exec, execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
     cpSync,
     existsSync,
@@ -78,6 +79,11 @@ mkdirSync(app.getPath("userData"), { recursive: true });
 let openCapture: ReturnType<typeof installOpenCapture> | undefined;
 const brokerMode = process.argv.includes("--broker");
 let shortcutStatus: ShortcutStatus[] = [];
+const shortcutLastUsed = new Map<string, number>();
+const markUsed = (id: string, run: () => void) => () => {
+    shortcutLastUsed.set(id, Date.now());
+    run();
+};
 const loginTarget = () => {
     const helper = join(dirname(process.execPath), "OpenCaptureQuick.exe");
     return existsSync(helper)
@@ -692,6 +698,7 @@ function ocShortcutRequests() {
         return {
             ...def,
             keys: key === undefined ? def.keys : key === "" ? [] : [key],
+            run: markUsed(def.id, def.run),
         };
     });
 }
@@ -705,6 +712,7 @@ function ocShortcutStatus() {
         ...s,
         custom: custom[s.id] ?? null,
         default: defaults.get(s.id) ?? s.requested,
+        lastUsed: shortcutLastUsed.get(s.id) ?? null,
     }));
 }
 
@@ -729,7 +737,7 @@ function rebindOcShortcut(id: string, key: unknown): boolean {
             break;
         }
         try {
-            if (globalShortcut.register(k, def.run)) {
+            if (globalShortcut.register(k, markUsed(id, def.run))) {
                 active = k;
                 break;
             }
@@ -1606,6 +1614,27 @@ mainOn("clip_close", () => {
 });
 mainOn("clip_ocr", ([img, type]) => {
     createMainWindow({ type: "ocr", content: img, arg0: type });
+});
+mainOn("clip_ocr_clipboard", async ([img]) => {
+    const image = nativeImage.createFromDataURL(img);
+    if (image.isEmpty()) return;
+    const tmp = join(tmpdir(), `oc-ocr-${randomUUID()}.png`);
+    writeFileSync(tmp, image.toPNG(), { flag: "wx" });
+    const notify = (body: string) =>
+        new Notification({ title: "OpenCapture", body }).show();
+    try {
+        const text = (await openCapture?.ocrOnce(tmp)) ?? "";
+        if (text.trim()) {
+            await clipboard.writeText(text);
+            notify(t("텍스트를 복사했습니다"));
+        } else notify(t("인식된 텍스트가 없습니다"));
+    } catch {
+        notify(t("텍스트를 인식하지 못했습니다"));
+    } finally {
+        try {
+            rmSync(tmp, { force: true });
+        } catch {}
+    }
 });
 mainOn("clip_search", ([img, type]) => {
     createMainWindow({ type: "image", content: img, arg0: type });
@@ -2903,6 +2932,7 @@ const defaultSetting: setting = {
     全局工具快捷键: {
         close: "",
         ocr: "",
+        ocrcopy: "",
         search: "",
         QR: "",
         open: "",
@@ -2919,6 +2949,7 @@ const defaultSetting: setting = {
     工具快捷键: {
         close: "Escape",
         ocr: "Enter",
+        ocrcopy: "",
         search: "",
         QR: "",
         open: "",
@@ -2940,7 +2971,15 @@ const defaultSetting: setting = {
     起始页快捷键: {},
     截屏编辑快捷键: {
         select: { 键: "1", 副: { rect: "1+2", free: "1+3", draw: "1+4" } },
-        draw: { 键: "2", 副: { free: "2+3", eraser: "2+4", spray: "2+5" } },
+        draw: {
+            键: "2",
+            副: {
+                free: "2+3",
+                eraser: "2+4",
+                spray: "2+5",
+                highlighter: "2+6",
+            },
+        },
         shape: {
             键: "3",
             副: {
@@ -3104,6 +3143,7 @@ const defaultSetting: setting = {
         形状属性: {
             arrow: { sw: 3 },
             mask: { fc: "#0005" },
+            highlighter: { sw: 10 },
         },
         记忆: {
             select: "rect",
@@ -3312,6 +3352,7 @@ const defaultSetting: setting = {
             关键帧间隔: 150,
             格式: "gif",
             缩放: 2,
+            质量: "medium",
             导出后关闭: false,
         },
     },

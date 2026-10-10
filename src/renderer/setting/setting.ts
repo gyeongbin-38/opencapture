@@ -127,6 +127,7 @@ const tools: { key: 功能; icon: string; title: string }[] = [
     { key: "close", icon: getImgUrl("close.svg"), title: t("关闭") },
     { key: "screens", icon: getImgUrl("screen.svg"), title: t("屏幕管理") },
     { key: "ocr", icon: getImgUrl("ocr.svg"), title: t("文字识别") },
+    { key: "ocrcopy", icon: getImgUrl("copy.svg"), title: t("复制文字") },
     { key: "search", icon: getImgUrl("search.svg"), title: t("以图搜图") },
     { key: "QR", icon: getImgUrl("scan.svg"), title: t("二维码") },
     { key: "open", icon: getImgUrl("open.svg"), title: t("其他应用打开") },
