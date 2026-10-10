@@ -36,7 +36,14 @@ async function captureMonitor(monitor: import("node-screenshots").Monitor) {
         const { execFile } =
             require("node:child_process") as typeof ChildProcess;
         const { join } = require("node:path") as typeof import("node:path");
-        const runtime = join(__dirname, "../../assets/runtime/win32-x64");
+        const { existsSync } = require("node:fs") as typeof import("node:fs");
+        const runtime = [
+            join(__dirname, "../../assets/runtime/win32-x64"),
+            join(process.resourcesPath || "", "assets/runtime/win32-x64"),
+            join(process.cwd(), "assets/runtime/win32-x64"),
+            join(process.cwd(), "resources/assets/runtime/win32-x64"),
+        ].find((p) => existsSync(join(p, "python.exe")));
+        if (!runtime) throw error;
         const region = {
             left: monitor.x(),
             top: monitor.y(),

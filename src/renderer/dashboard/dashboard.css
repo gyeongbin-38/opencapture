@@ -164,21 +164,9 @@ textarea::placeholder {
     position: fixed;
     inset: 0 0 auto;
     height: 36px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 148px 0 21px;
     z-index: 60;
-    color: #cccccc;
-    font-size: 11px;
-    background: #212121;
     -webkit-app-region: drag;
     user-select: none;
-}
-.window-titlebar .icon {
-    width: 14px;
-    height: 14px;
-    color: var(--primary);
 }
 .app-shell {
     display: flex !important;
@@ -275,25 +263,11 @@ textarea::placeholder {
 }
 .sidebar-bottom {
     margin-top: auto;
-    gap: 18px;
+    gap: 12px;
     padding: 20px 8px 0;
 }
-.shortcut-button {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 12px;
-    color: var(--muted);
-}
-.shortcut-button .icon {
-    width: 17px;
-    height: 17px;
-}
-.shortcut-button small {
-    margin-left: auto;
-    border: 1px solid var(--line);
-    padding: 0 5px;
-    border-radius: 4px;
+.sidebar-tools {
+    gap: 6px;
 }
 .version {
     font-size: 10px;
@@ -532,10 +506,6 @@ textarea::placeholder {
 }
 .field-group {
     gap: 7px;
-}
-.field-group label {
-    color: var(--muted);
-    font-size: 12px;
 }
 .select-control,
 .main input:not([type="checkbox"]):not([type="file"]) {
@@ -874,20 +844,6 @@ textarea::placeholder {
 .status-dot.pending {
     background: #cfcfcf;
 }
-.privacy-note {
-    align-items: flex-start;
-    gap: 7px;
-    padding-top: 13px;
-    border-top: 1px solid var(--line);
-}
-.privacy-note .icon {
-    width: 16px;
-    height: 16px;
-    color: var(--primary);
-}
-.privacy-note p {
-    font-size: 11px;
-}
 .settings-layout {
     gap: 18px;
 }
@@ -902,21 +858,8 @@ textarea::placeholder {
     align-items: center;
     gap: 14px;
 }
-.settings-card-heading > div:last-child {
-    gap: 5px;
-}
 .settings-card p {
     font-size: 12px;
-}
-.settings-icon {
-    width: 38px;
-    height: 38px;
-    color: var(--sky);
-    background: #b4b4b40e;
-    border-radius: 11px;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
 }
 .folder-row {
     gap: 13px;
@@ -1220,9 +1163,6 @@ kbd {
     .topbar {
         align-items: flex-start;
     }
-    .top-actions .primary-button {
-        padding: 9px 11px;
-    }
     .action-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1251,12 +1191,6 @@ kbd {
 @media (max-width: 500px) {
     .window-titlebar {
         height: 32px;
-        padding-left: 15px;
-        font-size: 10px;
-    }
-    .window-titlebar .icon {
-        width: 12px;
-        height: 12px;
     }
     .app-shell {
         padding-top: 32px;
@@ -1330,16 +1264,6 @@ kbd {
     .top-actions .ghost-button span:not(.icon) {
         display: none;
     }
-    .top-actions .primary-button {
-        min-height: 33px;
-        padding: 8px 10px;
-        font-size: 10px;
-        gap: 4px;
-    }
-    .top-actions .primary-button .icon {
-        width: 14px;
-        height: 14px;
-    }
     .section-heading {
         margin: 23px 0 12px;
     }
@@ -1386,10 +1310,6 @@ kbd {
     .section-toolbar .field-group {
         flex: 1;
         min-width: 0;
-    }
-    .section-toolbar .field-group > label,
-    .section-toolbar .field-group > small {
-        display: none;
     }
     .section-toolbar .select-control {
         width: 100%;
@@ -1696,31 +1616,11 @@ kbd {
     --violet: #b4b4b4;
 }
 body {
-    background: radial-gradient(
-            circle at 50% -20%,
-            rgba(105, 105, 105, 0.2),
-            transparent 44%
-        ), linear-gradient(135deg, #090909 0%, #101010 45%, #131313 100%);
+    background: #0b0b0b;
     overflow-x: hidden;
 }
-body::before {
-    z-index: 0;
-    background: linear-gradient(
-            115deg,
-            rgba(255, 255, 255, 0.018),
-            transparent 38%
-        ),
-        radial-gradient(
-            circle at 50% 20%,
-            transparent 0,
-            rgba(7, 7, 7, 0.15) 72%
-        );
-}
 .window-titlebar {
-    background: rgba(12, 12, 12, 0.58);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-    backdrop-filter: blur(26px) saturate(150%);
-    color: #e6e6e6;
+    background: transparent;
 }
 .app-shell {
     position: relative;
@@ -1878,8 +1778,7 @@ body::before {
         rgba(0, 0, 0, 0.24), 0 0 35px
         color-mix(in srgb, var(--tool) 11%, transparent);
 }
-.action-icon,
-.settings-icon {
+.action-icon {
     background: linear-gradient(
         145deg,
         color-mix(in srgb, currentColor 15%, transparent),
@@ -2267,11 +2166,6 @@ body::before {
     overflow: hidden;
     overflow-wrap: anywhere;
 }
-.dialog-desc {
-    color: var(--muted);
-    font-size: 12px;
-    margin: 8px 0 0;
-}
 .note-input {
     width: 100%;
     margin-top: 14px;
@@ -2633,8 +2527,9 @@ body::before {
 .onboard-keys {
     margin-top: 4px;
 }
-.guide-button {
-    justify-content: flex-start;
+.selection-toolbar:not(.has-selection) .bulk-action,
+.selection-toolbar:not(.has-selection) .combine-action {
+    display: none;
 }
 
 @media (max-width: 900px) {

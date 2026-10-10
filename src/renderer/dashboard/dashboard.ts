@@ -70,11 +70,7 @@ const label = (
     value: string,
 ) => ele(tag).attr({ textContent: value });
 
-const windowTitlebar = view("x").class("window-titlebar").addInto();
-windowTitlebar.add([
-    view().class("window-titlebar-mark").add(icon("⌁")),
-    label("span", "OpenCapture"),
-]);
+view("x").class("window-titlebar").addInto();
 
 const shell = view("x").class("app-shell").addInto();
 const sidebar = ele("aside").class("sidebar").addInto(shell);
@@ -106,18 +102,19 @@ for (const item of navItems) {
 }
 
 const sidebarBottom = view("y").class("sidebar-bottom").addInto(sidebar);
+const sidebarTools = view("x").class("sidebar-tools").addInto(sidebarBottom);
 button()
-    .class("shortcut-button")
-    .attr({ type: "button" })
-    .add([icon("⌘"), label("span", "단축키 보기"), label("small", "?")])
+    .class("ghost-button", "compact", "icon-button")
+    .attr({ type: "button", title: "단축키 보기", ariaLabel: "단축키 보기" })
+    .add(icon("?"))
     .on("click", () => openShortcutSheet())
-    .addInto(sidebarBottom);
+    .addInto(sidebarTools);
 button()
-    .class("text-button", "guide-button")
-    .attr({ type: "button" })
-    .add([icon("✦"), label("span", "시작 가이드")])
+    .class("ghost-button", "compact", "icon-button")
+    .attr({ type: "button", title: "시작 가이드", ariaLabel: "시작 가이드" })
+    .add(icon("✦"))
     .on("click", () => openOnboarding())
-    .addInto(sidebarBottom);
+    .addInto(sidebarTools);
 
 const versionLabel = label("small", "OpenCapture")
     .class("version")
@@ -145,12 +142,6 @@ button()
     .attr({ type: "button", title: "이미지 열기", ariaLabel: "이미지 열기" })
     .add(icon("＋"))
     .on("click", () => runAction("open-image"))
-    .addInto(topActions);
-button()
-    .class("primary-button", "compact")
-    .attr({ type: "button" })
-    .add([icon("⌗"), label("span", "새 캡처")])
-    .on("click", () => runAction("capture"))
     .addInto(topActions);
 
 const content = ele("div").class("content").addInto(main);
@@ -341,7 +332,6 @@ for (const option of workflowOptions) {
 
 const libraryToolbar = view("x").class("section-toolbar").addInto(libraryPage);
 const collectionGroup = view("y").class("field-group").addInto(libraryToolbar);
-collectionGroup.add(label("small", "컬렉션"));
 const collectionSelect = select([])
     .class("select-control")
     .attr({ ariaLabel: "컬렉션 선택" })
@@ -351,7 +341,6 @@ const collectionSelect = select([])
     })
     .addInto(collectionGroup);
 const searchGroup = view("y").class("field-group").addInto(libraryToolbar);
-searchGroup.add(label("small", "검색"));
 const searchField = view("x").class("search-field").addInto(searchGroup);
 searchField.add(view().class("search-icon").add(icon("⌕")));
 const searchInput = input("text")
@@ -673,8 +662,6 @@ button()
     .addInto(resultFooter);
 
 const modelPanel = view("y").class("model-panel").addInto(translatorLayout);
-const engineTitle = label("h2", "무료 로컬 번역");
-const engineNotice = p("로컬 엔진은 원문을 외부로 보내지 않습니다.");
 const engineChoice = select<TranslationEngine>([
     { value: "local", name: "로컬 · 오프라인" },
     { value: "deepl", name: "DeepL · 온라인" },
@@ -691,12 +678,7 @@ const engineChoice = select<TranslationEngine>([
             showToast(errorMessage(error), true);
         }
     });
-modelPanel.add([
-    label("small", "번역 엔진").class("eyebrow"),
-    engineTitle,
-    engineChoice,
-    engineNotice,
-]);
+modelPanel.add([engineChoice]);
 const statusRow = view("x").class("status-row").addInto(modelPanel);
 const modelStatusDot = ele("span").class("status-dot").addInto(statusRow);
 const modelStatusText = label("strong", "상태 확인 중").addInto(statusRow);
@@ -709,27 +691,11 @@ const installButton = button()
     .add([icon("⇩"), label("span", "로컬 모델 설치")])
     .on("click", () => installModels())
     .addInto(modelPanel);
-modelPanel.add(
-    view("x")
-        .class("privacy-note")
-        .add([
-            icon("✓"),
-            p("화면·고정 이미지 번역은 기본 로컬 엔진을 사용합니다."),
-        ]),
-);
 
 const settingsLayout = view("y").class("settings-layout").addInto(settingsPage);
 const storageCard = view("y").class("settings-card").addInto(settingsLayout);
 storageCard.add([
-    view("x")
-        .class("settings-card-heading")
-        .add([
-            view().class("settings-icon").add(icon("▰")),
-            view("y").add([
-                label("h2", "저장 위치"),
-                p("캡처 파일이 저장되는 기본 폴더입니다."),
-            ]),
-        ]),
+    view("x").class("settings-card-heading").add(label("h2", "저장 위치")),
 ]);
 const folderRow = view("x").class("folder-row").addInto(storageCard);
 const folderPath = ele("code")
@@ -745,15 +711,7 @@ const convenienceCard = view("y")
     .class("settings-card")
     .addInto(settingsLayout);
 convenienceCard.add(
-    view("x")
-        .class("settings-card-heading")
-        .add([
-            view().class("settings-icon", "mint").add(icon("⌘")),
-            view("y").add([
-                label("h2", "빠른 실행"),
-                p("클릭 후 새 키 입력 · Backspace 끄기"),
-            ]),
-        ]),
+    view("x").class("settings-card-heading").add(label("h2", "빠른 실행")),
 );
 const startAtLoginInput = input("checkbox").attr({
     ariaLabel: "로그인할 때 OpenCapture 시작",
@@ -801,15 +759,7 @@ const runtimeShortcutList = view("y")
 
 const providerCard = view("y").class("settings-card").addInto(settingsLayout);
 providerCard.add(
-    view("x")
-        .class("settings-card-heading")
-        .add([
-            view().class("settings-icon", "lavender").add(icon("文")),
-            view("y").add([
-                label("h2", "외부 번역 연결"),
-                p("선택 사항 · 키는 안전하게 보관됩니다"),
-            ]),
-        ]),
+    view("x").class("settings-card-heading").add(label("h2", "외부 번역 연결")),
 );
 const providerForm = view("x").class("provider-form").addInto(providerCard);
 const providerSelect = select([
@@ -835,15 +785,7 @@ const aboutCard = view("x")
     .class("settings-card", "about-card")
     .addInto(settingsLayout);
 aboutCard.add([
-    view("x")
-        .class("settings-card-heading")
-        .add([
-            view().class("settings-icon", "mint").add(icon("⌁")),
-            view("y").add([
-                label("h2", "OpenCapture"),
-                p("무료 오픈소스 화면 캡처 도구"),
-            ]),
-        ]),
+    view("x").class("settings-card-heading").add(label("h2", "OpenCapture")),
     label("small", "버전 확인 중").class("version-pill"),
 ]);
 
@@ -856,10 +798,7 @@ const shortcutDialog = ele("dialog")
     .addInto(modalBackdrop);
 const shortcutHeader = view("x").class("dialog-header").addInto(shortcutDialog);
 shortcutHeader.add([
-    view("y").add([
-        label("small", "빠른 실행").class("eyebrow"),
-        label("h2", "단축키"),
-    ]),
+    view("y").add(label("h2", "단축키")),
     button()
         .class("close-button")
         .attr({ type: "button", ariaLabel: "닫기" })
@@ -937,10 +876,7 @@ renameDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add([
-                label("small", "라이브러리").class("eyebrow"),
-                label("h2", "이름 바꾸기"),
-            ]),
+            view("y").add(label("h2", "이름 바꾸기")),
             button()
                 .class("close-button")
                 .attr({ type: "button", ariaLabel: "닫기" })
@@ -985,10 +921,7 @@ noteDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add([
-                label("small", "라이브러리").class("eyebrow"),
-                label("h2", "메모"),
-            ]),
+            view("y").add(label("h2", "메모")),
             button()
                 .class("close-button")
                 .attr({ type: "button", ariaLabel: "닫기" })
@@ -996,7 +929,6 @@ noteDialog.add(
                 .on("click", () => closeModal(noteDialog.el)),
         ]),
 );
-noteDialog.add(p("이 캡처에 짧은 메모를 남겨 두세요.").class("dialog-desc"));
 const noteInput = textarea()
     .class("text-control", "note-input")
     .attr({
@@ -1086,10 +1018,7 @@ beautifyDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add([
-                label("small", "공유용 이미지").class("eyebrow"),
-                label("h2", "배경 꾸미기"),
-            ]),
+            view("y").add(label("h2", "배경 꾸미기")),
             button()
                 .class("close-button")
                 .attr({ type: "button", ariaLabel: "닫기" })
@@ -1234,10 +1163,7 @@ upscaleDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add([
-                label("small", "이미지 보정").class("eyebrow"),
-                label("h2", "업스케일"),
-            ]),
+            view("y").add(label("h2", "업스케일")),
             button()
                 .class("close-button")
                 .attr({ type: "button", ariaLabel: "닫기" })
@@ -1321,13 +1247,7 @@ upscaleDialog.el.addEventListener("cancel", (event) => {
 const foldDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
 const foldHeader = view("x").class("dialog-header").addInto(foldDialog);
 const foldTitle = view("y").addInto(foldHeader);
-foldTitle.add([
-    label("h2", "중간 접기"),
-    label(
-        "small",
-        "긴 캡처의 중간 부분을 접어 짧게 표시합니다. 범위를 조절해 보세요.",
-    ),
-]);
+foldTitle.add([label("h2", "중간 접기")]);
 button()
     .class("close-button")
     .attr({ type: "button", ariaLabel: "닫기" })
@@ -1401,10 +1321,7 @@ const GifImageDecoder = (
 const gifDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
 const gifHeader = view("x").class("dialog-header").addInto(gifDialog);
 const gifTitle = view("y").addInto(gifHeader);
-gifTitle.add([
-    label("h2", "GIF 트림"),
-    label("small", "유지할 프레임 범위를 선택해 새 GIF로 저장합니다."),
-]);
+gifTitle.add([label("h2", "GIF 트림")]);
 button()
     .class("close-button")
     .attr({ type: "button", ariaLabel: "닫기" })
@@ -1615,10 +1532,7 @@ onboardDialog.add(
     view("x")
         .class("dialog-header")
         .add([
-            view("y").add([
-                label("small", "시작 가이드").class("eyebrow"),
-                label("h2", "OpenCapture 시작하기"),
-            ]),
+            view("y").add(label("h2", "OpenCapture 시작하기")),
             button()
                 .class("close-button")
                 .attr({ type: "button", ariaLabel: "닫기" })
@@ -1999,7 +1913,9 @@ function renderState() {
     selectionStatus.el.textContent = selectedCount
         ? `${selectedCount}개 선택됨`
         : "선택 없음";
+    selectionToolbar.el.classList.toggle("has-selection", selectedCount > 0);
     clearSelectionButton.el.disabled = !selectedCount;
+    clearSelectionButton.el.hidden = !selectedCount;
     selectDisplayedButton.el.disabled =
         !visibleItems.length ||
         visibleItems.every((item) => selectedItemIds.has(item.id));
@@ -2509,14 +2425,6 @@ function renderTranslationStatus() {
     if (!translationStatus) return;
     const engine = translationStatus.engine ?? "local";
     engineChoice.el.value = engine;
-    engineTitle.el.textContent =
-        engine === "local"
-            ? "무료 로컬 번역"
-            : `${engine === "deepl" ? "DeepL" : "Google"} 온라인 번역`;
-    engineNotice.el.textContent =
-        engine === "local"
-            ? "원문은 이 컴퓨터에서만 처리됩니다. 모델 설치 후 인터넷 없이 사용할 수 있습니다."
-            : "번역하기를 누르면 원문과 인증 키가 선택한 번역 제공자에게 전송됩니다. 제공자 API 요금이 적용될 수 있습니다.";
     const local = translationStatus.local;
     modelStatusDot.el.classList.toggle("ready", local.installed);
     modelStatusDot.el.classList.toggle("pending", Boolean(local.installing));

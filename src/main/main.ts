@@ -335,7 +335,7 @@ async function openClipBoard() {
 // cli参数重复启动;
 const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) {
-    app.quit();
+    app.exit(0);
 } else {
     app.on("second-instance", (_event, commanLine, _workingDirectory) => {
         if (idleExit) clearTimeout(idleExit);

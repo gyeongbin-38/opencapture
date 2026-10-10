@@ -2,14 +2,32 @@ export { t, tLan, lan, getLans, getLanName };
 import { matchFitLan } from "xtranslator";
 const path = require("node:path") as typeof import("path");
 const fs = require("node:fs") as typeof import("fs");
-const rootDirL = __dirname.split(path.sep);
-const outDir = rootDirL.lastIndexOf("out");
-const rootDir = path.join(
-    rootDirL.slice(0, outDir).join(path.sep),
-    "./lib/translate",
-);
+const rootDir = (() => {
+    try {
+        const rootDirL = __dirname.split(path.sep);
+        const outDir = rootDirL.lastIndexOf("out");
+        const dir = path.join(
+            rootDirL.slice(0, outDir).join(path.sep),
+            "./lib/translate",
+        );
+        if (fs.existsSync(dir)) return dir;
+    } catch {}
+    try {
+        const dir = path.join(process.cwd(), "lib/translate");
+        if (fs.existsSync(dir)) return dir;
+    } catch {}
+    return path.join("lib", "translate");
+})();
 
-const ignore = require(path.join(rootDir, "./ignore.json")) as string[];
+function loadJson<T>(file: string, fallback: T): T {
+    try {
+        return require(path.join(rootDir, file)) as T;
+    } catch {
+        return fallback;
+    }
+}
+
+const ignore = loadJson("./ignore.json", [] as string[]);
 
 let language = "";
 
@@ -30,7 +48,7 @@ function parseLan(lan: string) {
 function lan(lan: string | undefined) {
     language = parseLan(lan ?? "");
     if (language !== "zh-HANS") {
-        l = require(path.join(rootDir, `./${language}.json`));
+        l = loadJson(`./${language}.json`, {});
     }
 }
 
@@ -78,27 +96,27 @@ function autoSt(_text: string, map: typeof l): string {
 }
 function tLan(text: string, lan: string) {
     if (parseLan(lan) === "zh-HANS") return text;
-    const map = require(
-        path.join(rootDir, `./${parseLan(lan)}.json`),
-    ) as typeof l;
+    const map = loadJson(`./${parseLan(lan)}.json`, {} as typeof l);
     return autoSt(text, map);
 }
 
-const source = require(path.join(rootDir, "./source.json"));
+const source = loadJson("./source.json", {} as Record<string, string>);
 let l: Record<string, string>;
 
 function getLans() {
-    const lans = fs
-        .readdirSync(rootDir)
-        .filter((file) => {
-            return (
-                file.endsWith(".json") &&
-                !file.startsWith("source") &&
-                !file.startsWith(".") &&
-                file !== "ignore.json"
-            );
-        })
-        .map((l) => l.replace(".json", ""));
+    let lans: string[] = [];
+    try {
+        lans = fs
+            .readdirSync(rootDir)
+            .filter(
+                (file) =>
+                    file.endsWith(".json") &&
+                    !file.startsWith("source") &&
+                    !file.startsWith(".") &&
+                    file !== "ignore.json",
+            )
+            .map((l) => l.replace(".json", ""));
+    } catch {}
     return ["zh-HANS"].concat(lans);
 }
 
