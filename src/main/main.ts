@@ -627,8 +627,8 @@ function ocShortcutDefs(): ShortcutRequest[] {
                       id: "toggle",
                       label: "시작 화면 토글",
                       keys: [
-                          "CommandOrControl+Shift+Space",
                           "CommandOrControl+Alt+Space",
+                          "CommandOrControl+Shift+O",
                       ],
                       run: () => {
                           openCapture?.toggle();
@@ -638,7 +638,7 @@ function ocShortcutDefs(): ShortcutRequest[] {
                       id: "capture",
                       label: "영역 캡처",
                       keys: [
-                          "CommandOrControl+Shift+A",
+                          "CommandOrControl+Shift+Space",
                           "CommandOrControl+Alt+A",
                       ],
                       run: () => {

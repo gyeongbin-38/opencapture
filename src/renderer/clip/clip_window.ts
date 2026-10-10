@@ -578,10 +578,10 @@ function drawM(v: boolean) {
  * 编辑栏跟踪工具栏
  */
 function trackLocation() {
-    const h = toolBar.offsetTop;
-    let l = toolBar.offsetLeft + toolBar.offsetWidth + 8;
+    const h = radialFab.el.offsetTop;
+    let l = radialFab.el.offsetLeft + bSize + 8;
     if (drawBarPosi === "left") {
-        l = toolBar.offsetLeft - drawBar.offsetWidth - 8;
+        l = radialFab.el.offsetLeft - drawBar.offsetWidth - 8;
     }
     drawBar.style.top = `${h}px`;
     drawBar.style.left = `${l}px`;
@@ -1327,7 +1327,8 @@ function clipStart(e: MouseEvent, inRect: boolean) {
     renderClip(e);
 
     // 隐藏
-    drawBar.style.opacity = toolBar.style.opacity = "0";
+    drawBar.style.opacity = radialFab.el.style.opacity = "0";
+    closeRadial();
 }
 
 function pickColor(e: MouseEvent | PointerEvent) {
@@ -1903,74 +1904,76 @@ function followBar(op?: { x: number; y: number }) {
     const y2 = y1 + zh;
     const maxWidth = window.innerWidth;
     const maxHeight = window.innerHeight;
-    const toolW = toolBar.offsetWidth;
-    const drawW = drawBar.offsetWidth;
+    const toolW = bSize;
+    const drawW = drawBarOpen ? drawBar.offsetWidth : 0;
     const gap = barGap;
     const groupW = toolW + gap + drawW;
 
     if ((x1 + x2) / 2 <= x) {
         // 向右
         if (x2 + groupW + gap <= maxWidth) {
-            toolBar.style.left = `${x2 + gap}px`; // 贴右边
+            radialFab.el.style.left = `${x2 + gap}px`; // 贴右边
             drawBarPosi = "right";
         } else {
             if (工具栏跟随 === "展示内容优先") {
                 // 超出屏幕贴左边
                 if (x1 - groupW - gap >= 0) {
-                    toolBar.style.left = `${x1 - toolW - gap}px`;
+                    radialFab.el.style.left = `${x1 - toolW - gap}px`;
                     drawBarPosi = "left";
                 } else {
                     // 还超贴右内
-                    toolBar.style.left = `${maxWidth - groupW}px`;
+                    radialFab.el.style.left = `${maxWidth - groupW}px`;
                     drawBarPosi = "right";
                 }
             } else {
                 // 直接贴右边,即使遮挡
-                toolBar.style.left = `${x2 - groupW - gap}px`;
+                radialFab.el.style.left = `${x2 - groupW - gap}px`;
                 drawBarPosi = "right";
             }
         }
     } else {
         // 向左
         if (x1 - groupW - gap >= 0) {
-            toolBar.style.left = `${x1 - toolW - gap}px`; // 贴左边
+            radialFab.el.style.left = `${x1 - toolW - gap}px`; // 贴左边
             drawBarPosi = "left";
         } else {
             if (工具栏跟随 === "展示内容优先") {
                 // 超出屏幕贴右边
                 if (x2 + groupW <= maxWidth) {
-                    toolBar.style.left = `${x2 + gap}px`;
+                    radialFab.el.style.left = `${x2 + gap}px`;
                     drawBarPosi = "right";
                 } else {
                     // 还超贴左内
-                    toolBar.style.left = `${0 + drawW + gap}px`;
+                    radialFab.el.style.left = `${0 + drawW + gap}px`;
                     drawBarPosi = "left";
                 }
             } else {
-                toolBar.style.left = `${x1 + gap}px`;
+                radialFab.el.style.left = `${x1 + gap}px`;
                 drawBarPosi = "left";
             }
         }
     }
 
     if (y >= (y1 + y2) / 2) {
-        if (y2 - toolBar.offsetHeight >= 0) {
-            toolBar.style.top = `${y2 - toolBar.offsetHeight}px`;
+        if (y2 - bSize >= 0) {
+            radialFab.el.style.top = `${y2 - bSize}px`;
         } else {
-            if (y1 + toolBar.offsetHeight > maxHeight) {
-                toolBar.style.top = `${maxHeight - toolBar.offsetHeight}px`;
+            if (y1 + bSize > maxHeight) {
+                radialFab.el.style.top = `${maxHeight - bSize}px`;
             } else {
-                toolBar.style.top = `${y1}px`;
+                radialFab.el.style.top = `${y1}px`;
             }
         }
     } else {
-        if (y1 + toolBar.offsetHeight <= maxHeight) {
-            toolBar.style.top = `${y1}px`;
+        if (y1 + bSize <= maxHeight) {
+            radialFab.el.style.top = `${y1}px`;
         } else {
-            toolBar.style.top = `${maxHeight - toolBar.offsetHeight}px`;
+            radialFab.el.style.top = `${maxHeight - bSize}px`;
         }
     }
-    drawBar.style.opacity = toolBar.style.opacity = "1";
+    radialFab.el.style.opacity = "1";
+    radialFab.el.style.pointerEvents = "auto";
+    updateDrawBarVis();
     trackLocation();
 }
 
@@ -2291,6 +2294,11 @@ function setEditType<T extends keyof EditType>(
 
     const SELECT = "select";
 
+    if (!drawBarOpen && mainType !== "select") {
+        drawBarOpen = true;
+        updateDrawBarVis();
+    }
+
     for (const [i, mel] of Object.entries(drawMainEls)) {
         if (i === mainType) {
             mel.el.classList.add(SELECT);
@@ -2420,9 +2428,8 @@ function showSideBar(show: boolean) {
 }
 
 function showBars(b: boolean) {
-    const l = [toolBar, drawBar];
-    for (const i of l) {
-        if (b) {
+    for (const i of [radialFab.el, drawBar]) {
+        if (b && (i !== drawBar || drawBarOpen)) {
             i.style.pointerEvents = "";
             i.style.opacity = "";
         } else {
@@ -2430,6 +2437,7 @@ function showBars(b: boolean) {
             i.style.opacity = "0";
         }
     }
+    if (!b) closeRadial();
 }
 function pencilElClick() {
     fabricCanvas.freeDrawingBrush = new PencilBrush(fabricCanvas);
@@ -3534,6 +3542,7 @@ const whX1 = input();
 const whY1 = input();
 const whW = input();
 const whH = input();
+const whL = [whX0, whY0, whX1, whY1, whW, whH];
 const whXYStyle = { display: 四角坐标 ? "block" : "none" };
 whEl.add([
     view()
@@ -3822,6 +3831,143 @@ ipcRenderer.on("oc:capture-mode", (_event, payload: unknown) => {
 
 const toolBar = toolBarEl.el;
 const drawBar = drawBarEl.el;
+
+// 极简工具入口：默认只露出圆形按钮，点击后以光标为圆心展开放射菜单
+toolBarEl.style({ display: "none" });
+const radialFab = button(iconEl("add"))
+    .attr({ id: "radial_fab", title: "도구", role: "button" })
+    .class(Class.glassBar)
+    .style({ opacity: "0", pointerEvents: "none" })
+    .addInto();
+const radialMenu = view().attr({ id: "radial_menu" }).addInto();
+
+let drawBarOpen = false;
+let radialOpen = false;
+
+function updateDrawBarVis() {
+    drawBar.style.opacity = drawBarOpen ? "" : "0";
+    drawBar.style.pointerEvents = drawBarOpen ? "" : "none";
+}
+
+const radialItems: { id: 功能 | "draw"; icon: IconType; title: string }[] = [
+    { id: "copy", icon: "copy", title: "复制" },
+    { id: "save", icon: "save", title: "保存" },
+    { id: "draw", icon: "free_draw", title: "标注" },
+    { id: "ding", icon: "ding", title: "屏幕贴图" },
+    { id: "ocr", icon: "ocr", title: "文字识别" },
+    { id: "ocrcopy", icon: "text", title: "复制文字" },
+    { id: "translate", icon: "translate", title: "屏幕翻译" },
+    { id: "search", icon: "search", title: "以图搜图" },
+    { id: "QR", icon: "scan", title: "二维码" },
+    { id: "redact", icon: "hide", title: "민감한 텍스트 자동 가림" },
+    { id: "editor", icon: "super_edit", title: "高级图片编辑" },
+    { id: "record", icon: "record", title: "录屏" },
+    { id: "long", icon: "long_clip", title: "广截屏" },
+    { id: "screens", icon: "screen", title: "切换屏幕" },
+    { id: "open", icon: "open", title: "其他应用打开" },
+    { id: "close", icon: "close", title: "关闭" },
+];
+
+function closeRadial() {
+    if (!radialOpen) return;
+    radialOpen = false;
+    radialMenu.style({ display: "none" });
+    radialMenu.el.replaceChildren();
+}
+
+function runRadialItem(id: 功能 | "draw") {
+    if (id === "draw") {
+        drawBarOpen = !drawBarOpen;
+        updateDrawBarVis();
+        return;
+    }
+    if (id === "screens") {
+        if (allScreens.length > 1) {
+            const i = allScreens.findIndex((s) => s.id === nowScreenId);
+            setScreen(allScreens[(i + 1) % allScreens.length]);
+        }
+        return;
+    }
+    toolsX[id].f();
+}
+
+function openRadial(cx: number, cy: number) {
+    const items = radialItems.filter(
+        (i) => i.id !== "screens" || allScreens.length > 1,
+    );
+    radialMenu.el.replaceChildren();
+    const radius = Math.max(84, bSize * 1.7);
+    const base = Math.atan2(innerHeight / 2 - cy, innerWidth / 2 - cx);
+    const spread = Math.min((items.length - 1) * 0.36, Math.PI * 1.7);
+    const start = base - spread / 2;
+    for (const [i, it] of items.entries()) {
+        const a = start + (spread * i) / (items.length - 1);
+        const x = Math.min(
+            Math.max(cx + Math.cos(a) * radius, 26),
+            innerWidth - 26,
+        );
+        const y = Math.min(
+            Math.max(cy + Math.sin(a) * radius, 26),
+            innerHeight - 26,
+        );
+        const b = button(iconEl(it.icon))
+            .class("radial_item", Class.glassBar)
+            .attr({ title: it.title })
+            .style({ left: `${x}px`, top: `${y}px` });
+        b.el.style.animationDelay = `${i * 22}ms`;
+        if (it.id === autoDo) b.el.classList.add("autodo");
+        b.el.onpointerup = (e) => {
+            e.stopPropagation();
+            if (e.button === 0) {
+                closeRadial();
+                runRadialItem(it.id);
+            } else if (
+                e.button === 1 &&
+                it.id !== "draw" &&
+                it.id !== "screens"
+            ) {
+                autoDo = "no";
+                setDefaultAction(store.get("框选后默认操作"));
+            }
+        };
+        radialMenu.add(b);
+    }
+    radialMenu.style({ display: "block" });
+    radialOpen = true;
+}
+
+radialFab.el.onpointerup = (e) => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    if (radialOpen) closeRadial();
+    else {
+        const r = radialFab.el.getBoundingClientRect();
+        openRadial(r.left + r.width / 2, r.top + r.height / 2);
+    }
+};
+
+document.addEventListener(
+    "pointerdown",
+    (e) => {
+        if (
+            radialOpen &&
+            !(e.target instanceof Node && radialMenu.el.contains(e.target))
+        )
+            closeRadial();
+    },
+    true,
+);
+document.addEventListener(
+    "keydown",
+    (e) => {
+        if (radialOpen && e.key === "Escape") {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            closeRadial();
+        }
+    },
+    true,
+);
 
 let nowScreenId = 0;
 
@@ -4154,7 +4300,13 @@ let willFilter: EditType["filter"] | "" = "";
 
 document.body.style.opacity = "0";
 
+let resolveClipReady: () => void = () => {};
+const clipReady = new Promise<void>((r) => {
+    resolveClipReady = r;
+});
+
 renderOn("clip_init", async ([_displays, imgBuffer, mainid, act]) => {
+    await clipReady;
     const wx = await screenShots(_displays, imgBuffer); // 只是截屏 也可能是小图片
     allScreens = wx.screen;
     const mainId = mainid;
@@ -4346,7 +4498,7 @@ hotkeys.filter = (event) => {
 
 toHotkeyScope("normal");
 for (const k of tools) {
-    let key = store.get(`工具快捷键.${k}`) as string;
+    let key = (store.get(`工具快捷键.${k}`) as string) ?? "";
     if (["esc", "escape"].includes(key.toLowerCase()))
         hotkeys(key, "normal", toolsX[k].f);
     else if (key.toLowerCase() === "enter") hotkeys(key, "normal", toolsX[k].f);
@@ -4444,24 +4596,24 @@ const finishLongB = longTip.els.finish.el;
 
 const lr = longTip.els.rect;
 
-trackPoint(pack(toolBar), {
+trackPoint(pack(radialFab.el), {
     start: (e) => {
         if (e.ctrlKey) {
-            toolBar.style.transition = "none";
+            radialFab.el.style.transition = "none";
             return {
-                x: toolBar.offsetLeft,
-                y: toolBar.offsetTop,
+                x: radialFab.el.offsetLeft,
+                y: radialFab.el.offsetTop,
             };
         }
         return null;
     },
     ing: (p) => {
-        toolBar.style.left = `${p.x}px`;
-        toolBar.style.top = `${p.y}px`;
+        radialFab.el.style.left = `${p.x}px`;
+        radialFab.el.style.top = `${p.y}px`;
         trackLocation();
     },
     end: () => {
-        toolBar.style.transition = "";
+        radialFab.el.style.transition = "";
     },
 });
 
@@ -4576,7 +4728,7 @@ clipEl.onmousedown = (e) => {
         if (store.get("鼠标快捷键.右键") === "取色器") pickColor(e);
         else toolsX.close.f();
     }
-    toolBar.style.pointerEvents =
+    radialFab.el.style.pointerEvents =
         drawBar.style.pointerEvents =
         whEl.el.style.pointerEvents =
             "none";
@@ -4605,10 +4757,8 @@ document.onmouseup = (e) => {
             scheduleLiveTranslation();
         }
     }
-    toolBar.style.pointerEvents =
-        drawBar.style.pointerEvents =
-        whEl.el.style.pointerEvents =
-            "auto";
+    radialFab.el.style.pointerEvents = whEl.el.style.pointerEvents = "auto";
+    drawBar.style.pointerEvents = drawBarOpen ? "auto" : "none";
 
     down = false;
     moved = false;
@@ -4643,8 +4793,6 @@ for (const [i] of typedEntries(whHotkey)) {
             whHotKeyMap[i].el.focus();
         });
 }
-
-const whL = [whX0, whY0, whX1, whY1, whW, whH];
 
 for (const xel of whL) {
     const el = xel.el;
@@ -4773,7 +4921,7 @@ document.onmousemove = (e) => {
             });
 
             const isDrawBar = drawBar.contains(ev.target as HTMLElement);
-            const isToolBar = toolBar.contains(ev.target as HTMLElement);
+            const isToolBar = radialFab.el.contains(ev.target as HTMLElement);
             mouseBarEl.el.classList.toggle(
                 "mouse_bar_hide",
                 isDrawBar || isToolBar,
@@ -4895,6 +5043,8 @@ drawSideFree.pencil.on("click", () => setEditType("draw", "free"));
 drawSideFree.eraser.on("click", () => setEditType("draw", "eraser"));
 // 刷
 drawSideFree.spray.on("click", () => setEditType("draw", "spray"));
+// 荧光笔
+drawSideFree.highlighter.on("click", () => setEditType("draw", "highlighter"));
 
 // 阴影
 const shadowBlurEl = rangeBar(0, 20, 1, "px").on("input", freeShadow);
@@ -5166,3 +5316,5 @@ hotkeys("Ctrl+v", () => {
 });
 
 setEditType("select", editType.select);
+
+resolveClipReady();
