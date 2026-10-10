@@ -226,8 +226,27 @@ const captureActions: {
     },
 ];
 
-const actionGrid = view("x", "wrap").class("action-grid").addInto(homePage);
-for (const action of captureActions) {
+const actionGroups: { key: string; title: string; names: string[] }[] = [
+    {
+        key: "capture",
+        title: "캡처",
+        names: ["capture", "fullscreen", "window", "scroll"],
+    },
+    { key: "record", title: "녹화", names: ["record", "steps"] },
+    {
+        key: "tools",
+        title: "도구",
+        names: ["ocr", "screen-translate", "pin-clipboard"],
+    },
+    { key: "auto", title: "자동 작업", names: [] },
+];
+const openGroups = new Set<string>(
+    JSON.parse(localStorage.getItem("oc:action-groups") ?? '["capture"]'),
+);
+const workflowCard = view("y").class("workflow-card");
+const pinSetRow = view("x", "wrap").class("pinset-row");
+
+function makeActionCard(action: (typeof captureActions)[number]) {
     const category =
         action.name === "screen-translate" || action.name === "ocr"
             ? "language"
@@ -256,19 +275,59 @@ for (const action of captureActions) {
             ]),
         label("h3", action.title),
     ]);
-    actionButton.addInto(actionGrid);
+    return actionButton;
 }
 
-const quickRow = view("x", "wrap").class("quick-row").addInto(homePage);
-const pinSetRow = view("x", "wrap").class("pinset-row").addInto(quickRow);
-button()
-    .class("ghost-button", "compact")
-    .attr({ type: "button", title: "화면에 고정된 이미지를 모두 복원" })
-    .add([icon("◇"), label("span", "핀 복원")])
-    .on("click", () => runAction("restore-pins"))
-    .addInto(quickRow);
+const groupEls = new Map<string, { el: HTMLElement; head: HTMLElement }>();
+for (const group of actionGroups) {
+    const groupEl = view("y")
+        .class("action-group")
+        .data({ group: group.key })
+        .addInto(homePage);
+    const head = button()
+        .class("action-group-head")
+        .attr({ type: "button", ariaExpanded: "false" })
+        .add([label("span", group.title), icon("▾").class("chevron")])
+        .on("click", () => {
+            if (openGroups.has(group.key)) openGroups.delete(group.key);
+            else openGroups.add(group.key);
+            syncGroups();
+            localStorage.setItem(
+                "oc:action-groups",
+                JSON.stringify([...openGroups]),
+            );
+        })
+        .addInto(groupEl);
+    const body = view("y").class("action-group-body").addInto(groupEl);
+    groupEls.set(group.key, { el: groupEl.el, head: head.el });
+    if (group.names.length) {
+        const tiles = view("x", "wrap").class("action-grid").addInto(body);
+        for (const name of group.names) {
+            const action = captureActions.find((a) => a.name === name);
+            if (action) makeActionCard(action).addInto(tiles);
+        }
+    }
+    if (group.key === "tools") {
+        const quickRow = view("x", "wrap").class("quick-row").addInto(body);
+        quickRow.add(pinSetRow);
+        button()
+            .class("ghost-button", "compact")
+            .attr({ type: "button", title: "화면에 고정된 이미지를 모두 복원" })
+            .add([icon("◇"), label("span", "핀 복원")])
+            .on("click", () => runAction("restore-pins"))
+            .addInto(quickRow);
+    }
+    if (group.key === "auto") body.add(workflowCard);
+}
 
-const workflowCard = view("y").class("workflow-card").addInto(homePage);
+function syncGroups() {
+    for (const [key, { el, head }] of groupEls) {
+        const open = openGroups.has(key);
+        el.classList.toggle("open", open);
+        head.setAttribute("aria-expanded", String(open));
+    }
+}
+syncGroups();
 
 const workflowInputs = new Map<
     keyof OpenCaptureState["workflow"],
@@ -1926,7 +1985,7 @@ function renderState() {
         action.disabled = selectedCount < 2 || selectedCount > 20;
     loadMoreButton.el.hidden = appState.items.length >= appState.totalItemCount;
     loadMoreButton.el.textContent = `더 불러오기 (${appState.items.length}/${appState.totalItemCount})`;
-    const stepsCard = actionGrid.el.querySelector<HTMLElement>(
+    const stepsCard = homePage.el.querySelector<HTMLElement>(
         '[data-action="steps"]',
     );
     if (stepsCard) {

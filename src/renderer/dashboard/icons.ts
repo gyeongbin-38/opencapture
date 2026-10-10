@@ -314,6 +314,8 @@ const shapes: Record<string, readonly IconShape[]> = {
         ["line", { x1: "4", y1: "10.5", x2: "20", y2: "10.5" }],
         ["line", { x1: "4", y1: "13.5", x2: "20", y2: "13.5" }],
     ],
+    // chevron down — collapsible
+    "▾": [["path", { d: "m6 9.5 6 6 6-6" }]],
     // keyboard
     "⌨": [
         ["rect", { x: "2.5", y: "6", width: "19", height: "12", rx: "2" }],
