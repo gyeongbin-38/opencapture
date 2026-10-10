@@ -74,6 +74,8 @@ type Message = {
     clip_recordx: (opt?: RecordRect) => void;
     save_file_path: (type: string, isVideo?: boolean) => string;
     ok_save: (m: string, isVideo?: boolean) => void;
+    dropzone_action: (action: string, paths: string[]) => void;
+    dropzone_close: () => void;
     clip_stop_long: () => void;
     clip_init: (
         displays: Electron.Display[],

@@ -30,6 +30,7 @@ import {
     registerShortcuts,
 } from "../../lib/shortcutRegistry";
 import { StartupCommandQueue } from "../../lib/startupCommands";
+import { removeBackground } from "./backgroundRemoval";
 import { createTranslationService } from "./localTranslation";
 import { installOpenCapture } from "./openCapture";
 
@@ -669,7 +670,7 @@ function ocShortcutDefs(): ShortcutRequest[] {
             label: "드롭존",
             keys: ["CommandOrControl+Shift+D", "CommandOrControl+Alt+D"],
             run: () => {
-                openCapture?.showDropzone();
+                toggleDropzone();
             },
         },
         {
@@ -1779,6 +1780,97 @@ async function openClipProject(path: string) {
     };
     await sendCaptureEvent(image.toPNG(), undefined, project);
 }
+
+// 드롭존: 드래그 중 단축키로 여는 방사형 액션 메뉴
+let dropzoneWin: BrowserWindow | null = null;
+function toggleDropzone() {
+    if (dropzoneWin && !dropzoneWin.isDestroyed()) {
+        dropzoneWin.close();
+        return;
+    }
+    const size = 340;
+    const p = screen.getCursorScreenPoint();
+    const d = screen.getDisplayNearestPoint(p);
+    const x = Math.min(
+        Math.max(d.bounds.x, Math.round(p.x - size / 2)),
+        d.bounds.x + d.bounds.width - size,
+    );
+    const y = Math.min(
+        Math.max(d.bounds.y, Math.round(p.y - size / 2)),
+        d.bounds.y + d.bounds.height - size,
+    );
+    const win = new BrowserWindow({
+        ...baseWinConfig(),
+        width: size,
+        height: size,
+        x,
+        y,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        show: false,
+        backgroundColor: "#00000000",
+    });
+    dropzoneWin = win;
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.once("ready-to-show", () => win.show());
+    win.on("closed", () => {
+        if (dropzoneWin === win) dropzoneWin = null;
+    });
+    rendererPath(win, "dropzone.html");
+}
+
+mainOn("dropzone_close", () => dropzoneWin?.close());
+
+mainOn("dropzone_action", async ([action, paths]) => {
+    dropzoneWin?.close();
+    const first = Array.isArray(paths)
+        ? paths.find((p) => typeof p === "string" && p && existsSync(p))
+        : undefined;
+    try {
+        if (action === "library") {
+            openCapture?.importPaths(paths);
+            openCapture?.show();
+            return;
+        }
+        if (!first) return;
+        const image = nativeImage.createFromPath(first);
+        if (image.isEmpty() && action !== "pin")
+            throw new Error("이미지를 읽을 수 없습니다.");
+        switch (action) {
+            case "markup":
+                await sendCaptureEvent(image.toPNG());
+                break;
+            case "copy":
+                await writeImageToClipboard(image);
+                break;
+            case "subject": {
+                const result = await removeBackground(image, runPath);
+                if (!result.isEmpty()) {
+                    await writeImageToClipboard(result);
+                    openCapture?.saveImage(result, "Cutout");
+                }
+                break;
+            }
+            case "pin":
+                ding(image);
+                break;
+            case "ocr": {
+                const text = await openCapture?.ocrOnce(first);
+                if (text) clipboard.writeText(text);
+                break;
+            }
+        }
+    } catch (e) {
+        new Notification({
+            title: `${app.name} 드롭존`,
+            body: e instanceof Error ? e.message : String(e),
+            icon: join(runPath, "assets/logo/64x64.png"),
+        }).show();
+    }
+});
 
 /** 关闭或隐藏截屏 */
 function exitFullScreen() {
