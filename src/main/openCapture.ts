@@ -62,6 +62,7 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 const isVideoPath = (path: string) =>
     VIDEO_EXTENSIONS.has(extname(path).toLowerCase());
+const isProjectPath = (path: string) => extname(path).toLowerCase() === ".ocap";
 
 type Collection = { id: string; name: string; path: string };
 type Item = {
@@ -214,6 +215,7 @@ type Hooks = {
     capture: (mode: string) => Promise<void>;
     pin: (path?: string) => Promise<void>;
     edit: (path: string) => void;
+    openProject?: (path: string) => void | Promise<void>;
     settings: () => void;
     setSaveFolder: (path: string) => void;
     restorePins: () => void;
@@ -412,6 +414,23 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         const key = `${item.path}\0${stats.mtimeMs}\0${stats.size}`;
         const cached = cachedThumbnail(key);
         if (cached) return cached.value;
+        if (isProjectPath(item.path)) {
+            try {
+                const raw = JSON.parse(readFileSync(item.path, "utf8"));
+                if (typeof raw?.img === "string") {
+                    const image = nativeImage.createFromDataURL(raw.img);
+                    if (!image.isEmpty()) {
+                        const thumb = image
+                            .resize({ width: 280, quality: "good" })
+                            .toDataURL();
+                        cacheThumbnail(key, thumb);
+                        return thumb;
+                    }
+                }
+            } catch {}
+            cacheThumbnail(key, undefined, Date.now() + 5_000);
+            return undefined;
+        }
         try {
             const image = await withThumbnailDecodeSlot(async () => {
                 if (generation !== thumbnailCacheGeneration) return undefined;
@@ -1593,7 +1612,10 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 if (!picked.canceled) importPaths(picked.filePaths);
             } else if (name === "open-item") {
                 const item = getItem(payload);
-                if (isVideoPath(item.path)) await shell.openPath(item.path);
+                if (isProjectPath(item.path) && hooks.openProject)
+                    await hooks.openProject(item.path);
+                else if (isVideoPath(item.path))
+                    await shell.openPath(item.path);
                 else hooks.edit(item.path);
             } else if (name === "pin-item")
                 await hooks.pin(getItem(payload).path);
@@ -1809,6 +1831,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         },
         remember,
         rememberMedia,
+        rememberProject: (path: string) => insertSavedItem(path, undefined),
         saveImage,
         ocrOnce,
         state,

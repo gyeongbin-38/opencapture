@@ -1076,15 +1076,24 @@ function runSave() {
 async function save(message: string) {
     if (!message) return;
     const iType = message.split(".")?.pop()?.toLowerCase() as
-        | setting["保存"]["默认格式"]
+        | SaveFileType
         | undefined;
     const _type = iType && saveTypeList.includes(iType) ? iType : type;
 
-    if (_type !== "svg") store.set("保存.默认格式", _type);
+    if (_type !== "svg" && _type !== "ocap") store.set("保存.默认格式", _type);
 
     const fs = require("node:fs");
     let dataBuffer: Buffer;
-    if (_type === "svg") dataBuffer = Buffer.from(getClipPhotoSVG());
+    if (_type === "ocap")
+        dataBuffer = Buffer.from(
+            JSON.stringify({
+                v: 1,
+                img: mainCanvas.toDataURL("image/png"),
+                canvas: fabricCanvas?.toJSON() ?? null,
+                rect: finalRect,
+            }),
+        );
+    else if (_type === "svg") dataBuffer = Buffer.from(getClipPhotoSVG());
     else if (_type === "bmp") {
         const nc = getClipPhoto();
         const mainCtx = nc.getContext("2d")!;
@@ -1635,7 +1644,7 @@ function whBar(finalRect: rect) {
         w.length +
         1 + // "×"
         h.length;
-    const width = ch * chPX + (四角坐标 ? 8 * 4 : 8 * 2);
+    const width = ch * chPX + (四角坐标 ? 8 * 4 : 8 * 2) + 24;
     whX0.el.value = x0;
     whY0.el.value = y0;
     whX1.el.value = x1;
@@ -1693,8 +1702,14 @@ function changeWH(el: ElType<HTMLInputElement>) {
         finalRect[2] = Number(l[2]) - finalRect[0] - d;
         finalRect[3] = Number(l[3]) - finalRect[1] - d;
     } else {
-        finalRect[2] = Number(l[4]);
-        finalRect[3] = Number(l[5]);
+        let nw = Number(l[4]);
+        let nh = Number(l[5]);
+        if (ratioLock && ratioLockValue > 0) {
+            if (el === whW) nh = nw / ratioLockValue;
+            else if (el === whH) nw = nh * ratioLockValue;
+        }
+        finalRect[2] = nw;
+        finalRect[3] = nh;
     }
     finalRectFix();
     hisPush();
@@ -2211,6 +2226,30 @@ function moveRect(
                 oldFinalRect[3],
             ];
             break;
+    }
+    if (ratioLock && ratioLockValue > 0 && direction !== "move") {
+        const r = ratioLockValue;
+        const w = finalRect[2];
+        const h = finalRect[3];
+        if (direction === "东" || direction === "西") {
+            const nh = w / r;
+            finalRect[1] -= (nh - h) / 2;
+            finalRect[3] = nh;
+        } else if (direction === "南" || direction === "北") {
+            const nw = h * r;
+            finalRect[0] -= (nw - w) / 2;
+            finalRect[2] = nw;
+        } else if (direction) {
+            if (Math.abs(dx) > Math.abs(dy) * r) {
+                const nh = w / r;
+                if (direction.includes("北")) finalRect[1] -= nh - h;
+                finalRect[3] = nh;
+            } else {
+                const nw = h * r;
+                if (direction.includes("西")) finalRect[0] -= nw - w;
+                finalRect[2] = nw;
+            }
+        }
     }
     if (finalRect[0] < 0) {
         finalRect[2] = finalRect[2] + finalRect[0];
@@ -3603,6 +3642,18 @@ const whW = input();
 const whH = input();
 const whL = [whX0, whY0, whX1, whY1, whW, whH];
 const whXYStyle = { display: 四角坐标 ? "block" : "none" };
+let ratioLock = false;
+let ratioLockValue = 1;
+const whLock = button()
+    .attr({ title: t("비율 고정"), type: "button" })
+    .style({ fontSize: "11px", padding: "0 4px", cursor: "pointer" })
+    .add("🔓")
+    .on("click", () => {
+        ratioLock = !ratioLock;
+        if (ratioLock && finalRect[2] > 0 && finalRect[3] > 0)
+            ratioLockValue = finalRect[2] / finalRect[3];
+        whLock.clear().add(ratioLock ? "🔒" : "🔓");
+    });
 whEl.add([
     view()
         .style(whXYStyle)
@@ -3611,6 +3662,7 @@ whEl.add([
         .style(whXYStyle)
         .add([whX1, txt(",").style({ color: cssColor.ff }), whY1]),
     view().add([whW, txt("×").style({ color: cssColor.ff }), whH]),
+    whLock,
 ]);
 
 let chPX = 0;
@@ -3643,13 +3695,14 @@ const saveType = view()
     .attr({ id: "save_type" })
     .addInto(centerBarEl)
     .add(view().add(t("保存文件格式为")));
-const saveTypeList: (typeof type)[] = [
+const saveTypeList: SaveFileType[] = [
     "png",
     "jpg",
     "webp",
     "bmp",
     "svg",
     "pdf",
+    "ocap",
 ];
 const suffixList = saveTypeList.map((i) =>
     view()
@@ -4166,7 +4219,8 @@ let longMouse: NodeJS.Timeout | null = null;
 
 let longFX: typeof toolsX.long.el.gv = "y";
 
-let type: setting["保存"]["默认格式"];
+type SaveFileType = setting["保存"]["默认格式"] | "ocap";
+let type: SaveFileType;
 
 /** 矩形还是自由 */
 let isRect = true;
@@ -4371,7 +4425,7 @@ const clipReady = new Promise<void>((r) => {
     resolveClipReady = r;
 });
 
-renderOn("clip_init", async ([_displays, imgBuffer, mainid, act]) => {
+renderOn("clip_init", async ([_displays, imgBuffer, mainid, act, project]) => {
     await clipReady;
     const wx = await screenShots(_displays, imgBuffer); // 只是截屏 也可能是小图片
     allScreens = wx.screen;
@@ -4411,6 +4465,7 @@ renderOn("clip_init", async ([_displays, imgBuffer, mainid, act]) => {
             zoomW = i.size.width;
             ratio = devicePixelRatio;
         }
+    if (!zoomW) zoomW = mainCanvas.width;
     setEditorP(1 / ratio, 0, 0);
 
     document.body.style.opacity = "";
@@ -4462,6 +4517,21 @@ renderOn("clip_init", async ([_displays, imgBuffer, mainid, act]) => {
     setDefaultAction(act);
 
     getWin();
+
+    if (project) {
+        const r = project.rect;
+        if (
+            Array.isArray(r) &&
+            r.length === 4 &&
+            r.every((n) => Number.isFinite(n))
+        ) {
+            finalRect = [r[0], r[1], r[2], r[3]];
+            rectSelect = true;
+            finalRectFix();
+        }
+        if (project.canvas && fabricCanvas)
+            fabricCanvas.loadFromJSON(project.canvas as string);
+    }
 
     drawClipRect();
     setTimeout(() => {

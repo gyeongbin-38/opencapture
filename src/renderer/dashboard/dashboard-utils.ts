@@ -105,6 +105,10 @@ export function isVideoItem(item: OpenCaptureItem) {
     return /\.(mp4|webm|mov|mkv|avi|ts)$/i.test(item.name);
 }
 
+export function isProjectItem(item: OpenCaptureItem) {
+    return item.name.toLowerCase().endsWith(".ocap");
+}
+
 export function unsharpMask(
     canvas: HTMLCanvasElement,
     radius: number,

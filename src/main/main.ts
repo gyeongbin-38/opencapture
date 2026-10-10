@@ -52,7 +52,7 @@ import {
     writeFileSync,
 } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import url from "node:url";
 import main, { matchFitLan } from "xtranslator";
 import { githubMirrorList } from "../../lib/github_mirror";
@@ -983,6 +983,7 @@ app.whenReady().then(() => {
             else await dingFromClipBoard();
         },
         edit: showPhoto,
+        openProject: openClipProject,
         settings: createSettingWindow,
         runtimeState: () => ({
             startAtLogin:
@@ -1745,14 +1746,38 @@ async function fullScreen() {
     win.setSimpleFullScreen(true);
 }
 
-async function sendCaptureEvent(data?: Buffer, type?: 功能) {
+async function sendCaptureEvent(
+    data?: Buffer,
+    type?: 功能,
+    project?: { canvas?: unknown; rect?: number[] },
+) {
     pendingClipInit = [data, type];
     mainSend((await getClipWin())?.webContents, "clip_init", [
         screen.getAllDisplays(),
         data,
         screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
         type,
+        project,
     ]);
+}
+
+/** 편집 가능 프로젝트(.ocap)를 clip 편집기에서 다시 연다 */
+async function openClipProject(path: string) {
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    if (
+        !raw ||
+        typeof raw !== "object" ||
+        typeof raw.img !== "string" ||
+        !raw.img.startsWith("data:image/")
+    )
+        throw new Error("프로젝트 파일을 읽을 수 없습니다.");
+    const image = nativeImage.createFromDataURL(raw.img);
+    if (image.isEmpty()) throw new Error("프로젝트 이미지가 비어 있습니다.");
+    const project = {
+        canvas: raw.canvas,
+        rect: Array.isArray(raw.rect) ? raw.rect : undefined,
+    };
+    await sendCaptureEvent(image.toPNG(), undefined, project);
 }
 
 /** 关闭或隐藏截屏 */
@@ -2856,7 +2881,10 @@ mainOn("save_file_path", async ([type, isVideo]) => {
 
 mainOn("ok_save", ([arg, isVideo]) => {
     noti(arg);
-    if (isVideo) {
+    if (arg.toLowerCase().endsWith(".ocap")) {
+        openCapture?.rememberProject(arg);
+        store.set("保存.保存路径.图片", dirname(arg));
+    } else if (isVideo) {
         openCapture?.rememberMedia(arg);
         store.set("保存.保存路径.视频", dirname(arg));
     } else {

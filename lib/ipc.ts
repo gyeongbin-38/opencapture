@@ -80,6 +80,7 @@ type Message = {
         imgBuffer: Buffer | undefined,
         mainid: number,
         act: 功能 | undefined,
+        project?: { canvas?: unknown; rect?: number[] },
     ) => void;
     open_this_browser: (window_name: number, url: string) => void;
     edit_pic: (img: Buffer<ArrayBufferLike>) => void;

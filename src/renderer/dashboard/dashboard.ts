@@ -23,6 +23,7 @@ import {
     formatShortcut,
     isGifItem,
     isItemsPage,
+    isProjectItem,
     isState,
     isVideoItem,
     mixChannel,
@@ -1112,6 +1113,8 @@ const beautifyOptions = {
     shadow: 40,
     background: "auto",
     ratio: 0,
+    align: "c",
+    autoBalance: false,
 };
 const beautifyBackgrounds: {
     id: string;
@@ -1265,6 +1268,49 @@ for (const background of beautifyBackgrounds) {
     swatch.addInto(bgSwatchRow);
     bgSwatches.push(swatch.el);
 }
+
+beautifyControls.add(label("small", t("정렬")).class("control-label"));
+const alignChipRow = view("x", "wrap")
+    .class("chip-row")
+    .addInto(beautifyControls);
+const beautifyAligns: [string, string][] = [
+    ["↖", "tl"],
+    ["↑", "t"],
+    ["↗", "tr"],
+    ["←", "l"],
+    ["◦", "c"],
+    ["→", "r"],
+    ["↙", "bl"],
+    ["↓", "b"],
+    ["↘", "br"],
+];
+for (const [glyph, align] of beautifyAligns) {
+    button(glyph)
+        .class("chip-button", "ratio-chip", align === "c" ? "active" : "")
+        .attr({ type: "button", ariaPressed: String(align === "c") })
+        .on("click", (event, el) => {
+            beautifyOptions.align = align;
+            for (const chipEl of alignChipRow.el.querySelectorAll(
+                ".ratio-chip",
+            )) {
+                const active = chipEl === el.el;
+                chipEl.classList.toggle("active", active);
+                chipEl.setAttribute("aria-pressed", String(active));
+            }
+            renderBeautify();
+        })
+        .addInto(alignChipRow);
+}
+const autoBalanceCheck = input("checkbox")
+    .attr({ id: "auto_balance" })
+    .on("input", () => {
+        beautifyOptions.autoBalance = autoBalanceCheck.el.checked;
+        renderBeautify();
+    });
+view("x")
+    .class("chip-row")
+    .add([autoBalanceCheck, label("span", t("자동 균형"))])
+    .addInto(beautifyControls);
 
 function beautifySlider(
     title: string,
@@ -2229,7 +2275,10 @@ function visibleLibraryItems() {
     else if (smartFilter === "videos")
         items = items.filter((item) => isVideoItem(item));
     else if (smartFilter === "no-ocr")
-        items = items.filter((item) => !item.ocrDone && !isVideoItem(item));
+        items = items.filter(
+            (item) =>
+                !item.ocrDone && !isVideoItem(item) && !isProjectItem(item),
+        );
     if (activeTag)
         items = items.filter((item) => item.tags?.includes(activeTag ?? ""));
     if (searchQuery)
@@ -2424,6 +2473,8 @@ function renderItems(items: OpenCaptureItem[]) {
             );
         } else if (isVideoItem(item)) {
             thumbnail.add(view().class("item-video-badge").add(icon("v")));
+        } else if (isProjectItem(item)) {
+            thumbnail.add(view().class("item-video-badge").add("✎"));
         }
         if (item.ocrText) {
             const ocrPreview = view("y").class("item-ocr-preview");
@@ -2557,7 +2608,7 @@ function renderItems(items: OpenCaptureItem[]) {
                     ]),
             ]);
         itemCard.on("click", () =>
-            isVideoItem(item)
+            isVideoItem(item) || isProjectItem(item)
                 ? void runAction("open-item", item.id)
                 : openQuickLook(item),
         );
@@ -2609,45 +2660,57 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
                   () => runAction("reveal-item", item.id),
               ],
           ]
-        : [
-              ["⌕", t("미리보기"), () => openQuickLook(item)],
-              ["⌖", t("화면에 고정"), () => runAction("pin-item", item.id)],
-              [
-                  "▣",
-                  t("클립보드에 복사"),
-                  () => runAction("copy-item", item.id),
-              ],
-              ["✎", t("주석·편집"), () => runAction("open-item", item.id)],
-              ["▨", t("배경 꾸미기"), () => openBeautify(item)],
-              ["⤢", t("업스케일"), () => openUpscale(item)],
-              ["✧", t("AI 업스케일"), () => runAiUpscale(item)],
-              ["⬍", t("중간 접기"), () => void openFold(item)],
-              ...(isGifItem(item)
-                  ? ([["≣", t("GIF 트림"), () => void openGifTrim(item)]] as [
-                        string,
-                        string,
-                        () => void,
-                    ][])
-                  : []),
-              ["☰", t("메모"), () => openNote(item)],
-              [
-                  "T",
-                  item.ocrDone ? t("텍스트 다시 인식") : t("텍스트 인식"),
-                  () => void requestOcrIndex(item.id),
-              ],
-              [
-                  "✦",
-                  t("배경 제거"),
-                  () => runAction("remove-background", item.id),
-              ],
-              ["T", t("이름 바꾸기"), () => openRename(item)],
-              ["⧉", t("복제"), () => runAction("duplicate-item", item.id)],
-              [
-                  "▤",
-                  t("폴더에서 보기"),
-                  () => runAction("reveal-item", item.id),
-              ],
-          ];
+        : isProjectItem(item)
+          ? [
+                ["✎", t("주석·편집"), () => runAction("open-item", item.id)],
+                ["☰", t("메모"), () => openNote(item)],
+                ["T", t("이름 바꾸기"), () => openRename(item)],
+                ["⧉", t("복제"), () => runAction("duplicate-item", item.id)],
+                [
+                    "▤",
+                    t("폴더에서 보기"),
+                    () => runAction("reveal-item", item.id),
+                ],
+            ]
+          : [
+                ["⌕", t("미리보기"), () => openQuickLook(item)],
+                ["⌖", t("화면에 고정"), () => runAction("pin-item", item.id)],
+                [
+                    "▣",
+                    t("클립보드에 복사"),
+                    () => runAction("copy-item", item.id),
+                ],
+                ["✎", t("주석·편집"), () => runAction("open-item", item.id)],
+                ["▨", t("배경 꾸미기"), () => openBeautify(item)],
+                ["⤢", t("업스케일"), () => openUpscale(item)],
+                ["✧", t("AI 업스케일"), () => runAiUpscale(item)],
+                ["⬍", t("중간 접기"), () => void openFold(item)],
+                ...(isGifItem(item)
+                    ? ([["≣", t("GIF 트림"), () => void openGifTrim(item)]] as [
+                          string,
+                          string,
+                          () => void,
+                      ][])
+                    : []),
+                ["☰", t("메모"), () => openNote(item)],
+                [
+                    "T",
+                    item.ocrDone ? t("텍스트 다시 인식") : t("텍스트 인식"),
+                    () => void requestOcrIndex(item.id),
+                ],
+                [
+                    "✦",
+                    t("배경 제거"),
+                    () => runAction("remove-background", item.id),
+                ],
+                ["T", t("이름 바꾸기"), () => openRename(item)],
+                ["⧉", t("복제"), () => runAction("duplicate-item", item.id)],
+                [
+                    "▤",
+                    t("폴더에서 보기"),
+                    () => runAction("reveal-item", item.id),
+                ],
+            ];
     for (const [glyph, text, run] of entries) {
         menu.add(
             button()
@@ -2993,8 +3056,19 @@ function renderBeautify() {
         const scale = Math.min((cw - pad * 2) / iw, (ch - pad * 2) / ih);
         dw = Math.max(1, Math.round(iw * Math.max(scale, 0)));
         dh = Math.max(1, Math.round(ih * Math.max(scale, 0)));
-        dx = Math.round((cw - dw) / 2);
-        dy = Math.round((ch - dh) / 2);
+        const freeX = cw - dw;
+        const freeY = ch - dh;
+        const align = beautifyOptions.align;
+        const ax = align.includes("l") ? 0 : align.includes("r") ? 1 : 0.5;
+        const ay = align.startsWith("t")
+            ? 0
+            : align.startsWith("b")
+              ? 1
+              : beautifyOptions.autoBalance
+                ? 0.42
+                : 0.5;
+        dx = Math.round(freeX * ax);
+        dy = Math.round(freeY * ay);
     } else {
         const scale = Math.min(1, 1400 / Math.max(iw, ih));
         dw = Math.max(1, Math.round(iw * scale));
