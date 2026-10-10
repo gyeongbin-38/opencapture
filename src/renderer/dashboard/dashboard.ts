@@ -1592,6 +1592,7 @@ const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
     ["⬍", "중간 접기", (item) => void openFold(item)],
     ["▨", "꾸미기", (item) => void openBeautify(item)],
     ["⤢", "업스케일", (item) => void openUpscale(item)],
+    ["✧", "AI 업스케일", (item) => runAiUpscale(item)],
     ["☰", "메모", (item) => openNote(item)],
     ["✦", "배경 제거", (item) => runAction("remove-background", item.id)],
     ["T", "이름", (item) => openRename(item)],
@@ -1787,6 +1788,19 @@ const toast = ele("div")
 const toastText = ele("span").addInto(toast);
 const toastActions = view("x").class("toast-actions").addInto(toast);
 let toastTimer = 0;
+const srToast = ele("div")
+    .class("toast", "sr-toast")
+    .attr({ role: "status", ariaLive: "polite" })
+    .addInto();
+const srToastText = ele("span").addInto(srToast);
+
+function runAiUpscale(item: OpenCaptureItem) {
+    srToastText.el.textContent = "AI 업스케일을 준비하고 있습니다…";
+    srToast.el.classList.add("visible");
+    void runAction("ai-upscale", item.id).then(() => {
+        srToast.el.classList.remove("visible");
+    });
+}
 
 function showPage(page: PageName) {
     activePage = page;
@@ -2513,6 +2527,7 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
         ["✎", "주석·편집", () => runAction("open-item", item.id)],
         ["▨", "배경 꾸미기", () => openBeautify(item)],
         ["⤢", "업스케일", () => openUpscale(item)],
+        ["✧", "AI 업스케일", () => runAiUpscale(item)],
         ["⬍", "중간 접기", () => void openFold(item)],
         ["☰", "메모", () => openNote(item)],
         [
@@ -3500,6 +3515,17 @@ window.openCapture.onLibraryChanged(() => {
 });
 window.openCapture.onShowLibrary(() => showPage("library"));
 window.openCapture.onWorkflowError((message) => showToast(message, true));
+window.openCapture.onSrProgress(({ phase, percent }) => {
+    if (phase === "download")
+        srToastText.el.textContent = "AI 모델을 다운로드하고 있습니다…";
+    else if (phase === "run")
+        srToastText.el.textContent = `AI 업스케일 처리 중 ${percent}%`;
+    else {
+        srToast.el.classList.remove("visible");
+        if (phase === "done")
+            showToast("AI 업스케일 이미지를 컬렉션에 저장했습니다.");
+    }
+});
 window.openCapture.onPreviewItem((id) => void openPreviewById(id));
 void refreshState().then(() => {
     if (!localStorage.getItem("oc:onboarded")) openOnboarding();

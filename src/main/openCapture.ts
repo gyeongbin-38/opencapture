@@ -50,6 +50,7 @@ import {
     normalizeTags,
 } from "../../lib/itemMeta";
 import { removeBackground } from "./backgroundRemoval";
+import { createSuperResolution } from "./superResolution";
 
 type Collection = { id: string; name: string; path: string };
 type Item = {
@@ -814,6 +815,19 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         },
         onError: recordWorkflowError,
     });
+    const superResolution = createSuperResolution(join(userData, "sr"));
+    const sendSrProgress = (id: string, phase: string, percent: number) => {
+        if (
+            dashboard &&
+            !dashboard.isDestroyed() &&
+            !dashboard.webContents.isDestroyed()
+        )
+            dashboard.webContents.send("oc:sr-progress", {
+                id,
+                phase,
+                percent,
+            });
+    };
     const ignoredReceipts = new Set<string>();
     let inboxInFlight: Promise<void> | undefined;
     const quarantineReceipt = (path: string, reason: unknown) => {
@@ -1379,6 +1393,26 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     (s) => s.id !== set.id,
                 );
                 persist();
+            } else if (name === "ai-upscale") {
+                const item = getItem(payload);
+                const image = nativeImage.createFromPath(item.path);
+                if (image.isEmpty())
+                    throw new Error("이미지를 읽을 수 없습니다.");
+                try {
+                    const result = await superResolution.upscale(
+                        image,
+                        (progress) =>
+                            sendSrProgress(
+                                item.id,
+                                progress.phase,
+                                progress.percent,
+                            ),
+                    );
+                    saveImage(result, "AI", false, dirname(item.path));
+                } catch (error) {
+                    sendSrProgress(item.id, "error", 0);
+                    throw error;
+                }
             } else if (name === "index-ocr") {
                 const ids =
                     typeof payload === "string"

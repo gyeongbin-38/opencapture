@@ -44,6 +44,31 @@ const api: OpenCaptureApi = {
         ipcRenderer.on("oc:preview-item", listener);
         return () => ipcRenderer.removeListener("oc:preview-item", listener);
     },
+    onSrProgress: (callback) => {
+        const listener = (
+            _event: Electron.IpcRendererEvent,
+            value: unknown,
+        ) => {
+            if (!value || typeof value !== "object") return;
+            const progress = value as {
+                id?: unknown;
+                phase?: unknown;
+                percent?: unknown;
+            };
+            if (
+                typeof progress.id === "string" &&
+                typeof progress.phase === "string" &&
+                typeof progress.percent === "number"
+            )
+                callback({
+                    id: progress.id,
+                    phase: progress.phase,
+                    percent: progress.percent,
+                });
+        };
+        ipcRenderer.on("oc:sr-progress", listener);
+        return () => ipcRenderer.removeListener("oc:sr-progress", listener);
+    },
     action: (name: OpenCaptureActionName, payload?: unknown) =>
         ipcRenderer.invoke("oc:action", name, payload),
     getState: () => ipcRenderer.invoke("oc:state"),

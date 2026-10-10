@@ -2628,6 +2628,9 @@ body::before {
     border-color: #efa69866;
     color: #ffe0d6;
 }
+.sr-toast {
+    bottom: 76px;
+}
 
 /* Form + beautify dialogs */
 .text-control {

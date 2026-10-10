@@ -35,6 +35,7 @@ export type OpenCaptureActionName =
     | "save-composed"
     | "set-note"
     | "set-tags"
+    | "ai-upscale"
     | "index-ocr"
     | "save-pin-set"
     | "remove-pin-set"
@@ -156,6 +157,13 @@ export interface OpenCaptureApi {
     onLibraryChanged(callback: () => void): () => void;
     onWorkflowError(callback: (message: string) => void): () => void;
     onPreviewItem(callback: (id: string) => void): () => void;
+    onSrProgress(
+        callback: (progress: {
+            id: string;
+            phase: string;
+            percent: number;
+        }) => void,
+    ): () => void;
 }
 
 declare global {
