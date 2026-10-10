@@ -745,6 +745,49 @@ textarea::placeholder {
     width: 34px;
     height: 34px;
 }
+.item-thumbnail {
+    position: relative;
+}
+.item-ocr-preview {
+    position: absolute;
+    inset: auto 8px 8px;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+.item-card:hover .item-ocr-preview {
+    opacity: 1;
+    pointer-events: auto;
+}
+.ocr-line {
+    text-align: left;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg2) 82%, transparent);
+    backdrop-filter: blur(10px);
+    cursor: copy;
+}
+.ocr-line small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    color: var(--muted);
+}
+.ocr-line:hover small {
+    color: var(--fg);
+}
+.ocr-line mark {
+    background: color-mix(in srgb, var(--primary) 60%, transparent);
+    color: inherit;
+    border-radius: 2px;
+}
+.smart-select.active {
+    border-color: var(--primary);
+    color: var(--fg);
+}
 .item-info {
     padding: 12px;
     justify-content: space-between;

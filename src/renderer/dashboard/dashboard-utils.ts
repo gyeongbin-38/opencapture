@@ -20,6 +20,7 @@ export const emptyState: OpenCaptureState = {
         autoPin: false,
         autoOcr: true,
         autoPreview: false,
+        autoClipboard: false,
     },
     pinSets: [],
     runtime: { startAtLogin: false, shortcuts: [] },

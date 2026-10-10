@@ -70,6 +70,7 @@ export interface OpenCaptureWorkflow {
     autoPin: boolean;
     autoOcr: boolean;
     autoPreview: boolean;
+    autoClipboard: boolean;
 }
 
 export interface OpenCapturePinSet {

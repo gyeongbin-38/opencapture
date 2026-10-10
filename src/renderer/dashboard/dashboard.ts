@@ -54,6 +54,7 @@ let favoritesOnly = false;
 let todayOnly = false;
 let ocrOnly = false;
 let activeTag: string | null = null;
+let smartFilter: "" | "week" | "uncategorized" | "videos" | "no-ocr" = "";
 let sortMode: "new" | "old" | "name" = "new";
 let thumbSize = localStorage.getItem("oc:thumb-size") || "m";
 let quickLookId: string | null = null;
@@ -398,6 +399,11 @@ const workflowOptions: {
         title: t("캡처 후 바로 보기"),
         description: t("저장 직후 큰 미리보기를 열어 바로 작업할 수 있습니다."),
     },
+    {
+        key: "autoClipboard",
+        title: t("클립보드 수집"),
+        description: t("복사한 이미지를 자동으로 라이브러리에 저장합니다."),
+    },
 ];
 const workflowChoices = view("x", "wrap")
     .class("workflow-choices")
@@ -505,6 +511,20 @@ const ocrChip = button()
     .add([icon("T"), label("span", t("텍스트"))])
     .on("click", () => {
         ocrOnly = !ocrOnly;
+        renderState();
+    })
+    .addInto(filterBar);
+const smartSelect = select([
+    { value: "", name: t("스마트 보기") },
+    { value: "week", name: t("이번 주") },
+    { value: "uncategorized", name: t("미분류") },
+    { value: "videos", name: t("비디오만") },
+    { value: "no-ocr", name: t("텍스트 없음") },
+])
+    .class("select-control", "smart-select")
+    .attr({ ariaLabel: t("스마트 보기") })
+    .on("change", (_event, element) => {
+        smartFilter = element.el.value as typeof smartFilter;
         renderState();
     })
     .addInto(filterBar);
@@ -2082,6 +2102,8 @@ function renderState() {
     todayChip.attr({ ariaPressed: String(todayOnly) });
     ocrChip.el.classList.toggle("active", ocrOnly);
     ocrChip.attr({ ariaPressed: String(ocrOnly) });
+    smartSelect.el.value = smartFilter;
+    smartSelect.el.classList.toggle("active", Boolean(smartFilter));
     sortSelect.el.value = sortMode;
     sizeSegment.el
         .querySelectorAll<HTMLButtonElement>(".size-segment-button")
@@ -2114,6 +2136,15 @@ function visibleLibraryItems() {
         items = items.filter((item) => Date.parse(item.createdAt) >= startTime);
     }
     if (ocrOnly) items = items.filter((item) => item.ocrDone);
+    if (smartFilter === "week") {
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        items = items.filter((item) => Date.parse(item.createdAt) >= weekAgo);
+    } else if (smartFilter === "uncategorized")
+        items = items.filter((item) => !item.collectionId);
+    else if (smartFilter === "videos")
+        items = items.filter((item) => isVideoItem(item));
+    else if (smartFilter === "no-ocr")
+        items = items.filter((item) => !item.ocrDone && !isVideoItem(item));
     if (activeTag)
         items = items.filter((item) => item.tags?.includes(activeTag ?? ""));
     if (searchQuery)
@@ -2308,6 +2339,46 @@ function renderItems(items: OpenCaptureItem[]) {
             );
         } else if (isVideoItem(item)) {
             thumbnail.add(view().class("item-video-badge").add(icon("v")));
+        }
+        if (item.ocrText) {
+            const ocrPreview = view("y").class("item-ocr-preview");
+            const ocrLines = item.ocrText
+                .split("\n")
+                .map((l) => l.trim())
+                .filter(Boolean);
+            const showAll =
+                searchQuery &&
+                ocrLines.some((l) => l.toLowerCase().includes(searchQuery));
+            for (const line of ocrLines.slice(0, showAll ? 6 : 4)) {
+                const lineLabel = ele("small");
+                const lower = line.toLowerCase();
+                const hit = searchQuery ? lower.indexOf(searchQuery) : -1;
+                if (hit >= 0) {
+                    lineLabel.el.append(
+                        line.slice(0, hit),
+                        Object.assign(document.createElement("mark"), {
+                            textContent: line.slice(
+                                hit,
+                                hit + searchQuery.length,
+                            ),
+                        }),
+                        line.slice(hit + searchQuery.length),
+                    );
+                } else lineLabel.el.textContent = line;
+                ocrPreview.add(
+                    button()
+                        .class("ocr-line")
+                        .attr({ type: "button", title: t("클릭하여 복사") })
+                        .add(lineLabel)
+                        .on("click", (event) => {
+                            event.stopPropagation();
+                            void navigator.clipboard
+                                ?.writeText(line)
+                                .then(() => showToast(t("복사했습니다")));
+                        }),
+                );
+            }
+            thumbnail.add(ocrPreview);
         }
         const selectionInput = input("checkbox")
             .class("item-select")
@@ -3377,7 +3448,12 @@ function renderTagChips() {
 
 function isLibraryFiltered() {
     return Boolean(
-        searchQuery || favoritesOnly || todayOnly || ocrOnly || activeTag,
+        searchQuery ||
+            favoritesOnly ||
+            todayOnly ||
+            ocrOnly ||
+            activeTag ||
+            smartFilter,
     );
 }
 

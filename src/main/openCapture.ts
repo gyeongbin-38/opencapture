@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
     constants,
     type FSWatcher,
@@ -77,6 +77,7 @@ type Item = {
     tags?: string[];
     ocrText?: string;
     ocrDone?: boolean;
+    hash?: string;
 };
 type PinSet = { id: string; name: string; itemIds: string[] };
 type Library = {
@@ -182,7 +183,10 @@ export function isLibrary(value: unknown): value is Library {
                     (typeof i.ocrText === "string" &&
                         i.ocrText.length <= OCR_TEXT_LIMIT)) &&
                 (i.ocrDone === undefined || typeof i.ocrDone === "boolean") &&
-                (i.thumbnail === undefined || typeof i.thumbnail === "string"),
+                (i.thumbnail === undefined ||
+                    typeof i.thumbnail === "string") &&
+                (i.hash === undefined ||
+                    (typeof i.hash === "string" && i.hash.length <= 64)),
         ) &&
         (data.workflow === undefined ||
             (typeof data.workflow === "object" &&
@@ -517,12 +521,15 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         if (!set) throw new Error("핀 세트를 찾을 수 없습니다.");
         return set;
     };
+    let ownClipboardSig: string | undefined;
     const writeClipboardImage = async (path: string) => {
         const image = nativeImage.createFromPath(path);
         if (image.isEmpty()) throw new Error("The image could not be read.");
+        const png = image.toPNG();
+        ownClipboardSig = createHash("sha1").update(png).digest("hex");
         await clipboard.write([
             new ClipboardItem({
-                "image/png": new Blob([image.toPNG()], { type: "image/png" }),
+                "image/png": new Blob([png], { type: "image/png" }),
             }),
         ]);
     };
@@ -599,6 +606,37 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             win.webContents.once("did-finish-load", deliver);
         else deliver();
     };
+    const hashFile = (path: string): string | undefined => {
+        try {
+            return createHash("sha1").update(readFileSync(path)).digest("hex");
+        } catch {
+            return undefined;
+        }
+    };
+    /** 같은 바이트 크기 후보만 해시 비교 — 라이브러리 전체를 매번 해시하지 않는다 */
+    const findDuplicate = (path: string): Item | undefined => {
+        let size: number;
+        try {
+            size = statSync(path).size;
+        } catch {
+            return undefined;
+        }
+        const candidates = library.items.filter((item) => {
+            try {
+                return statSync(item.path).size === size;
+            } catch {
+                return false;
+            }
+        });
+        if (!candidates.length) return undefined;
+        const hash = hashFile(path);
+        if (!hash) return undefined;
+        for (const item of candidates) {
+            if (!item.hash) item.hash = hashFile(item.path);
+            if (item.hash === hash) return item;
+        }
+        return undefined;
+    };
     function remember(
         path: string,
         createdAt = new Date().toISOString(),
@@ -606,6 +644,17 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         preview = false,
     ) {
         if (!existsSync(path)) return false;
+        const duplicate = findDuplicate(path);
+        if (duplicate) {
+            try {
+                unlinkSync(path);
+            } catch {}
+            if (queueWorkflow)
+                workflowQueue.enqueue(duplicate.path, library.workflow);
+            if (preview) requestPreview(duplicate.id);
+            notifyLibraryUpdated();
+            return true;
+        }
         const image = nativeImage.createFromPath(path);
         if (image.isEmpty()) return false;
         const existing = library.items.find(
@@ -669,7 +718,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         const existing = library.items.find(
             (item) => pathKey(item.path) === pathKey(path),
         );
-        if (existing) return true;
+        if (existing || findDuplicate(path)) return true;
         insertSavedItem(path);
         return true;
     }
@@ -690,6 +739,51 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         persist();
         notifyLibraryUpdated();
     }
+    let clipboardWatcher: NodeJS.Timeout | undefined;
+    let lastClipboardSig: string | undefined;
+    const updateClipboardWatch = () => {
+        if (library.workflow.autoClipboard && !clipboardWatcher) {
+            let busy = false;
+            clipboardWatcher = setInterval(() => {
+                if (busy) return;
+                busy = true;
+                void clipboard
+                    .read()
+                    .then(async (items) => {
+                        const item = items.find((i) =>
+                            i.types.includes("image/png"),
+                        );
+                        if (!item) {
+                            lastClipboardSig = undefined;
+                            return;
+                        }
+                        const data = await item.getType("image/png");
+                        if (!(data instanceof Blob)) return;
+                        const png = Buffer.from(await data.arrayBuffer());
+                        const sig = createHash("sha1")
+                            .update(png)
+                            .digest("hex");
+                        if (sig === lastClipboardSig || sig === ownClipboardSig)
+                            return;
+                        lastClipboardSig = sig;
+                        mkdirSync(active().path, { recursive: true });
+                        const path = join(
+                            active().path,
+                            `Clipboard-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}.png`,
+                        );
+                        writeFileSync(path, png, { flag: "wx" });
+                        remember(path, undefined, false, false);
+                    })
+                    .catch(() => {})
+                    .finally(() => {
+                        busy = false;
+                    });
+            }, 2000);
+        } else if (!library.workflow.autoClipboard && clipboardWatcher) {
+            clearInterval(clipboardWatcher);
+            clipboardWatcher = undefined;
+        }
+    };
     const recordWorkflowError = (
         path: string,
         step: string,
@@ -1020,6 +1114,11 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             `Capture inbox watcher could not start: ${error instanceof Error ? error.message : String(error)}`,
         );
     }
+    updateClipboardWatch();
+    app.once("will-quit", () => {
+        if (clipboardWatcher) clearInterval(clipboardWatcher);
+        clipboardWatcher = undefined;
+    });
     function importPaths(paths: unknown) {
         if (
             !Array.isArray(paths) ||
@@ -1027,6 +1126,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             paths.some((p) => typeof p !== "string")
         )
             throw new Error("이미지를 한 번에 20개까지 가져올 수 있습니다.");
+        let skipped = 0;
         for (const path of paths) {
             const video = isVideoPath(path);
             const fileSize = statSync(path).size;
@@ -1041,6 +1141,10 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             const label = basename(path, extname(path))
                 .replace(/[^\p{L}\p{N}_-]/gu, "_")
                 .slice(0, 60);
+            if (findDuplicate(path)) {
+                skipped++;
+                continue;
+            }
             if (video) {
                 mkdirSync(active().path, { recursive: true });
                 const target = uniqueExportPath(
@@ -1066,6 +1170,11 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 remember(target);
             } else saveImage(image, label);
         }
+        if (skipped)
+            dashboard?.webContents.send(
+                "oc:workflow-error",
+                `중복 이미지 ${skipped}개는 건너뛰었습니다.`,
+            );
         return state();
     }
     function show(inactive = false) {
@@ -1258,6 +1367,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 );
                 persist();
                 persistCaptureSettings();
+                updateClipboardWatch();
             } else if (name === "configure-runtime") {
                 if (!hooks.configureRuntime)
                     throw new Error("Runtime settings are unavailable.");
