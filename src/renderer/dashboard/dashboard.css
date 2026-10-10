@@ -2631,6 +2631,13 @@ body::before {
 .sr-toast {
     bottom: 76px;
 }
+.gif-canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 46vh;
+    border-radius: 10px;
+    background: #0a1a28;
+}
 
 /* Form + beautify dialogs */
 .text-control {

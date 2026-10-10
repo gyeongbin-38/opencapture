@@ -649,24 +649,25 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         writeFileSync(path, image.toPNG(), { flag: "wx" });
         if (applyWorkflow)
             remember(path, undefined, true, library.workflow.autoPreview);
-        else {
-            const collection =
-                library.collections.find(
-                    (candidate) =>
-                        pathKey(candidate.path) === pathKey(destinationFolder),
-                ) ?? active();
-            library.items.unshift({
-                id: randomUUID(),
-                name: basename(path),
-                path,
-                createdAt: new Date().toISOString(),
-                collectionId: collection.id,
-                ...(tags?.length ? { tags } : {}),
-            });
-            persist();
-            notifyLibraryUpdated();
-        }
+        else insertSavedItem(path, tags);
         return path;
+    }
+    function insertSavedItem(path: string, tags?: string[]) {
+        const collection =
+            library.collections.find(
+                (candidate) =>
+                    pathKey(candidate.path) === pathKey(dirname(path)),
+            ) ?? active();
+        library.items.unshift({
+            id: randomUUID(),
+            name: basename(path),
+            path,
+            createdAt: new Date().toISOString(),
+            collectionId: collection.id,
+            ...(tags?.length ? { tags } : {}),
+        });
+        persist();
+        notifyLibraryUpdated();
     }
     const recordWorkflowError = (
         path: string,
@@ -1018,12 +1019,18 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             const size = image.getSize();
             if (size.width * size.height > 80_000_000)
                 throw new Error("이미지 해상도가 너무 큽니다.");
-            saveImage(
-                image,
-                basename(path, extname(path))
-                    .replace(/[^\p{L}\p{N}_-]/gu, "_")
-                    .slice(0, 60),
-            );
+            const label = basename(path, extname(path))
+                .replace(/[^\p{L}\p{N}_-]/gu, "_")
+                .slice(0, 60);
+            if (extname(path).toLowerCase() === ".gif") {
+                mkdirSync(active().path, { recursive: true });
+                const target = uniqueExportPath(
+                    active().path,
+                    `${label || "capture"}.gif`,
+                );
+                copyFileSync(path, target);
+                remember(target);
+            } else saveImage(image, label);
         }
         return state();
     }
@@ -1130,6 +1137,14 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         if (size.width * size.height > 80_000_000)
             throw new Error("이미지 해상도가 너무 큽니다.");
         return image.toDataURL();
+    });
+    ipcMain.handle("oc:item-file", (event, id) => {
+        assertSender(event, true);
+        const item = getItem(id);
+        const stat = statSync(item.path);
+        if (stat.size > 50 * 1024 * 1024)
+            throw new Error("파일이 너무 큽니다.");
+        return readFileSync(item.path);
     });
     ipcMain.on("oc:drag", (event, id) => {
         try {
@@ -1413,6 +1428,33 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                     sendSrProgress(item.id, "error", 0);
                     throw error;
                 }
+            } else if (name === "save-gif") {
+                if (!payload || typeof payload !== "object")
+                    throw new Error("저장 요청이 올바르지 않습니다.");
+                const { id, dataURL } = payload as {
+                    id?: unknown;
+                    dataURL?: unknown;
+                };
+                const item = getItem(id);
+                if (
+                    typeof dataURL !== "string" ||
+                    !dataURL.startsWith("data:image/gif;base64,")
+                )
+                    throw new Error("GIF 데이터가 올바르지 않습니다.");
+                const data = Buffer.from(
+                    dataURL.slice("data:image/gif;base64,".length),
+                    "base64",
+                );
+                if (data.byteLength === 0 || data.byteLength > 50 * 1024 * 1024)
+                    throw new Error("GIF 파일 크기가 올바르지 않습니다.");
+                if (data[0] !== 0x47 || data[1] !== 0x49 || data[2] !== 0x46)
+                    throw new Error("GIF 데이터가 올바르지 않습니다.");
+                const target = join(
+                    dirname(item.path),
+                    `GifClip-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}.gif`,
+                );
+                writeFileSync(target, data, { flag: "wx" });
+                insertSavedItem(target);
             } else if (name === "index-ocr") {
                 const ids =
                     typeof payload === "string"

@@ -1,4 +1,6 @@
 import { button, ele, initDKH, input, p, select, textarea, view } from "dkh-ui";
+// @ts-expect-error
+import { GIFEncoder, applyPalette, quantize } from "gifenc";
 import type {
     OpenCaptureActionName,
     OpenCaptureItem,
@@ -1532,6 +1534,76 @@ foldDialog.el.addEventListener("cancel", (event) => {
     closeModal(foldDialog.el);
 });
 
+type GifDecoder = {
+    tracks: {
+        ready: Promise<void>;
+        selectedTrack: { frameCount: number } | null;
+    };
+    decode(options: { frameIndex: number }): Promise<ImageDecodeResult>;
+    close(): void;
+};
+const GifImageDecoder = (
+    globalThis as unknown as {
+        ImageDecoder?: new (init: {
+            data: BufferSource;
+            type: string;
+        }) => GifDecoder;
+    }
+).ImageDecoder;
+
+const gifDialog = ele("dialog").class("fold-dialog").addInto(modalBackdrop);
+const gifHeader = view("x").class("dialog-header").addInto(gifDialog);
+const gifTitle = view("y").addInto(gifHeader);
+gifTitle.add([
+    label("h2", "GIF 트림"),
+    label("small", "유지할 프레임 범위를 선택해 새 GIF로 저장합니다."),
+]);
+button()
+    .class("close-button")
+    .attr({ type: "button", ariaLabel: "닫기" })
+    .add(icon("×"))
+    .on("click", () => closeModal(gifDialog.el))
+    .addInto(gifHeader);
+const gifStage = view().class("fold-stage").addInto(gifDialog);
+const gifCanvas = ele("canvas").class("gif-canvas").addInto(gifStage);
+const gifControls = view("y").class("fold-controls").addInto(gifDialog);
+const gifStartInput = input("range")
+    .attr({
+        min: "0",
+        max: "1",
+        value: "0",
+        step: "1",
+        ariaLabel: "시작 프레임",
+    })
+    .on("input", () => void renderGifPreview())
+    .addInto(gifControls);
+const gifEndInput = input("range")
+    .attr({ min: "0", max: "1", value: "1", step: "1", ariaLabel: "끝 프레임" })
+    .on("input", () => void renderGifPreview())
+    .addInto(gifControls);
+const gifInfo = label("small", "").class("fold-info").addInto(gifControls);
+gifDialog.add(
+    view("x")
+        .class("dialog-actions")
+        .add([
+            button("취소")
+                .class("outline-button")
+                .attr({ type: "button" })
+                .on("click", () => closeModal(gifDialog.el)),
+            button()
+                .class("primary-button")
+                .attr({ type: "button" })
+                .add([icon("≣"), label("span", "GIF로 저장")])
+                .on("click", () => void applyGifTrim()),
+        ]),
+);
+gifDialog.el.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeModal(gifDialog.el);
+});
+let gifTarget: { id: string; decoder: GifDecoder; count: number } | null = null;
+let gifPreviewRequest = 0;
+
 const quickLookDialog = ele("dialog")
     .class("quicklook-dialog")
     .addInto(modalBackdrop);
@@ -1590,6 +1662,17 @@ const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
     ["✎", "주석·편집", (item) => runAction("open-item", item.id)],
     ["⌗", "자르기", () => startQlCrop()],
     ["⬍", "중간 접기", (item) => void openFold(item)],
+    [
+        "≣",
+        "GIF 트림",
+        (item) => {
+            if (!isGifItem(item)) {
+                showToast("GIF 항목에서만 사용할 수 있습니다.", true);
+                return;
+            }
+            void openGifTrim(item);
+        },
+    ],
     ["▨", "꾸미기", (item) => void openBeautify(item)],
     ["⤢", "업스케일", (item) => void openUpscale(item)],
     ["✧", "AI 업스케일", (item) => runAiUpscale(item)],
@@ -2529,6 +2612,13 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
         ["⤢", "업스케일", () => openUpscale(item)],
         ["✧", "AI 업스케일", () => runAiUpscale(item)],
         ["⬍", "중간 접기", () => void openFold(item)],
+        ...(isGifItem(item)
+            ? ([["≣", "GIF 트림", () => void openGifTrim(item)]] as [
+                  string,
+                  string,
+                  () => void,
+              ][])
+            : []),
         ["☰", "메모", () => openNote(item)],
         [
             "T",
@@ -2676,6 +2766,7 @@ const allDialogs = [
     beautifyDialog,
     upscaleDialog,
     foldDialog,
+    gifDialog,
     quickLookDialog,
     onboardDialog,
 ];
@@ -3224,6 +3315,113 @@ async function applyFold() {
             label: "Folded",
         });
         showToast("중간을 접은 이미지를 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+function isGifItem(item: OpenCaptureItem) {
+    return item.name.toLowerCase().endsWith(".gif");
+}
+
+async function openGifTrim(item: OpenCaptureItem) {
+    if (!GifImageDecoder) {
+        showToast("이 환경에서는 GIF 트림을 사용할 수 없습니다.", true);
+        return;
+    }
+    try {
+        const bytes = await window.openCapture.getItemFile(item.id);
+        const decoder = new GifImageDecoder({
+            data: bytes as BufferSource,
+            type: "image/gif",
+        });
+        await decoder.tracks.ready;
+        const count = decoder.tracks.selectedTrack?.frameCount ?? 0;
+        if (count < 2) {
+            decoder.close();
+            throw new Error("프레임이 2개 이상인 GIF만 트림할 수 있습니다.");
+        }
+        gifTarget?.decoder.close();
+        gifTarget = { id: item.id, decoder, count };
+        gifStartInput.attr({ max: String(count - 1), value: "0" });
+        gifEndInput.attr({ max: String(count - 1), value: String(count - 1) });
+        openModal(gifDialog.el);
+        await renderGifPreview();
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function renderGifPreview() {
+    const target = gifTarget;
+    if (!target) return;
+    const request = ++gifPreviewRequest;
+    let start = Number(gifStartInput.el.value) || 0;
+    let end = Number(gifEndInput.el.value) || 0;
+    if (start > end) [start, end] = [end, start];
+    gifInfo.el.textContent = `프레임 ${start + 1}–${end + 1} / ${target.count}`;
+    try {
+        const { image } = await target.decoder.decode({ frameIndex: start });
+        if (request !== gifPreviewRequest || gifTarget !== target) {
+            image.close();
+            return;
+        }
+        const canvas = gifCanvas.el;
+        canvas.width = image.codedWidth;
+        canvas.height = image.codedHeight;
+        canvas.getContext("2d")?.drawImage(image, 0, 0);
+        image.close();
+    } catch {
+        // 미리보기 프레임 디코딩 실패는 무시
+    }
+}
+
+async function applyGifTrim() {
+    const target = gifTarget;
+    if (!target) return;
+    let start = Number(gifStartInput.el.value) || 0;
+    let end = Number(gifEndInput.el.value) || 0;
+    if (start > end) [start, end] = [end, start];
+    try {
+        const gif = GIFEncoder();
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) throw new Error("canvas");
+        let palette: [number, number, number][] | undefined;
+        for (let i = start; i <= end; i++) {
+            const { image } = await target.decoder.decode({
+                frameIndex: i,
+            });
+            canvas.width = image.codedWidth;
+            canvas.height = image.codedHeight;
+            ctx.drawImage(image, 0, 0);
+            const delay = image.duration;
+            image.close();
+            const data = ctx.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+            ).data;
+            palette ??= quantize(data, 256) as [number, number, number][];
+            const index = applyPalette(data, palette);
+            gif.writeFrame(index, canvas.width, canvas.height, {
+                palette: i === start ? palette : undefined,
+                delay: Math.max(20, Math.round((delay ?? 100_000) / 1000)),
+            });
+        }
+        gif.finish();
+        const bytes = gif.bytes();
+        let binary = "";
+        const chunk = 8192;
+        for (let i = 0; i < bytes.length; i += chunk)
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+        closeModal(gifDialog.el);
+        await runAction("save-gif", {
+            id: target.id,
+            dataURL: `data:image/gif;base64,${btoa(binary)}`,
+        });
+        showToast("GIF 클립을 저장했습니다.");
     } catch (error) {
         showToast(errorMessage(error), true);
     }

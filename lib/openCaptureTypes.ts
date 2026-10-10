@@ -36,6 +36,7 @@ export type OpenCaptureActionName =
     | "set-note"
     | "set-tags"
     | "ai-upscale"
+    | "save-gif"
     | "index-ocr"
     | "save-pin-set"
     | "remove-pin-set"
@@ -152,6 +153,7 @@ export interface OpenCaptureApi {
     ): Promise<TranslationStatus>;
     importFiles(files: File[]): Promise<OpenCaptureState>;
     getItemData(id: string): Promise<string>;
+    getItemFile(id: string): Promise<Uint8Array>;
     startDrag(id: string): void;
     onShowLibrary(callback: () => void): () => void;
     onLibraryChanged(callback: () => void): () => void;

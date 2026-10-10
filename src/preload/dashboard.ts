@@ -84,6 +84,7 @@ const api: OpenCaptureApi = {
             files.map((file) => webUtils.getPathForFile(file)),
         ),
     getItemData: (id: string) => ipcRenderer.invoke("oc:item-data", id),
+    getItemFile: (id: string) => ipcRenderer.invoke("oc:item-file", id),
     startDrag: (id: string) => ipcRenderer.send("oc:drag", id),
 };
 
