@@ -76,11 +76,11 @@ const shell = view("x").class("app-shell").addInto();
 const sidebar = ele("aside").class("sidebar").addInto(shell);
 const main = ele("main").class("main").addInto(shell);
 
-const brand = view("x").class("brand").addInto(sidebar);
-brand.add([
-    view().class("brand-mark").add(icon("⌁")),
-    label("strong", "OpenCapture").class("brand-name"),
-]);
+const brand = view("x")
+    .class("brand")
+    .attr({ title: "OpenCapture" })
+    .addInto(sidebar);
+brand.add(view().class("brand-mark").add(icon("⌁")));
 
 const navigation = ele("nav").class("navigation").addInto(sidebar);
 const navItems: { page: PageName; icon: string; text: string }[] = [
@@ -116,9 +116,7 @@ button()
     .on("click", () => openOnboarding())
     .addInto(sidebarTools);
 
-const versionLabel = label("small", "OpenCapture")
-    .class("version")
-    .addInto(sidebarBottom);
+const versionLabel = label("small", "").class("version").addInto(sidebarBottom);
 
 const topbar = view("x").class("topbar").addInto(main);
 const titleGroup = view("y").class("title-group").addInto(topbar);
@@ -271,7 +269,6 @@ button()
     .addInto(quickRow);
 
 const workflowCard = view("y").class("workflow-card").addInto(homePage);
-workflowCard.add(label("h3", "캡처 후 자동 작업"));
 
 const workflowInputs = new Map<
     keyof OpenCaptureState["workflow"],

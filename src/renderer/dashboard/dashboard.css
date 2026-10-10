@@ -193,7 +193,7 @@ textarea::placeholder {
 .brand {
     gap: 11px;
     align-items: center;
-    margin: 0 4px 36px;
+    margin: 0 4px 30px;
 }
 .brand-mark {
     width: 36px;
@@ -210,12 +210,6 @@ textarea::placeholder {
 .brand-mark .icon {
     width: 25px;
     height: 25px;
-}
-.brand-name {
-    font-size: 17px;
-    font-weight: 650;
-    letter-spacing: -.5px;
-    color: #f9f9f9;
 }
 .navigation {
     display: flex;
@@ -465,11 +459,11 @@ textarea::placeholder {
     align-items: center;
 }
 .workflow-card {
-    margin-top: 22px;
+    margin-top: 18px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 16px 18px;
-    gap: 12px;
+    padding: 10px 12px;
+    gap: 8px;
     background: linear-gradient(100deg, #60606030, #3c3c3c45);
 }
 .workflow-choices {
@@ -1104,9 +1098,6 @@ kbd {
         width: 188px;
         padding-inline: 14px;
     }
-    .brand-name {
-        font-size: 15px;
-    }
     .main {
         padding: 24px;
     }
@@ -1149,9 +1140,6 @@ kbd {
     .brand-mark {
         width: 30px;
         height: 34px;
-    }
-    .brand-name {
-        font-size: 13px;
     }
     .nav-button {
         padding: 12px;
@@ -2530,6 +2518,16 @@ body {
 .selection-toolbar:not(.has-selection) .bulk-action,
 .selection-toolbar:not(.has-selection) .combine-action {
     display: none;
+}
+.selection-toolbar:not(.has-selection) > strong {
+    display: none;
+}
+.selection-toolbar:not(.has-selection) {
+    padding: 0;
+    margin-bottom: 10px;
+    border-color: transparent;
+    background: transparent;
+    justify-content: flex-end;
 }
 
 @media (max-width: 900px) {
