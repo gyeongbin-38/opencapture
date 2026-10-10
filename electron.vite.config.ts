@@ -1,8 +1,8 @@
-import { defineConfig } from "electron-vite";
-import { ViteImageOptimizer } from "vite-plugin-image-optimizer";
-import { analyzer } from "vite-bundle-analyzer";
-import * as path from "node:path";
 import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { defineConfig } from "electron-vite";
+import { analyzer } from "vite-bundle-analyzer";
+import { ViteImageOptimizer } from "vite-plugin-image-optimizer";
 
 export default defineConfig(({ mode }) => ({
     main: {
@@ -91,7 +91,7 @@ export default defineConfig(({ mode }) => ({
             mode === "analyze" ? analyzer() : undefined,
         ],
         define: {
-            "process.platform": "process.platform",
+            "process.platform": JSON.stringify(process.platform),
         },
     },
 }));

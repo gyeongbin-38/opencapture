@@ -1556,7 +1556,9 @@ function createClipWindow() {
 
     rendererPath(_clipWindow, "capture.html");
 
-    if (dev) _clipWindow.webContents.openDevTools();
+    _clipWindow.webContents.on("did-fail-load", (_e, code, desc) =>
+        console.log("[clip] fail-load", code, desc),
+    );
 
     _clipWindow.webContents.on("render-process-gone", (_e, d) => {
         console.log(d);
@@ -1583,6 +1585,7 @@ function createClipWindow() {
             ]);
     });
     _clipWindow.webContents.on("console-message", (d) => {
+        console.log("[clip]", d.level, d.message);
         if (d.level !== "debug")
             pushLog({
                 from: "screenShot",

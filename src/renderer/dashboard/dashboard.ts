@@ -70,18 +70,6 @@ const label = (
     value: string,
 ) => ele(tag).attr({ textContent: value });
 
-const prismField = view()
-    .class("prism-field")
-    .attr({ ariaHidden: "true" })
-    .addInto();
-prismField.add([
-    view().class("prism-orb", "prism-orb-cyan"),
-    view().class("prism-orb", "prism-orb-violet"),
-    view().class("prism-orb", "prism-orb-coral"),
-    view().class("prism-orb", "prism-orb-blue"),
-    view().class("prism-beam"),
-]);
-
 const windowTitlebar = view("x").class("window-titlebar").addInto();
 windowTitlebar.add([
     view().class("window-titlebar-mark").add(icon("⌁")),
@@ -95,12 +83,7 @@ const main = ele("main").class("main").addInto(shell);
 const brand = view("x").class("brand").addInto(sidebar);
 brand.add([
     view().class("brand-mark").add(icon("⌁")),
-    view("y")
-        .class("brand-copy")
-        .add([
-            label("strong", "OpenCapture"),
-            label("small", "내 화면을 더 가볍게"),
-        ]),
+    label("strong", "OpenCapture").class("brand-name"),
 ]);
 
 const navigation = ele("nav").class("navigation").addInto(sidebar);
@@ -142,28 +125,25 @@ const versionLabel = label("small", "OpenCapture")
 
 const topbar = view("x").class("topbar").addInto(main);
 const titleGroup = view("y").class("title-group").addInto(topbar);
-const pageEyebrow = label("small", "캡처 도구")
-    .class("eyebrow")
-    .addInto(titleGroup);
-const pageTitle = label("h1", "캡처 작업실").addInto(titleGroup);
+const pageTitle = label("h1", "캡처").addInto(titleGroup);
 const topActions = view("x").class("top-actions").addInto(topbar);
 
 button()
-    .class("ghost-button", "compact", "window-action")
+    .class("ghost-button", "compact", "icon-button")
     .attr({ type: "button", title: "간단히 보기", ariaLabel: "간단히 보기" })
-    .add([icon("↙"), label("span", "간단히")])
+    .add(icon("↙"))
     .on("click", () => runAction("toggle-compact"))
     .addInto(topActions);
 button()
-    .class("ghost-button", "compact", "window-action")
+    .class("ghost-button", "compact", "icon-button")
     .attr({ type: "button", title: "창 숨기기", ariaLabel: "창 숨기기" })
-    .add([icon("—"), label("span", "숨기기")])
+    .add(icon("—"))
     .on("click", () => runAction("hide-window"))
     .addInto(topActions);
 button()
-    .class("ghost-button", "compact")
-    .attr({ type: "button", title: "이미지 열기" })
-    .add([icon("＋"), label("span", "이미지 열기")])
+    .class("ghost-button", "compact", "icon-button")
+    .attr({ type: "button", title: "이미지 열기", ariaLabel: "이미지 열기" })
+    .add(icon("＋"))
     .on("click", () => runAction("open-image"))
     .addInto(topActions);
 button()
@@ -257,82 +237,6 @@ const captureActions: {
     },
 ];
 
-const welcome = view("x").class("welcome-card").addInto(homePage);
-const welcomeCopy = view("y").class("welcome-copy").addInto(welcome);
-welcomeCopy.add([
-    label("small", "빠른 캡처").class("eyebrow"),
-    label("h2", "순간을 담고,\n작업을 이어가세요.").class("hero-title"),
-    p(
-        "필요한 화면을 골라 저장하고, 바로 다음 작업으로 이어갈 수 있어요.",
-    ).class("hero-description"),
-    view("x")
-        .class("hero-actions")
-        .add([
-            button()
-                .class("primary-button", "hero-capture-button")
-                .attr({ type: "button" })
-                .add([icon("⌗"), label("span", "영역 캡처")])
-                .on("click", () => runAction("capture")),
-            label("small", "Ctrl + Shift + A").class("shortcut-pill"),
-        ]),
-]);
-const welcomeArt = view()
-    .class("welcome-art", "hero-capture-art")
-    .add([
-        view().class("capture-frame", "frame-back"),
-        view().class("capture-frame", "frame-middle"),
-        view()
-            .class("capture-frame", "frame-front")
-            .add([
-                view()
-                    .class("capture-frame-bar")
-                    .add([
-                        ele("span").class("frame-dot"),
-                        ele("span").class("frame-dot"),
-                        ele("span").class("frame-dot"),
-                    ]),
-                view()
-                    .class("capture-frame-content")
-                    .add(
-                        view()
-                            .class("capture-selection")
-                            .add([
-                                ele("span").class(
-                                    "selection-corner",
-                                    "top-left",
-                                ),
-                                ele("span").class(
-                                    "selection-corner",
-                                    "top-right",
-                                ),
-                                ele("span").class(
-                                    "selection-corner",
-                                    "bottom-left",
-                                ),
-                                ele("span").class(
-                                    "selection-corner",
-                                    "bottom-right",
-                                ),
-                            ]),
-                    ),
-            ]),
-        view().class("hero-prism").add(icon("✦")),
-        view().class("hero-lens").add(icon("⌁")),
-    ]);
-welcome.add(welcomeArt);
-
-const homeHeading = view("x").class("section-heading").addInto(homePage);
-homeHeading.add([
-    view("y").add([
-        label("h2", "빠른 실행"),
-        p("자주 쓰는 도구를 한 번에 시작하세요."),
-    ]),
-    button("단축키 보기")
-        .class("text-button")
-        .attr({ type: "button" })
-        .on("click", () => openShortcutSheet()),
-]);
-
 const actionGrid = view("x", "wrap").class("action-grid").addInto(homePage);
 for (const action of captureActions) {
     const category =
@@ -345,74 +249,38 @@ for (const action of captureActions) {
                 : "capture";
     const actionButton = button()
         .class("action-card", action.featured ? "featured" : "")
-        .attr({ type: "button" })
+        .attr({ type: "button", title: action.description })
         .data({ action: action.name, category })
         .on("click", () => {
             if (action.name === "steps") {
                 void toggleSteps();
             } else runAction(action.name);
         });
-    const cardTop = view("x")
-        .class("action-card-top")
-        .add([
-            view().class("action-icon").add(icon(action.icon)),
-            action.shortcut
-                ? label("small", action.shortcut).class("key-hint")
-                : undefined,
-        ]);
     actionButton.add([
-        cardTop,
+        view("x")
+            .class("action-card-top")
+            .add([
+                view().class("action-icon").add(icon(action.icon)),
+                action.shortcut
+                    ? label("small", action.shortcut).class("key-hint")
+                    : undefined,
+            ]),
         label("h3", action.title),
-        p(action.description),
-        label("span", "실행 →").class("action-link"),
     ]);
     actionButton.addInto(actionGrid);
 }
 
-const utilityRow = view("x").class("utility-row").addInto(homePage);
-const recentSummary = view("x").class("utility-card").addInto(utilityRow);
-recentSummary.add([
-    view().class("utility-icon").add(icon("▧")),
-    view("y")
-        .class("utility-copy")
-        .add([
-            label("strong", "캡처 라이브러리"),
-            label("span", "저장된 캡처를 한곳에서 관리하세요."),
-        ]),
-    button("열기")
-        .class("outline-button", "compact")
-        .attr({ type: "button" })
-        .on("click", () => showPage("library")),
-]);
-const restorePins = view("x").class("utility-card").addInto(utilityRow);
-restorePins.add([
-    view().class("utility-icon", "mint").add(icon("◇")),
-    view("y")
-        .class("utility-copy")
-        .add([
-            label("strong", "고정 이미지 복원"),
-            label("span", "포커스·깜빡임·클릭 통과를 해제해요."),
-        ]),
-    button("복원")
-        .class("outline-button", "compact")
-        .attr({ type: "button" })
-        .on("click", () => runAction("restore-pins")),
-]);
-
-const pinSetSection = view("y").class("pinset-section").addInto(homePage);
-const pinSetRow = view("x", "wrap").class("pinset-row").addInto(pinSetSection);
+const quickRow = view("x", "wrap").class("quick-row").addInto(homePage);
+const pinSetRow = view("x", "wrap").class("pinset-row").addInto(quickRow);
+button()
+    .class("ghost-button", "compact")
+    .attr({ type: "button", title: "화면에 고정된 이미지를 모두 복원" })
+    .add([icon("◇"), label("span", "핀 복원")])
+    .on("click", () => runAction("restore-pins"))
+    .addInto(quickRow);
 
 const workflowCard = view("y").class("workflow-card").addInto(homePage);
-workflowCard.add([
-    view("y")
-        .class("workflow-copy")
-        .add([
-            label("h2", "캡처 뒤 자동 작업"),
-            p(
-                "필요한 작업만 선택하세요. 원본 캡처는 항상 보관되며 이미지는 자동으로 외부에 업로드되지 않습니다.",
-            ),
-        ]),
-]);
+workflowCard.add(label("h3", "캡처 후 자동 작업"));
 
 const workflowInputs = new Map<
     keyof OpenCaptureState["workflow"],
@@ -466,13 +334,8 @@ for (const option of workflowOptions) {
     });
     ele("label")
         .class("toggle-option")
-        .add([
-            checkbox,
-            view("y").add([
-                label("strong", option.title),
-                label("small", option.description),
-            ]),
-        ])
+        .attr({ title: option.description })
+        .add([checkbox, label("strong", option.title)])
         .addInto(workflowChoices);
 }
 
@@ -602,7 +465,6 @@ const dropZone = view("y")
     .add([
         view().class("drop-icon").add(icon("⇩")),
         label("strong", "이미지를 여기에 놓으세요"),
-        p("PNG, JPG, GIF, WebP 파일을 현재 컬렉션에 저장합니다."),
         button("파일 선택")
             .class("text-button")
             .attr({ type: "button", tabIndex: -1 }),
@@ -889,9 +751,7 @@ convenienceCard.add(
             view().class("settings-icon", "mint").add(icon("⌘")),
             view("y").add([
                 label("h2", "빠른 실행"),
-                p(
-                    "단축키 칸을 클릭하고 새 키를 누르면 바로 바뀝니다. Backspace는 끄기, ↺는 기본값입니다.",
-                ),
+                p("클릭 후 새 키 입력 · Backspace 끄기"),
             ]),
         ]),
 );
@@ -908,16 +768,7 @@ startAtLoginInput.on("change", async () => {
 });
 ele("label")
     .class("toggle-option", "login-toggle")
-    .add([
-        startAtLoginInput,
-        view("y").add([
-            label("strong", "로그인할 때 시작"),
-            label(
-                "small",
-                "이 선택을 바꿀 때만 운영체제 시작 설정이 변경됩니다.",
-            ),
-        ]),
-    ])
+    .add([startAtLoginInput, label("strong", "로그인할 때 시작")])
     .addInto(convenienceCard);
 
 const mouseChordSelect = select([
@@ -937,12 +788,10 @@ mouseChordSelect.on("change", async () => {
 });
 ele("label")
     .class("toggle-option")
+    .attr({ title: "왼쪽과 오른쪽 버튼을 함께 누르면 바로 실행됩니다." })
     .add([
         view().class("option-icon").add(icon("◉")),
-        view("y").add([
-            label("strong", "마우스 좌·우 동시 클릭"),
-            label("small", "왼쪽과 오른쪽 버튼을 함께 누르면 바로 실행됩니다."),
-        ]),
+        label("strong", "마우스 좌·우 동시 클릭"),
         mouseChordSelect,
     ])
     .addInto(convenienceCard);
@@ -958,9 +807,7 @@ providerCard.add(
             view().class("settings-icon", "lavender").add(icon("文")),
             view("y").add([
                 label("h2", "외부 번역 연결"),
-                p(
-                    "선택 사항입니다. 개인 API 키는 안전한 저장소에 보관되고 화면에 다시 표시되지 않습니다.",
-                ),
+                p("선택 사항 · 키는 안전하게 보관됩니다"),
             ]),
         ]),
 );
@@ -1887,18 +1734,17 @@ function runAiUpscale(item: OpenCaptureItem) {
 
 function showPage(page: PageName) {
     activePage = page;
-    const titles: Record<PageName, [string, string]> = {
-        home: ["캡처 도구", "캡처 작업실"],
-        library: ["저장 공간", "내 캡처 모아보기"],
-        translate: ["번역 도구", "텍스트를 내 언어로"],
-        settings: ["환경 설정", "OpenCapture 설정"],
+    const titles: Record<PageName, string> = {
+        home: "캡처",
+        library: "라이브러리",
+        translate: "번역",
+        settings: "설정",
     };
     for (const [name, element] of pages)
         element.classList.toggle("active", name === page);
     for (const [name, element] of navButtons)
         element.classList.toggle("active", name === page);
-    pageEyebrow.el.textContent = titles[page][0];
-    pageTitle.el.textContent = titles[page][1];
+    pageTitle.el.textContent = titles[page];
     content.el.scrollTop = 0;
     if (page === "translate") refreshTranslationStatus();
 }
@@ -2173,12 +2019,12 @@ function renderState() {
     if (stepsCard) {
         const running = appState.runtime.stepCapture ?? false;
         stepsCard.classList.toggle("active", running);
-        const link = stepsCard.querySelector<HTMLElement>(".action-link");
-        if (link) link.textContent = running ? "중지" : "실행 →";
+        const title = stepsCard.querySelector<HTMLElement>("h3");
+        if (title) title.textContent = running ? "중지" : "단계 캡처";
     }
     pinSetRow.clear();
     const sets = appState.pinSets ?? [];
-    pinSetSection.el.style.display = sets.length ? "" : "none";
+    pinSetRow.el.style.display = sets.length ? "" : "none";
     if (sets.length)
         pinSetRow.add(
             label("small", "핀 세트").class("eyebrow", "pinset-heading"),

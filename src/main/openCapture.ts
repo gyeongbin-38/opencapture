@@ -1072,6 +1072,20 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         dashboard.webContents.on("will-navigate", (event) =>
             event.preventDefault(),
         );
+        dashboard.webContents.on("console-message", (d) => {
+            if (d.level === "error" || d.level === "warning")
+                console.log(
+                    "[dashboard]",
+                    d.message,
+                    `(${d.sourceId}:${d.lineNumber})`,
+                );
+        });
+        dashboard.webContents.on("preload-error", (_e, p, err) => {
+            console.log("[dashboard preload error]", p, err);
+        });
+        dashboard.webContents.on("render-process-gone", (_e, d) => {
+            console.log("[dashboard gone]", JSON.stringify(d));
+        });
         dashboard.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         dashboard.once("ready-to-show", () =>
             inactive ? dashboard?.showInactive() : dashboard?.show(),
