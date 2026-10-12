@@ -6,6 +6,17 @@ menu, and starts the sibling `OpenCapture.exe` only when the user requests an
 action. It does not configure Windows startup; the main application owns that
 setting.
 
+The default capture key is `Ctrl+Shift+Space`; the default dashboard key is
+`Ctrl+Alt+Space`. The helper reads the same `起始页快捷键` values as the
+Electron application, reloads them when `config.json` changes, and treats an
+empty value as disabled. It dispatches capture through
+`OpenCapture.exe --broker --native-dispatch --capture`, so there is one
+capture/editor implementation.
+
+Normal Electron instances claim ownership in `hotkey-owner.json`. The helper
+then unregisters its keys and acknowledges the transition in
+`hotkey-helper-state.json`; broker processes do not claim ownership.
+
 Build it with:
 
 ```powershell

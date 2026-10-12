@@ -1,39 +1,38 @@
 # Design
 
 ## Source of truth
-Active — 2026-10-10. OpenCapture desktop workspace: home, library, translation, settings, shortcut dialog and compact shelf. Existing screenshots `.evidence/library-wide.png` and `library-compact.png` were inspected. The previous cream/orange theme was explicitly rejected by the user. This file owns the visual contract.
+Active — 2026-10-11. OpenCapture desktop workspace, capture overlay and reference comparison. Evidence includes the existing dashboard styles, capture overlay code and the user's screenshot showing oversized pale controls. This file owns the visual contract; the latest black, compact direction supersedes the earlier colorful glass design.
 
 References consulted: [frontend-design](https://skills.sh/anthropics/skills/frontend-design), [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/ui-ux-pro-max), local design/visual-verdict skills. UI UX Pro Max revision `50d8a7de0900119855614541f15a1a616691eb33`; direct style query matched Glassmorphism. Its broad design-system query returned a minimal landing-page pattern, which does not fit this desktop utility; only the explicitly matched glass guidance and relevant accessibility/performance guidance are adopted.
 
 ## Brand
-Prismatic liquid glass: a dark obsidian desktop with cyan, electric blue, violet and coral light visibly passing through floating translucent layers. A creative instrument that feels cut from optical glass rather than painted with a dark theme. Trust comes from clear source/result distinction, visible offline/online engine state and original preservation. Avoid monochrome navy slabs, cream/terracotta monotone, emoji icons, decorative counters, fake history and perpetual animation.
+Quiet, precise and immediate. Neutral black surfaces, restrained white outline icons, readable controls and original image colors. Trust comes from clear source/result distinction, real execution feedback and preservation of originals. Avoid colored accents, emoji icons, oversized pale panels, paragraphs of instructions and perpetual animation.
 
 ## Product goals
-Make capture actions immediately identifiable; make stored images the focus of the library. Improve perceived quality without increasing the native helper's idle footprint. Preserve all working capture, workflow and translation actions. No new feature or dependency is required by this restyle.
+Make capture, size adjustment, copying and comparison usable at the point of work. Preserve all working actions, expose primary actions below the selection and put the remainder behind a button or right-click. Support multiple selected references without silently overwriting the clipboard. No new dependency.
 
 ## Personas and jobs
 Korean-speaking desktop users collecting references, translating screenshots and reusing multiple captures. Work in full workspace or narrow always-accessible shelf; primarily pointer and keyboard users.
 
 ## Information architecture
-Four stable destinations: home, library, translate, settings. Sidebar on wide screens; bottom icon navigation in compact mode. Home has a prominent capture action and categorized tools; library prioritizes selection/preview; translation clearly names the active provider.
+Four stable destinations: home, library, translate, settings. Capture overlay: compact dimensions above the selection, eight resize handles, a small rectangular action bar below it. Right-click on the image opens a radial menu at the pointer; essential actions form one ring, additional actions are paginated. Library selection exposes copying and a comparison dialog; secondary controls stay collapsed until relevant.
 
 ## Design principles
-1. Material depth comes from translucent floating layers, chromatic edges, refraction and static light sources visible behind them—not from opaque colored panels.
-2. Color identifies tool categories; text/icon labels also communicate meaning.
-3. One hero composition suggests captured fragments and framing; surrounding controls stay disciplined.
+1. Hierarchy comes from size, spacing, borders and restrained elevation.
+2. Show a few immediate actions; reveal secondary tools on demand.
+3. A rectangular bar anchors actions below the selected image, while right-click keeps tools near the user's hand.
 4. Image thumbnails retain natural color and visible alpha checkerboards.
 5. Keyboard focus and compact navigation remain visible.
 
 ## Visual language
-- Obsidian `#080A17`; glass surface `rgba(20,28,54,.48)`; frost text `#F5FBFF`; muted text `#B9C7DB`.
-- Spectrum: cyan `#64F1E2`, electric blue `#79A7FF`, coral `#FF9BB8`, amber `#FFBF83`, violet `#C1A9FF`. Colored light exists behind glass and at meaningful tool edges, rather than tinting every panel solidly.
-- Typography: locally available Segoe UI Variable Text/Segoe UI and Malgun Gothic; no remote font fetches. UI body14px, metadata12px, title27px, hero32px (24px compact). No serif fallthrough intended.
-- Spacing: 4/8px rhythm, 24/32px section gutters. Panel radii20px, controls10px, icon tiles12px. Subtle bright top edge and tinted shadow indicate glass thickness.
-- Blur: 28–34px on the floating sidebar/hero/dialog and14px on visible action cards; repeated thumbnail cards use a lighter12px material. Four static blurred spectral lights sit behind the workspace. Hover/focus transitions120–180ms; no continuous animation.
-- Consistent bespoke outline SVG family, 20px viewbox and1.7px stroke; all decorative SVGs aria-hidden.
+- Background `#0c0c0e`, surface `#18181c`, white text `#f4f4f5`, secondary text `#a1a1aa`, borders white at 12–18% opacity. Image content keeps its natural colors.
+- Typography: local Segoe UI Variable/Segoe UI/Malgun Gothic. UI 12–14px, dimensions 12px with tabular figures. No remote fonts.
+- Spacing: 4/8px rhythm. Capture controls start at 32px and allow 28–44px adjustment. Action bar radius 12px, button radius 7px; a thin edge and soft black shadow give depth.
+- Optional 16px blur on small floating controls with opaque fallbacks. Hover 120ms. Radial buttons travel from the center in 160–220ms with short stagger. No continuous motion; reduced-motion disables travel.
+- Local outline SVGs, 20px viewbox, 1.6px rounded strokes. No emoji as control labels.
 
 ## Components
-Shared tokens in `src/renderer/dashboard/dashboard.css`. Existing dkh-ui DOM and handlers remain. New code-native icons in `icons.ts`; hero uses layered capture frames. Primary/secondary/ghost buttons, tool cards, multiselect image cards, workflow toggles, engine panel, state badges and shortcut dialog share tokens.
+Dashboard tokens in `src/renderer/dashboard/dashboard.css`; capture tokens in `src/renderer/css/clip.css`. Existing dkh-ui and action handlers remain. Components: compact action bar, expandable tool popover, animated radial menu, dimension fields, ratio lock, selection resize handles, image multiselect and reference comparison. The color magnifier appears only during selection or explicit color picking.
 
 ## Accessibility
 Normal readable text target4.5:1 on effective composed surfaces; controls/focus3:1. Visible focus ring, no color-only state, icon buttons labelled. Preserve semantic button/input controls. Honor prefers-reduced-motion, prefers-reduced-transparency and forced-colors. Large transparent areas receive opaque fallback. No forced animation or hover-only critical actions.
@@ -42,13 +41,33 @@ Normal readable text target4.5:1 on effective composed surfaces; controls/focus3
 Wide1180×810; medium~850px; compact420×560 (content~407×524) and min360px. Reduce art and large hero in compact view, retain primary action, first library thumbnails and bottom navigation. No horizontal scrolling, modal bounds within viewport, Windows title controls reserve rightmost space.
 
 ## Interaction states
-Empty library provides an import action. Loading/translation/queue states remain real. Error text readable on high-opacity panels; toast above bottom navigation. Disabled bulk actions visibly disabled. Selected cards use border+checkbox; API provider disclosure remains accurate.
+Empty library provides an import action. Loading and errors remain real. Selected cards use border and checkbox. Comparison accepts image references and reports unsupported items. Clipboard labels explicitly distinguish a composite image from independent files. Escape closes the current tool surface before closing capture; right-click never discards the selection.
 
 ## Content voice
 Concise Korean action labels. No marketing metrics or new technical terminology. Preserve context around local processing vs online provider transmission.
 
 ## Implementation constraints
-Electron + dkh-ui + plain CSS/TypeScript. No npm/icon/animation dependencies or CDN fonts. Native QuickCapture helper untouched. Main workspace may use a Windows native titlebar overlay with a draggable header; OS buttons remain native. Validate builds, existing tests, packaged screenshots of all four destinations and wide/compact layouts, overflow, focus and reduced effects. Record visual verdict before subsequent style edits.
+Electron + dkh-ui + plain CSS/TypeScript. No npm/icon/animation dependencies or CDN fonts. The native launcher dispatches into the shared Electron capture editor; native and Electron hotkey ownership must never overlap. Main workspace may use a Windows native titlebar overlay with a draggable header; OS buttons remain native. Validate builds, existing tests, packaged screenshots of all four destinations and wide/compact layouts, overflow, focus and reduced effects. Record visual verdict before subsequent style edits.
 
 ## Open questions
-- [ ] User preference for a future light/dark switch remains optional; this iteration implements the requested colorful glass direction as one coherent dark workspace.
+No blocking design questions. This iteration implements the requested compact black controls and preserves the existing feature set.
+
+## Browser feature lab
+
+The local browser workbench is now the active feature-development surface. A compact rail links editor, capture, library, media and feature checks. The shared editor and processing contracts are reused for eventual desktop integration. Native OS capabilities are labelled app-only; browser permission flows are never simulated as completed actions.
+
+Controls have at least40px targets, 8px control gaps and16px group gaps. Numeric fields have visible labels. Toolbars size from their own measured content, independent of image size; overflow tools remain reachable behind More. Floating browser references and position locking are separate actions. Properties/layers/options stay closed until requested.
+
+## Temporary capture workspace and feedback
+
+Temporary captures remain separate from the permanent library and can be reopened with their editable annotations. A small, resizable black shelf shows recent previews without taking keyboard focus. Multiple source files and a composed bitmap have distinct copy actions.
+
+Capture feedback follows the actual result: a 150ms selection settle, 180ms radial reveal, clear gesture target, and a short thumbnail arrival only after a committed save. No repeated save animation on annotation autosaves. Sound is optional and disabled by default; reduced motion skips travel and scaling. Errors retain the capture and offer retry.
+
+Toolbar and radial favorites are configurable. The first view exposes essential controls only; presets, layouts, OCR review and comparison details appear when requested. Comparison notes remain anchored in normalized image coordinates and are rendered into exports.
+
+## Capture board extension
+
+The dashboard home exposes one primary capture button, three recent captures and continue-work. A board destination provides tabs and several captured images with free placement, group/layout/focus, notes and shape annotations. Tool drawers, layers, styles and export actions remain collapsed until selected. The existing capture overlay and floating pins keep their compact controls.
+
+Long left press on image content waits650ms, cancels at8px movement or release, and reveals a quiet progress ring. Drawing/text/resize controls never trigger cutout. Background removal prepares a new transparent asset; originals remain undoable. Board geometry and asset references persist separately with revision checks. DOM text uses textContent; working previews1024 edge and twelve decoded visible images.

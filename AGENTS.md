@@ -36,9 +36,11 @@ pnpm run dist
 - **src/main/**: Electron 主进程，入口为 main.ts
 - **src/renderer/**: 渲染进程，包含多个功能页面：
   - aiVision/ ai识图 作为主页面子页面
-  - clip/ - 截屏功能
+  - captureShelf/ - 临时捕获暂存区（草稿缩略图、多选复制、拖出）
+  - clip/ - 截屏功能（含 captureWorkspace.ts 捕获工具条与径向菜单）
+  - dashboard/ - OpenCapture 面板（虚拟图库、看板编辑器、参考对比、命令面板、打包复制）
+  - ding/ - 贴图功能 还有贴图翻译（位置/透明度会话恢复见 docs/develop/ding.md）
   - editor/ - **主页面**
-  - ding/ - 贴图功能 还有贴图翻译
   - setting/ - 设置
   - photoEditor 高级图片编辑
   - recorder/ - 录屏（旧）
@@ -48,10 +50,12 @@ pnpm run dist
   - videoEditor/ 超级录屏、普通录屏，包括跟踪鼠标、视频编辑
 
 还有一些库
-  - lib/ 杂项 公共功能
+  - lib/ 杂项 公共功能（捕获工具条、看板几何/标注、草稿队列、参考对比等共享逻辑）
   - ocr/ - OCR相关
   - root/ 界面样式定义
   - screenShot/ 截屏库
+- **src/main/**: 捕获目录、草稿/看板存储、缩略图磁盘缓存、文件剪贴板等持久化模块亦位于 src/main/
+- **web/**: 浏览器内功能实验室，npm run web / web:check 可独立验证交互
 - **src/ShareTypes.d.ts**: 共享类型定义
 
 ## 常用流程
