@@ -5,7 +5,9 @@ import type * as Ort from "onnxruntime-node";
 let session: Promise<Ort.InferenceSession> | undefined;
 let idleRelease: ReturnType<typeof setTimeout> | undefined;
 let active = 0;
-export async function removeBackground(
+let inferenceQueue: Promise<void> = Promise.resolve();
+
+async function runBackgroundRemoval(
     image: NativeImage,
     root: string,
 ): Promise<NativeImage> {
@@ -93,4 +95,16 @@ export async function removeBackground(
             idleRelease.unref();
         }
     }
+}
+
+export function removeBackground(
+    image: NativeImage,
+    root: string,
+): Promise<NativeImage> {
+    const result = inferenceQueue.then(() => runBackgroundRemoval(image, root));
+    inferenceQueue = result.then(
+        () => undefined,
+        () => undefined,
+    );
+    return result;
 }

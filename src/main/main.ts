@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import {
     type BaseWindow,
@@ -47,6 +48,7 @@ import {
     mkdirSync,
     readFile,
     readFileSync,
+    renameSync,
     rmSync,
     statSync,
     writeFile,
@@ -58,7 +60,16 @@ import url from "node:url";
 import main, { matchFitLan } from "xtranslator";
 import { githubMirrorList } from "../../lib/github_mirror";
 import { mainOn, mainOnReflect, mainSend } from "../../lib/ipc";
-import type { RecordRect } from "../../lib/ipc";
+import type {
+    ClipCaptureContext,
+    ClipProject,
+    RecordRect,
+} from "../../lib/ipc";
+import type {
+    CaptureDiagnosticTrace,
+    CaptureDraft,
+    CaptureSourceContext,
+} from "../../lib/openCaptureTypes";
 import Store from "../../lib/store/store";
 import time_format from "../../lib/time_format";
 import { getLans, lan, t } from "../../lib/translate/translate";
@@ -72,19 +83,184 @@ import type {
     功能,
 } from "../ShareTypes";
 
+type NodeScreenshotsModule = typeof import("node-screenshots");
+
 const runPath = join(resolve(__dirname, ""), "../../");
 const tmpDir = join(tmpdir(), "OpenCapture");
 app.setName("OpenCapture");
 app.setPath("userData", join(app.getPath("appData"), "OpenCapture"));
 mkdirSync(app.getPath("userData"), { recursive: true });
 let openCapture: ReturnType<typeof installOpenCapture> | undefined;
+let boardQuitApproved = false;
+let boardQuitPending = false;
+app.on("browser-window-created", (_event, window) => {
+    window.webContents.on("will-prevent-unload", () => {
+        boardQuitApproved = false;
+    });
+});
+app.on("before-quit", (event) => {
+    if (boardQuitApproved || !openCapture) return;
+    event.preventDefault();
+    if (boardQuitPending) return;
+    boardQuitPending = true;
+    void (async () => {
+        try {
+            if (!(await flushCaptureDraft())) return;
+            const boardFlush = await openCapture?.requestBoardFlush();
+            if (!boardFlush?.ok) {
+                if (boardFlush?.message) noti(boardFlush.message);
+                return;
+            }
+            openCapture?.allowBoardWindowClose("quit");
+            boardQuitApproved = true;
+            app.quit();
+        } catch (error) {
+            console.error("Board save before quit failed:", error);
+        } finally {
+            boardQuitPending = false;
+        }
+    })();
+});
 const brokerMode = process.argv.includes("--broker");
+const nativeDispatch = process.argv.includes("--native-dispatch");
+const captureInput = new AsyncLocalStorage<string>();
+const captureDiagnostics: CaptureDiagnosticTrace[] = [];
+let activeCaptureRequestId: string | undefined;
+const helperOwnedShortcutIds = new Set(["capture", "toggle"]);
 let shortcutStatus: ShortcutStatus[] = [];
 const shortcutLastUsed = new Map<string, number>();
 const markUsed = (id: string, run: () => void) => () => {
     shortcutLastUsed.set(id, Date.now());
-    run();
+    captureInput.run(`shortcut:${id}`, run);
 };
+
+function addCaptureDiagnostic(
+    requestId: string,
+    phase: CaptureDiagnosticTrace["phase"],
+    input?: string,
+    detail?: string,
+) {
+    if (
+        (phase === "ready" ||
+            phase === "shown" ||
+            phase === "committed" ||
+            phase === "failed") &&
+        captureDiagnostics.some(
+            (trace) => trace.requestId === requestId && trace.phase === phase,
+        )
+    )
+        return;
+    captureDiagnostics.push({
+        requestId,
+        phase,
+        ...(input ? { input } : {}),
+        ...(detail ? { detail } : {}),
+        at: new Date().toISOString(),
+    });
+    if (captureDiagnostics.length > 40)
+        captureDiagnostics.splice(0, captureDiagnostics.length - 40);
+}
+
+function diagnosticInput(requestId: string) {
+    return captureDiagnostics.find(
+        (trace) => trace.requestId === requestId && trace.phase === "input",
+    )?.input;
+}
+
+function hotkeyOwnerPath() {
+    return join(app.getPath("userData"), "hotkey-owner.json");
+}
+
+function hotkeyHelperStatePath() {
+    return join(app.getPath("userData"), "hotkey-helper-state.json");
+}
+
+function atomicWriteJson(path: string, value: unknown) {
+    const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, JSON.stringify(value), { flag: "wx" });
+    try {
+        renameSync(temporary, path);
+    } catch {
+        rmSync(path, { force: true });
+        renameSync(temporary, path);
+    }
+}
+
+function configuredHelperKeys() {
+    const custom =
+        (store.get("起始页快捷键") as Record<string, string> | undefined) ?? {};
+    return {
+        capture:
+            custom.capture === undefined
+                ? "CommandOrControl+Shift+Space"
+                : custom.capture,
+        toggle:
+            custom.toggle === undefined
+                ? "CommandOrControl+Alt+Space"
+                : custom.toggle,
+    };
+}
+
+function liveProcess(pid: unknown) {
+    if (!Number.isSafeInteger(pid) || (pid as number) <= 0) return false;
+    try {
+        process.kill(pid as number, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function readJsonFile(path: string): Record<string, unknown> | undefined {
+    try {
+        const stat = statSync(path);
+        if (!stat.isFile() || stat.size > 64 * 1024) return;
+        const value = JSON.parse(readFileSync(path, "utf8"));
+        return value && typeof value === "object"
+            ? (value as Record<string, unknown>)
+            : undefined;
+    } catch {
+        return;
+    }
+}
+
+function writeHotkeyOwner(keys = configuredHelperKeys()) {
+    if (brokerMode) return;
+    atomicWriteJson(hotkeyOwnerPath(), {
+        version: 1,
+        pid: process.pid,
+        mode: "electron",
+        keys,
+        updatedAt: Date.now(),
+    });
+}
+
+async function claimHotkeyOwnership() {
+    if (brokerMode) return;
+    writeHotkeyOwner();
+    const initial = readJsonFile(hotkeyHelperStatePath());
+    if (!initial || !liveProcess(initial.pid)) return;
+    const deadline = Date.now() + 800;
+    while (Date.now() < deadline) {
+        const state = readJsonFile(hotkeyHelperStatePath());
+        if (
+            state?.owner === "electron" &&
+            state.registered === false &&
+            liveProcess(state.pid)
+        )
+            return;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 40));
+    }
+}
+
+function releaseHotkeyOwnership() {
+    if (brokerMode) return;
+    const owner = readJsonFile(hotkeyOwnerPath());
+    if (owner?.pid !== process.pid) return;
+    try {
+        rmSync(hotkeyOwnerPath(), { force: true });
+    } catch {}
+}
 const loginTarget = () => {
     const helper = join(dirname(process.execPath), "OpenCaptureQuick.exe");
     return existsSync(helper)
@@ -365,6 +541,11 @@ function sleep(time: number) {
  */
 async function argRun(c: string[], first?: boolean) {
     const argv = minimist(c.slice(1));
+    const dispatchInput = argv["native-dispatch"]
+        ? "native-dispatch"
+        : first
+          ? "startup-command"
+          : "second-instance";
     if (argv["process-inbox"]) {
         await openCapture?.ingestInbox();
         await openCapture?.whenIdle();
@@ -372,11 +553,11 @@ async function argRun(c: string[], first?: boolean) {
     }
     if (argv.background) return;
     if (argv.toggle) {
-        openCapture?.toggle();
+        captureInput.run(dispatchInput, () => openCapture?.toggle());
         return;
     }
     if (argv.capture) {
-        await sendCaptureEvent();
+        await captureInput.run(dispatchInput, () => sendCaptureEvent());
         return;
     }
 
@@ -718,16 +899,53 @@ function ocShortcutStatus() {
     const defaults = new Map(
         ocShortcutDefs().map((d) => [d.id, d.keys[0] ?? ""]),
     );
-    return shortcutStatus.map((s) => ({
+    const registered = shortcutStatus.map((s) => ({
         ...s,
         custom: custom[s.id] ?? null,
         default: defaults.get(s.id) ?? s.requested,
         lastUsed: shortcutLastUsed.get(s.id) ?? null,
     }));
+    if (!brokerMode) return registered;
+    const keys = configuredHelperKeys();
+    return [
+        ...registered,
+        {
+            id: "capture",
+            label: "영역 캡처",
+            requested: keys.capture,
+            active: null,
+            available: true,
+            custom: keys.capture,
+            default: "CommandOrControl+Shift+Space",
+            lastUsed: shortcutLastUsed.get("capture") ?? null,
+        },
+        {
+            id: "toggle",
+            label: "시작 화면",
+            requested: keys.toggle,
+            active: null,
+            available: true,
+            custom: keys.toggle,
+            default: "CommandOrControl+Alt+Space",
+            lastUsed: shortcutLastUsed.get("toggle") ?? null,
+        },
+    ];
 }
 
 /** key: 새 가속키, ""=끄기, null=기본값으로 되돌리기 */
 function rebindOcShortcut(id: string, key: unknown): boolean {
+    if (brokerMode && helperOwnedShortcutIds.has(id)) {
+        if (key !== null && typeof key !== "string") return false;
+        const custom = {
+            ...((store.get("起始页快捷键") as
+                | Record<string, string>
+                | undefined) ?? {}),
+        };
+        if (key === null) delete custom[id];
+        else custom[id] = key;
+        store.set("起始页快捷键", custom);
+        return true;
+    }
     const def = ocShortcutDefs().find((d) => d.id === id);
     if (!def) return false;
     if (key !== null && typeof key !== "string") return false;
@@ -765,6 +983,19 @@ function rebindOcShortcut(id: string, key: unknown): boolean {
         status.active = active;
         status.available = true;
     }
+    if (helperOwnedShortcutIds.has(id))
+        writeHotkeyOwner({
+            capture:
+                id === "capture"
+                    ? (active ?? "")
+                    : (ocShortcutStatus().find((s) => s.id === "capture")
+                          ?.active ?? ""),
+            toggle:
+                id === "toggle"
+                    ? (active ?? "")
+                    : (ocShortcutStatus().find((s) => s.id === "toggle")
+                          ?.active ?? ""),
+        });
     return true;
 }
 
@@ -804,6 +1035,7 @@ function toggleStepCapture() {
 
 async function captureStepAt(x: number, y: number) {
     try {
+        hideCaptureShelf();
         const display = screen.getDisplayNearestPoint({ x, y });
         const scale = display.scaleFactor || 1;
         const sources = await desktopCapturer.getSources({
@@ -851,7 +1083,11 @@ function syncMouseChord() {
                 if (!chordState.fired && chordState.left && chordState.right) {
                     chordState.fired = true;
                     const run = mouseChordRun();
-                    if (run) setTimeout(run, 0);
+                    if (run)
+                        setTimeout(
+                            () => captureInput.run("mouse-chord", run),
+                            0,
+                        );
                 }
             });
             uIOhook.on("mouseup", (e) => {
@@ -921,7 +1157,7 @@ process.on("unhandledRejection", (e) => {
     handleError(String(e));
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     console.log(
         `eSearch ${app.getVersion()} 启动\n项目地址：https://github.com/xushengfeng/eSearch`,
     );
@@ -932,6 +1168,12 @@ app.whenReady().then(() => {
 
     fixSettingTree();
 
+    try {
+        await claimHotkeyOwnership();
+    } catch (error) {
+        console.error("Hotkey ownership claim failed:", error);
+    }
+
     const translation = createTranslationService({
         root: runPath,
         userData: app.getPath("userData"),
@@ -940,33 +1182,74 @@ app.whenReady().then(() => {
     openCapture = installOpenCapture(runPath, {
         capture: async (mode) => {
             if (mode === "fullscreen" || mode === "previous") {
-                const shots = initScreenShots(...screenShotArgs);
-                const all = await shots(screen.getAllDisplays());
-                const target =
-                    all.screen.find(
-                        (s) =>
-                            s.id ===
-                            screen.getDisplayNearestPoint(
-                                screen.getCursorScreenPoint(),
-                            ).id,
-                    ) ?? all.screen[0];
-                if (!target) throw new Error("캡처할 화면을 찾을 수 없습니다.");
-                let image = (await target.capture()).toNativeImage();
-                if (mode === "previous") {
-                    const rect = store.get("框选.记忆.rects")?.[target.id];
-                    if (!rect || rect[2] < 1 || rect[3] < 1)
-                        throw new Error(
-                            "이전 캡처 영역이 없습니다. 먼저 영역을 캡처해 주세요.",
+                const requestId = randomUUID();
+                const input = `dashboard:${mode}`;
+                const source = currentCaptureSource("capture");
+                addCaptureDiagnostic(requestId, "input", input);
+                try {
+                    if (!(await flushCaptureDraft())) {
+                        addCaptureDiagnostic(
+                            requestId,
+                            "failed",
+                            input,
+                            "draft-flush",
                         );
-                    image = image.crop({
-                        x: rect[0],
-                        y: rect[1],
-                        width: rect[2],
-                        height: rect[3],
-                    });
+                        return;
+                    }
+                    hideCaptureShelf();
+                    addCaptureDiagnostic(requestId, "preparing", input);
+                    const shots = initScreenShots(...screenShotArgs);
+                    const all = await shots(screen.getAllDisplays());
+                    const target =
+                        all.screen.find(
+                            (s) =>
+                                s.id ===
+                                screen.getDisplayNearestPoint(
+                                    screen.getCursorScreenPoint(),
+                                ).id,
+                        ) ?? all.screen[0];
+                    if (!target)
+                        throw new Error("캡처할 화면을 찾을 수 없습니다.");
+                    let image = (await target.capture()).toNativeImage();
+                    if (mode === "previous") {
+                        const rect = store.get("框选.记忆.rects")?.[target.id];
+                        if (!rect || rect[2] < 1 || rect[3] < 1)
+                            throw new Error(
+                                "이전 캡처 영역이 없습니다. 먼저 영역을 캡처해 주세요.",
+                            );
+                        image = image.crop({
+                            x: rect[0],
+                            y: rect[1],
+                            width: rect[2],
+                            height: rect[3],
+                        });
+                    }
+                    const saved = openCapture?.saveImage(
+                        image,
+                        "Capture",
+                        true,
+                        openCapture.activeFolder(),
+                        undefined,
+                        source,
+                    );
+                    if (saved) {
+                        addCaptureDiagnostic(
+                            requestId,
+                            "committed",
+                            input,
+                            saved,
+                        );
+                        showPhoto(saved);
+                    }
+                } catch (error) {
+                    addCaptureDiagnostic(
+                        requestId,
+                        "failed",
+                        input,
+                        error instanceof Error ? error.message : String(error),
+                    );
+                    throw error;
                 }
-                const saved = openCapture?.saveImage(image);
-                if (saved) showPhoto(saved);
                 return;
             }
             const actions: Record<string, 功能 | undefined> = {
@@ -977,7 +1260,9 @@ app.whenReady().then(() => {
                 ocr: "ocr",
                 "screen-translate": "translate",
             };
-            await sendCaptureEvent(undefined, actions[mode]);
+            await captureInput.run(`dashboard:${mode}`, () =>
+                sendCaptureEvent(undefined, actions[mode]),
+            );
         },
         pin: async (path) => {
             if (path) ding(nativeImage.createFromPath(path));
@@ -985,7 +1270,25 @@ app.whenReady().then(() => {
         },
         edit: showPhoto,
         openProject: openClipProject,
+        openDraft: openCaptureDraft,
+        shelfChanged: () => {
+            if (activeCaptureRequestId) {
+                addCaptureDiagnostic(
+                    activeCaptureRequestId,
+                    "committed",
+                    diagnosticInput(activeCaptureRequestId),
+                );
+                activeCaptureRequestId = undefined;
+            }
+            void showCaptureShelf().catch((error) =>
+                console.error("Capture shelf update failed:", error),
+            );
+        },
         settings: createSettingWindow,
+        quit: () => {
+            boardQuitApproved = false;
+            app.quit();
+        },
         runtimeState: () => ({
             startAtLogin:
                 app.isPackaged &&
@@ -994,6 +1297,7 @@ app.whenReady().then(() => {
             mouseChord: store.get("鼠标快捷键.全局"),
             brokerMode,
             stepCapture: stepCaptureActive,
+            captureDiagnostics: [...captureDiagnostics],
         }),
         steps: toggleStepCapture,
         language: () => store.get("语言.语言") || "ko",
@@ -1061,6 +1365,8 @@ app.whenReady().then(() => {
             ),
     });
     store.set("保存.保存路径.图片", openCapture.activeFolder());
+
+    if (dingSessions.size) ensureDingWindows();
 
     // 初始化语言
     lan(store.get("语言.语言") || "");
@@ -1227,7 +1533,7 @@ app.whenReady().then(() => {
                           click: () => {
                               store.set("dev", false);
                               app.relaunch();
-                              app.exit(0);
+                              app.quit();
                           },
                       },
                   ]
@@ -1252,7 +1558,7 @@ app.whenReady().then(() => {
                 label: t("重启"),
                 click: () => {
                     app.relaunch();
-                    app.exit(0);
+                    app.quit();
                 },
             },
             {
@@ -1310,6 +1616,16 @@ app.whenReady().then(() => {
     shortcutStatus = registerShortcuts(ocShortcutRequests(), (key, run) =>
         globalShortcut.register(key, run),
     );
+    if (!brokerMode) {
+        writeHotkeyOwner({
+            capture:
+                shortcutStatus.find((status) => status.id === "capture")
+                    ?.active ?? "",
+            toggle:
+                shortcutStatus.find((status) => status.id === "toggle")
+                    ?.active ?? "",
+        });
+    }
     syncMouseChord();
     if (!existsSync(tmpDir)) mkdir(tmpDir, () => {});
     if (keepClip) {
@@ -1451,6 +1767,7 @@ function setMenu() {
 }
 
 app.on("will-quit", () => {
+    releaseHotkeyOwnership();
     globalShortcut.unregisterAll();
     try {
         mouseHook?.stop();
@@ -1532,20 +1849,205 @@ function pushLog(op: (typeof logs)[0]) {
 }
 
 // 截屏窗口
+let captureShelfWindow: BrowserWindow | null = null;
+let shelfPendingReshow = false;
+let shelfRefreshSequence = 0;
+
+function hideCaptureShelf(reshow = true) {
+    if (reshow && captureShelfWindow && !captureShelfWindow.isDestroyed())
+        shelfPendingReshow = true;
+    if (
+        captureShelfWindow &&
+        !captureShelfWindow.isDestroyed() &&
+        captureShelfWindow.isVisible()
+    )
+        captureShelfWindow.hide();
+}
+
+async function showCaptureShelf() {
+    const sequence = ++shelfRefreshSequence;
+    if (!openCapture?.getPreferences().shelfEnabled) {
+        shelfPendingReshow = false;
+        hideCaptureShelf(false);
+        return;
+    }
+    const temporary = await openCapture.queryItems({
+        scope: "temporary",
+        sort: "newest",
+        offset: 0,
+        limit: 1,
+        queryId: `native-shelf-${sequence}`,
+    });
+    if (sequence !== shelfRefreshSequence) return;
+    if (temporary.total === 0) {
+        shelfPendingReshow = false;
+        hideCaptureShelf(false);
+        return;
+    }
+    if (clipWindow?.isVisible()) {
+        shelfPendingReshow = true;
+        hideCaptureShelf(false);
+        return;
+    }
+    shelfPendingReshow = false;
+    if (captureShelfWindow && !captureShelfWindow.isDestroyed()) {
+        captureShelfWindow.webContents.send("oc:library-updated");
+        captureShelfWindow.showInactive();
+        return;
+    }
+    const shelfDisplay = screen.getDisplayNearestPoint(
+        screen.getCursorScreenPoint(),
+    );
+    const shelfBounds = shelfDisplay.workArea;
+    const win = new BrowserWindow({
+        icon: theIcon,
+        width: 360,
+        height: 168,
+        minWidth: 290,
+        minHeight: 150,
+        x: Math.max(
+            shelfBounds.x,
+            shelfBounds.x + shelfBounds.width - 360 - 18,
+        ),
+        y: Math.max(
+            shelfBounds.y,
+            shelfBounds.y + shelfBounds.height - 168 - 18,
+        ),
+        frame: false,
+        transparent: true,
+        resizable: true,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        show: false,
+        backgroundColor: "#101012ee",
+        webPreferences: {
+            preload: join(__dirname, "../preload/dashboard.js"),
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+        },
+    });
+    captureShelfWindow = win;
+    win.setAlwaysOnTop(true, "floating");
+    win.on("closed", () => {
+        if (captureShelfWindow === win) captureShelfWindow = null;
+    });
+    let shelfRegistered = false;
+    const registerShelf = () => {
+        if (win.isDestroyed() || shelfRegistered) return;
+        try {
+            openCapture?.registerRenderer(win.webContents, "shelf");
+            shelfRegistered = true;
+        } catch (error) {
+            console.error("Capture shelf registration failed:", error);
+            win.close();
+        }
+    };
+    win.webContents.on(
+        "did-frame-navigate",
+        (_event, _url, _code, _status, isMainFrame) => {
+            if (isMainFrame) registerShelf();
+        },
+    );
+    win.webContents.once("did-navigate", registerShelf);
+    win.webContents.once("did-finish-load", () => {
+        registerShelf();
+        if (!win.isDestroyed()) {
+            win.webContents.send("oc:library-updated");
+            if (clipWindow?.isVisible()) {
+                shelfPendingReshow = true;
+                win.hide();
+            } else win.showInactive();
+        }
+    });
+    rendererPath(win, "capture_shelf.html");
+}
+
+mainOn("capture_shelf_close", () => {
+    shelfPendingReshow = false;
+    captureShelfWindow?.close();
+});
+
 let clipWindow: BrowserWindow | null = null;
 let clipWindowLoaded = false;
-let pendingClipInit: [Buffer | undefined, 功能 | undefined] | null = null;
+type PendingClipInit = {
+    sequence: number;
+    data?: Buffer;
+    type?: 功能;
+    project?: ClipProject;
+    context: ClipCaptureContext;
+};
+let pendingClipInit: PendingClipInit | null = null;
+let captureAcquireSequence = 0;
+let capturePrepareQueue: Promise<void> = Promise.resolve();
+
+function deliverClipInit(window: BrowserWindow, pending: PendingClipInit) {
+    if (pending.sequence !== captureAcquireSequence) return;
+    openCapture?.registerRenderer(
+        window.webContents,
+        "clip",
+        pending.project?.draftId,
+    );
+    mainSend(window.webContents, "clip_init", [
+        screen.getAllDisplays(),
+        pending.data,
+        screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
+        pending.type,
+        pending.project,
+        pending.context,
+    ]);
+}
 const getClipWin = async () => {
     if (clipWindowLoaded && !clipWindow?.isDestroyed())
         return clipWindow as BrowserWindow;
     if (!clipWindow || clipWindow.isDestroyed())
         clipWindow = createClipWindow();
-
-    return new Promise((re: (v: BrowserWindow) => void) => {
-        clipWindow?.webContents.once("did-finish-load", () => {
-            clipWindowLoaded = true;
-            return re(clipWindow as BrowserWindow);
-        });
+    const target = clipWindow;
+    return new Promise<BrowserWindow>((resolveWindow, rejectWindow) => {
+        let settled = false;
+        const finish = (error?: Error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            target.webContents.removeListener("did-finish-load", onLoad);
+            target.webContents.removeListener("did-fail-load", onFail);
+            target.webContents.removeListener("render-process-gone", onGone);
+            target.removeListener("closed", onClosed);
+            if (error) {
+                clipWindowLoaded = false;
+                if (clipWindow === target) clipWindow = null;
+                if (!target.isDestroyed()) target.destroy();
+                rejectWindow(error);
+            } else {
+                clipWindowLoaded = true;
+                resolveWindow(target);
+            }
+        };
+        const onLoad = () => finish();
+        const onFail = (
+            _event: Electron.Event,
+            code: number,
+            description: string,
+        ) =>
+            finish(
+                new Error(
+                    `Capture renderer load failed (${code}): ${description}`,
+                ),
+            );
+        const onGone = (
+            _event: Electron.Event,
+            details: Electron.RenderProcessGoneDetails,
+        ) => finish(new Error(`Capture renderer exited: ${details.reason}`));
+        const onClosed = () =>
+            finish(new Error("Capture window closed while loading."));
+        const timeout = setTimeout(
+            () => finish(new Error("Capture renderer load timed out.")),
+            15_000,
+        );
+        target.webContents.once("did-finish-load", onLoad);
+        target.webContents.once("did-fail-load", onFail);
+        target.webContents.once("render-process-gone", onGone);
+        target.once("closed", onClosed);
     });
 };
 /** 初始化截屏后台窗口 */
@@ -1576,12 +2078,26 @@ function createClipWindow() {
 
     rendererPath(_clipWindow, "capture.html");
 
-    _clipWindow.webContents.on("did-fail-load", (_e, code, desc) =>
-        console.log("[clip] fail-load", code, desc),
-    );
+    _clipWindow.webContents.on("did-fail-load", (_e, code, desc) => {
+        console.log("[clip] fail-load", code, desc);
+        if (pendingClipInit)
+            addCaptureDiagnostic(
+                pendingClipInit.context.requestId,
+                "failed",
+                diagnosticInput(pendingClipInit.context.requestId),
+                `load:${code} ${desc}`,
+            );
+    });
 
     _clipWindow.webContents.on("render-process-gone", (_e, d) => {
         console.log(d);
+        if (pendingClipInit)
+            addCaptureDiagnostic(
+                pendingClipInit.context.requestId,
+                "failed",
+                diagnosticInput(pendingClipInit.context.requestId),
+                `renderer:${d.reason}`,
+            );
         const id = dialog.showMessageBoxSync({
             message: t("截屏程序崩溃，是否重启？"),
             buttons: [t("重启"), t("退出应用")],
@@ -1596,13 +2112,7 @@ function createClipWindow() {
         clipWindowLoaded = true;
     });
     _clipWindow.webContents.on("did-finish-load", () => {
-        if (pendingClipInit)
-            mainSend(_clipWindow.webContents, "clip_init", [
-                screen.getAllDisplays(),
-                pendingClipInit[0],
-                screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
-                pendingClipInit[1],
-            ]);
+        if (pendingClipInit) deliverClipInit(_clipWindow, pendingClipInit);
     });
     _clipWindow.webContents.on("console-message", (d) => {
         console.log("[clip]", d.level, d.message);
@@ -1617,11 +2127,28 @@ function createClipWindow() {
     return _clipWindow;
 }
 
-mainOn("clip_show", () => {
-    fullScreen();
+mainOn("clip_show", ([requestId]) => {
+    fullScreen(requestId);
 });
-mainOn("clip_close", () => {
-    exitFullScreen();
+mainOn("capture_ready", ([requestId]) => {
+    if (
+        requestId !== pendingClipInit?.context.requestId ||
+        pendingClipInit.sequence !== captureAcquireSequence
+    )
+        return;
+    addCaptureDiagnostic(requestId, "ready", diagnosticInput(requestId));
+});
+mainOn("capture_shown", ([requestId]) => {
+    if (
+        requestId !== pendingClipInit?.context.requestId ||
+        pendingClipInit.sequence !== captureAcquireSequence
+    )
+        return;
+    activeCaptureRequestId = requestId;
+    addCaptureDiagnostic(requestId, "shown", diagnosticInput(requestId));
+});
+mainOn("clip_close", async () => {
+    await exitFullScreen();
 });
 mainOn("clip_ocr", ([img, type]) => {
     createMainWindow({ type: "ocr", content: img, arg0: type });
@@ -1654,7 +2181,7 @@ mainOn("clip_qr", ([img]) => {
     createMainWindow({ type: "qr", content: img });
 });
 mainOn("clip_hide", async () => {
-    hideClip();
+    await hideClip();
 });
 mainOn("clip_save", async ([type]) => {
     const savedPath = store.get("保存.保存路径.图片") || "";
@@ -1734,7 +2261,72 @@ function showPhoto(imgPath?: string) {
     }
 }
 
-async function fullScreen() {
+async function flushCaptureDraft() {
+    if (
+        !clipWindow ||
+        clipWindow.isDestroyed() ||
+        !clipWindowLoaded ||
+        clipWindow.webContents.isDestroyed()
+    )
+        return true;
+    try {
+        const result = await clipWindow.webContents.executeJavaScript(
+            "Promise.resolve(window.captureDraftBridge?.flush?.()).then((value) => value !== false)",
+            true,
+        );
+        return result !== false;
+    } catch (error) {
+        if (activeCaptureRequestId)
+            addCaptureDiagnostic(
+                activeCaptureRequestId,
+                "failed",
+                diagnosticInput(activeCaptureRequestId),
+                `flush:${error instanceof Error ? error.message : String(error)}`,
+            );
+        if (!clipWindow.isDestroyed()) {
+            clipWindow.show();
+            clipWindow.focus();
+        }
+        return false;
+    }
+}
+
+function currentCaptureSource(
+    kind: CaptureSourceContext["kind"],
+    preserved?: CaptureSourceContext,
+): CaptureSourceContext {
+    if (preserved) return preserved;
+    const display = screen.getDisplayNearestPoint(
+        screen.getCursorScreenPoint(),
+    );
+    const source: CaptureSourceContext = {
+        kind,
+        displayId: String(display.id),
+        capturedAt: new Date().toISOString(),
+    };
+    if (kind !== "capture") return source;
+    try {
+        const screenshots =
+            require("node-screenshots") as NodeScreenshotsModule;
+        const focused = screenshots.Window.all().find((entry) =>
+            entry.isFocused(),
+        );
+        if (focused) {
+            source.appName = focused.appName();
+            source.windowTitle = focused.title();
+            source.displayId = String(focused.currentMonitor().id());
+        }
+    } catch {}
+    return source;
+}
+
+async function fullScreen(requestId?: string) {
+    if (
+        requestId &&
+        (requestId !== pendingClipInit?.context.requestId ||
+            pendingClipInit.sequence !== captureAcquireSequence)
+    )
+        return;
     const nearestScreen = screen.getDisplayNearestPoint(
         screen.getCursorScreenPoint(),
     );
@@ -1750,35 +2342,188 @@ async function fullScreen() {
 async function sendCaptureEvent(
     data?: Buffer,
     type?: 功能,
-    project?: { canvas?: unknown; rect?: number[] },
+    project?: ClipProject,
+    providedContext?: ClipCaptureContext,
 ) {
-    pendingClipInit = [data, type];
-    mainSend((await getClipWin())?.webContents, "clip_init", [
-        screen.getAllDisplays(),
-        data,
-        screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
-        type,
-        project,
-    ]);
+    const sequence = ++captureAcquireSequence;
+    const requestId = providedContext?.requestId ?? randomUUID();
+    const input =
+        captureInput.getStore() ??
+        (nativeDispatch ? "native-dispatch" : data ? "import" : "app");
+    const source =
+        providedContext?.source ??
+        currentCaptureSource(data ? "import" : "capture", project?.source);
+    addCaptureDiagnostic(requestId, "input", input);
+    const operation = capturePrepareQueue.then(async () => {
+        const superseded = () => sequence !== captureAcquireSequence;
+        if (superseded()) {
+            addCaptureDiagnostic(requestId, "failed", input, "superseded");
+            return;
+        }
+        if (!(await flushCaptureDraft())) {
+            addCaptureDiagnostic(requestId, "failed", input, "draft-flush");
+            return;
+        }
+        if (superseded()) {
+            addCaptureDiagnostic(requestId, "failed", input, "superseded");
+            return;
+        }
+        const previousRequestId = pendingClipInit?.context.requestId;
+        if (
+            previousRequestId &&
+            previousRequestId !== requestId &&
+            !captureDiagnostics.some(
+                (trace) =>
+                    trace.requestId === previousRequestId &&
+                    (trace.phase === "committed" || trace.phase === "failed"),
+            )
+        )
+            addCaptureDiagnostic(
+                previousRequestId,
+                "failed",
+                diagnosticInput(previousRequestId),
+                "superseded",
+            );
+        hideCaptureShelf();
+        addCaptureDiagnostic(requestId, "preparing", input);
+        const context: ClipCaptureContext = { requestId, source };
+        const wasLoaded =
+            clipWindowLoaded && !!clipWindow && !clipWindow.isDestroyed();
+        const nextPending: PendingClipInit = {
+            sequence,
+            data,
+            type,
+            project,
+            context,
+        };
+        pendingClipInit = nextPending;
+        try {
+            const win = await getClipWin();
+            if (superseded()) {
+                addCaptureDiagnostic(requestId, "failed", input, "superseded");
+                return;
+            }
+            if (wasLoaded) deliverClipInit(win, nextPending);
+        } catch (error) {
+            addCaptureDiagnostic(
+                requestId,
+                "failed",
+                input,
+                superseded()
+                    ? "superseded"
+                    : error instanceof Error
+                      ? error.message
+                      : String(error),
+            );
+            if (!superseded()) throw error;
+        }
+    });
+    capturePrepareQueue = operation.then(
+        () => undefined,
+        () => undefined,
+    );
+    return operation;
 }
 
 /** 편집 가능 프로젝트(.ocap)를 clip 편집기에서 다시 연다 */
 async function openClipProject(path: string) {
+    const projectFile = statSync(path);
+    if (!projectFile.isFile() || projectFile.size > 96 * 1024 * 1024)
+        throw new Error("프로젝트 파일이 너무 큽니다.");
     const raw = JSON.parse(readFileSync(path, "utf8"));
     if (
         !raw ||
         typeof raw !== "object" ||
         typeof raw.img !== "string" ||
-        !raw.img.startsWith("data:image/")
+        !raw.img.startsWith("data:image/png;base64,")
     )
         throw new Error("프로젝트 파일을 읽을 수 없습니다.");
-    const image = nativeImage.createFromDataURL(raw.img);
+    const imageBytes = Buffer.from(
+        raw.img.slice("data:image/png;base64,".length),
+        "base64",
+    );
+    if (imageBytes.length === 0 || imageBytes.length > 64 * 1024 * 1024)
+        throw new Error("프로젝트 원본 이미지가 너무 큽니다.");
+    const image = nativeImage.createFromBuffer(imageBytes);
     if (image.isEmpty()) throw new Error("프로젝트 이미지가 비어 있습니다.");
-    const project = {
+    const imageSize = image.getSize();
+    if (
+        imageSize.width <= 0 ||
+        imageSize.height <= 0 ||
+        imageSize.width * imageSize.height > 32_000_000
+    )
+        throw new Error("프로젝트 이미지 해상도가 너무 큽니다.");
+    const canvasText = JSON.stringify(raw.canvas ?? null);
+    if (Buffer.byteLength(canvasText, "utf8") > 8 * 1024 * 1024)
+        throw new Error("프로젝트 주석 데이터가 너무 큽니다.");
+    if (
+        raw.canvas &&
+        typeof raw.canvas === "object" &&
+        Array.isArray(raw.canvas.objects) &&
+        raw.canvas.objects.length > 10_000
+    )
+        throw new Error("프로젝트 주석 개수가 너무 많습니다.");
+    if (
+        !Array.isArray(raw.rect) ||
+        raw.rect.length !== 4 ||
+        !raw.rect.every((value: unknown) => Number.isFinite(value)) ||
+        raw.rect[0] < 0 ||
+        raw.rect[1] < 0 ||
+        raw.rect[2] <= 0 ||
+        raw.rect[3] <= 0 ||
+        raw.rect[0] + raw.rect[2] > imageSize.width ||
+        raw.rect[1] + raw.rect[3] > imageSize.height
+    )
+        throw new Error("프로젝트 선택 영역이 올바르지 않습니다.");
+    const boundedSource =
+        raw.source &&
+        typeof raw.source === "object" &&
+        ["capture", "import", "clipboard"].includes(raw.source.kind) &&
+        typeof raw.source.capturedAt === "string" &&
+        Number.isFinite(Date.parse(raw.source.capturedAt)) &&
+        (raw.source.appName === undefined ||
+            (typeof raw.source.appName === "string" &&
+                raw.source.appName.length <= 512)) &&
+        (raw.source.windowTitle === undefined ||
+            (typeof raw.source.windowTitle === "string" &&
+                raw.source.windowTitle.length <= 1024)) &&
+        (raw.source.displayId === undefined ||
+            (typeof raw.source.displayId === "string" &&
+                raw.source.displayId.length <= 128))
+            ? (raw.source as CaptureSourceContext)
+            : undefined;
+    const rawSource = boundedSource ?? currentCaptureSource("import");
+    const project: ClipProject = {
         canvas: raw.canvas,
-        rect: Array.isArray(raw.rect) ? raw.rect : undefined,
+        rect: raw.rect,
+        source: rawSource,
     };
     await sendCaptureEvent(image.toPNG(), undefined, project);
+}
+
+async function openCaptureDraft(document: CaptureDraft) {
+    const image = nativeImage.createFromDataURL(document.sourceDataURL);
+    if (image.isEmpty())
+        throw new Error("드래프트 원본 이미지를 읽을 수 없습니다.");
+    const project: ClipProject = {
+        canvas: document.canvas,
+        rect: [
+            document.rect.x,
+            document.rect.y,
+            document.rect.width,
+            document.rect.height,
+        ],
+        draftId: document.id,
+        draftRevision: document.revision,
+        source: document.source,
+    };
+    const context: ClipCaptureContext = {
+        requestId: randomUUID(),
+        source: document.source,
+    };
+    await captureInput.run("draft-reopen", () =>
+        sendCaptureEvent(image.toPNG(), undefined, project, context),
+    );
 }
 
 // 드롭존: 드래그 중 단축키로 여는 방사형 액션 메뉴
@@ -1873,7 +2618,8 @@ mainOn("dropzone_action", async ([action, paths]) => {
 });
 
 /** 关闭或隐藏截屏 */
-function exitFullScreen() {
+async function exitFullScreen() {
+    if (!(await flushCaptureDraft())) return false;
     pendingClipInit = null;
     if (keepClip) {
         clipWindow?.setSimpleFullScreen(false);
@@ -1886,17 +2632,30 @@ function exitFullScreen() {
         clipWindow = null;
         clipWindowLoaded = false;
     }
+    if (shelfPendingReshow)
+        void showCaptureShelf().catch((error) =>
+            console.error("Capture shelf restore failed:", error),
+        );
+    return true;
 }
 
 /** 隐藏截屏窗口 */
-function hideClip() {
+async function hideClip() {
+    if (!(await flushCaptureDraft())) return false;
     pendingClipInit = null;
     clipWindow?.setSimpleFullScreen(false);
     clipWindow?.hide();
+    if (shelfPendingReshow)
+        void showCaptureShelf().catch((error) =>
+            console.error("Capture shelf restore failed:", error),
+        );
+    return true;
 }
 
 /** 快速截屏 */
 async function quickClip() {
+    if (!(await flushCaptureDraft())) return;
+    hideCaptureShelf();
     const screenShots = initScreenShots(...screenShotArgs);
     for (const c of (await screenShots()).screen) {
         const image: NativeImage = (await c.capture()).toNativeImage();
@@ -2171,10 +2930,10 @@ mainOn("getDefaultSetting", async () => {
 });
 mainOn("reload", () => {
     app.relaunch();
-    app.exit(0);
+    app.quit();
 });
 mainOn("exit", () => {
-    app.exit(0);
+    app.quit();
 });
 mainOn("clearStorage", () => {
     const ses = session.defaultSession;
@@ -2333,6 +3092,163 @@ function ding(img: NativeImage) {
     );
 }
 
+const pendingDingMessages: Array<
+    (webContents: Electron.WebContents, bounds: Electron.Rectangle) => void
+> = [];
+
+function ensureDingWindows() {
+    if (dingwindowList.size() !== 0) return;
+    const screenL = screen.getAllDisplays();
+    const pending = pendingDingMessages.slice();
+    pendingDingMessages.length = 0;
+    for (const i of screenL) {
+        const dingWindow = new BrowserWindow({
+            icon: theIcon,
+            transparent: true,
+            frame: false,
+            alwaysOnTop: true,
+            skipTaskbar: true,
+            autoHideMenuBar: true,
+            enableLargerThanScreen: true, // mac
+            hasShadow: false,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false,
+            },
+            x: i.bounds.x,
+            y: i.bounds.y,
+            width: i.bounds.width,
+            height: i.bounds.height,
+        });
+        dingwindowList.set(i.id, { win: dingWindow, display: i });
+
+        let pinRegistered = false;
+        const registerPin = () => {
+            if (dingWindow.isDestroyed() || pinRegistered) return;
+            try {
+                openCapture?.registerRenderer(dingWindow.webContents, "pin");
+                pinRegistered = true;
+            } catch (error) {
+                console.error("Pin renderer registration failed:", error);
+            }
+        };
+        dingWindow.webContents.on(
+            "did-frame-navigate",
+            (_event, _url, _code, _status, isMainFrame) => {
+                if (isMainFrame) registerPin();
+            },
+        );
+        dingWindow.webContents.once("did-navigate", registerPin);
+        if (dev) dingWindow.webContents.openDevTools();
+        dingWindow.webContents.on("did-finish-load", () => {
+            if (!dingWindow.isDestroyed()) {
+                registerPin();
+                for (const deliver of pending)
+                    deliver(dingWindow.webContents, i.bounds);
+            }
+        });
+        rendererPath(dingWindow, "ding.html");
+        dingWindow.webContents.on("console-message", (d) => {
+            if (d.level !== "debug")
+                pushLog({
+                    from: "ding",
+                    lineCount: d.lineNumber,
+                    message: d.message,
+                    type: d.level,
+                });
+        });
+        dingWindow.setIgnoreMouseEvents(true);
+
+        dingWindow.setAlwaysOnTop(true, "screen-saver");
+    }
+    forceDingThrogh();
+}
+
+type SavedDingPin = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    src: string;
+    opacity: number;
+    z: number;
+};
+
+const dingSessionPath = join(app.getPath("userData"), "ding-session.json");
+const dingSessions = (() => {
+    const map = new Map<number, SavedDingPin[]>();
+    try {
+        const raw = JSON.parse(readFileSync(dingSessionPath, "utf8"));
+        if (Array.isArray(raw))
+            for (const entry of raw)
+                if (
+                    Number.isFinite(entry?.displayId) &&
+                    Array.isArray(entry.pins)
+                )
+                    map.set(entry.displayId, entry.pins);
+    } catch {
+        // no session to restore
+    }
+    return map;
+})();
+const persistDingSessions = () => {
+    try {
+        writeFileSync(
+            dingSessionPath,
+            JSON.stringify(
+                [...dingSessions.entries()].map(([displayId, pins]) => ({
+                    displayId,
+                    pins,
+                })),
+            ),
+        );
+    } catch (error) {
+        console.error("Ding session persist failed:", error);
+    }
+};
+const dingDisplayId = (webContents: Electron.WebContents) =>
+    [...dingwindowList.entries()].find(
+        ([, win]) => win.win.webContents === webContents,
+    )?.[0];
+ipcMain.handle("ding:session:save", (event, pins: unknown) => {
+    const displayId = dingDisplayId(event.sender);
+    if (displayId === undefined || !Array.isArray(pins)) return;
+    const clean = pins
+        .filter(
+            (p): p is SavedDingPin =>
+                typeof p?.src === "string" &&
+                p.src.startsWith("data:image/") &&
+                p.src.length <= 12 * 1024 * 1024 &&
+                [p.x, p.y, p.w, p.h].every(Number.isFinite),
+        )
+        .slice(0, 24)
+        .map((p) => ({
+            x: p.x,
+            y: p.y,
+            w: p.w,
+            h: p.h,
+            src: p.src,
+            opacity: Number.isFinite(p.opacity)
+                ? Math.min(1, Math.max(0.05, p.opacity))
+                : 1,
+            z: Number.isFinite(p.z) ? p.z : 0,
+        }));
+    dingSessions.set(displayId, clean);
+    persistDingSessions();
+});
+ipcMain.handle("ding:session:get", (event) => {
+    const displayId = dingDisplayId(event.sender);
+    if (displayId === undefined) return [];
+    let pins = dingSessions.get(displayId) ?? [];
+    if (!pins.length && dingSessions.size) {
+        // Display ids changed (monitor swap); merge orphans into the first requester.
+        pins = [...dingSessions.values()].flat();
+        dingSessions.clear();
+    } else dingSessions.delete(displayId);
+    persistDingSessions();
+    return pins;
+});
+
 function createDingWindow(
     x: number,
     y: number,
@@ -2341,60 +3257,21 @@ function createDingWindow(
     img: string,
     type: "translate" | "ding" = "ding",
 ) {
+    const id = Date.now();
     if (dingwindowList.size() === 0) {
-        const screenL = screen.getAllDisplays();
-        const id = Date.now();
-        for (const i of screenL) {
-            const dingWindow = new BrowserWindow({
-                icon: theIcon,
-                transparent: true,
-                frame: false,
-                alwaysOnTop: true,
-                skipTaskbar: true,
-                autoHideMenuBar: true,
-                enableLargerThanScreen: true, // mac
-                hasShadow: false,
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false,
-                },
-                x: i.bounds.x,
-                y: i.bounds.y,
-                width: i.bounds.width,
-                height: i.bounds.height,
-            });
-            dingwindowList.set(i.id, { win: dingWindow, display: i });
-
-            rendererPath(dingWindow, "ding.html");
-            if (dev) dingWindow.webContents.openDevTools();
-            dingWindow.webContents.on("did-finish-load", () => {
-                if (!dingWindow.isDestroyed())
-                    mainSend(dingWindow.webContents, "addDing", [
-                        id,
-                        x - i.bounds.x,
-                        y - i.bounds.y,
-                        w,
-                        h,
-                        img,
-                        type,
-                    ]);
-            });
-            dingWindow.webContents.on("console-message", (d) => {
-                if (d.level !== "debug")
-                    pushLog({
-                        from: "ding",
-                        lineCount: d.lineNumber,
-                        message: d.message,
-                        type: d.level,
-                    });
-            });
-            dingWindow.setIgnoreMouseEvents(true);
-
-            dingWindow.setAlwaysOnTop(true, "screen-saver");
-        }
-        forceDingThrogh();
+        pendingDingMessages.push((webContents, bounds) =>
+            mainSend(webContents, "addDing", [
+                id,
+                x - bounds.x,
+                y - bounds.y,
+                w,
+                h,
+                img,
+                type,
+            ]),
+        );
+        ensureDingWindows();
     } else {
-        const id = Date.now();
         for (const [_, win] of dingwindowList.entries()) {
             const b = win.win.getBounds();
             mainSend(win.win.webContents, "addDing", [

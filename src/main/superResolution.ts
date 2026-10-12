@@ -19,39 +19,65 @@ const MAX_MODEL_BYTES = 64 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 180_000;
 
 export type SuperResolutionProgress = {
-    phase: "download" | "run" | "done";
+    phase: "download" | "run" | "done" | "cancelled";
     percent: number;
 };
+
+export class SuperResolutionCancelledError extends Error {
+    readonly code = "SUPER_RESOLUTION_CANCELLED";
+
+    constructor() {
+        super("AI upscale was cancelled.");
+        this.name = "SuperResolutionCancelledError";
+    }
+}
 
 export type SuperResolution = {
     upscale(
         image: Electron.NativeImage,
         onProgress?: (progress: SuperResolutionProgress) => void,
     ): Promise<Electron.NativeImage>;
+    cancel(): boolean;
     busy(): boolean;
 };
 
 export function createSuperResolution(modelDir: string): SuperResolution {
     const modelPath = join(modelDir, MODEL_NAME);
     let sessionPromise: Promise<ort.InferenceSession> | undefined;
-    let installPromise: Promise<void> | undefined;
     let running = false;
+    let activeController: AbortController | undefined;
+    let lastPercent = 0;
 
     const report = (
         onProgress: ((p: SuperResolutionProgress) => void) | undefined,
         phase: SuperResolutionProgress["phase"],
         percent: number,
-    ) => onProgress?.({ phase, percent });
+    ) => {
+        lastPercent = percent;
+        onProgress?.({ phase, percent });
+    };
+
+    const throwIfCancelled = (signal: AbortSignal) => {
+        if (signal.aborted) throw new SuperResolutionCancelledError();
+    };
 
     async function installModel(
+        signal: AbortSignal,
         onProgress?: (p: SuperResolutionProgress) => void,
     ): Promise<void> {
         if (existsSync(modelPath)) return;
-        installPromise ??= (async () => {
-            mkdirSync(modelDir, { recursive: true });
+        mkdirSync(modelDir, { recursive: true });
+        const staging = join(modelDir, `.${MODEL_NAME}.${Date.now()}`);
+        let timedOut = false;
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            activeController?.abort();
+        }, DOWNLOAD_TIMEOUT_MS);
+        try {
+            throwIfCancelled(signal);
             const response = await fetch(MODEL_URL, {
                 redirect: "follow",
-                signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+                signal,
             });
             if (!response.ok)
                 throw new Error(`AI 모델 다운로드 실패 (${response.status})`);
@@ -59,19 +85,25 @@ export function createSuperResolution(modelDir: string): SuperResolution {
             if (length > MAX_MODEL_BYTES)
                 throw new Error("AI 모델 파일이 너무 큽니다.");
             const data = Buffer.from(await response.arrayBuffer());
+            throwIfCancelled(signal);
             if (data.byteLength > MAX_MODEL_BYTES)
                 throw new Error("AI 모델 파일이 너무 큽니다.");
             const actual = createHash("sha256").update(data).digest("hex");
             if (actual !== MODEL_SHA256)
                 throw new Error("AI 모델 검증에 실패했습니다.");
-            const staging = join(modelDir, `.${MODEL_NAME}.${Date.now()}`);
             await writeFile(staging, data, { flag: "wx" });
+            throwIfCancelled(signal);
             renameSync(staging, modelPath);
             report(onProgress, "download", 100);
-        })().finally(() => {
-            installPromise = undefined;
-        });
-        return installPromise;
+        } catch (error) {
+            rmSync(staging, { force: true });
+            if (timedOut)
+                throw new Error("AI 모델 다운로드 시간이 초과되었습니다.");
+            if (signal.aborted) throw new SuperResolutionCancelledError();
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
     }
 
     function session(): Promise<ort.InferenceSession> {
@@ -95,13 +127,19 @@ export function createSuperResolution(modelDir: string): SuperResolution {
             throw new Error("이미지가 너무 커서 AI 업스케일할 수 없습니다.");
         if (width * height * SCALE * SCALE > MAX_OUTPUT_PIXELS)
             throw new Error("결과 이미지가 너무 큽니다.");
+
         running = true;
+        activeController = new AbortController();
+        lastPercent = 0;
+        const signal = activeController.signal;
         try {
             if (!existsSync(modelPath)) {
                 report(onProgress, "download", 0);
-                await installModel(onProgress);
+                await installModel(signal, onProgress);
             }
+            throwIfCancelled(signal);
             const ortSession = await session();
+            throwIfCancelled(signal);
             const bitmap = image.toBitmap();
             const outWidth = width * SCALE;
             const outHeight = height * SCALE;
@@ -110,12 +148,15 @@ export function createSuperResolution(modelDir: string): SuperResolution {
             const rows = Math.ceil(height / TILE_SIZE);
             const total = cols * rows;
             let done = 0;
+
             for (let ty = 0; ty < rows; ty++) {
                 for (let tx = 0; tx < cols; tx++) {
+                    throwIfCancelled(signal);
                     const tw = Math.min(TILE_SIZE, width - tx * TILE_SIZE);
                     const th = Math.min(TILE_SIZE, height - ty * TILE_SIZE);
                     const input = new Float32Array(3 * tw * th);
                     for (let y = 0; y < th; y++) {
+                        throwIfCancelled(signal);
                         const rowStart =
                             ((ty * TILE_SIZE + y) * width + tx * TILE_SIZE) * 4;
                         for (let x = 0; x < tw; x++) {
@@ -133,11 +174,13 @@ export function createSuperResolution(modelDir: string): SuperResolution {
                         tw,
                     ]);
                     const result = await ortSession.run({ input: tensor });
+                    throwIfCancelled(signal);
                     const out = result.output.data as Float32Array;
                     const ow = tw * SCALE;
                     const oh = th * SCALE;
                     const plane = ow * oh;
                     for (let y = 0; y < oh; y++) {
+                        throwIfCancelled(signal);
                         const destRow =
                             ((ty * TILE_SIZE * SCALE + y) * outWidth +
                                 tx * TILE_SIZE * SCALE) *
@@ -167,10 +210,28 @@ export function createSuperResolution(modelDir: string): SuperResolution {
                 width: outWidth,
                 height: outHeight,
             });
+        } catch (error) {
+            if (
+                signal.aborted ||
+                error instanceof SuperResolutionCancelledError
+            ) {
+                report(onProgress, "cancelled", lastPercent);
+                throw new SuperResolutionCancelledError();
+            }
+            throw error;
         } finally {
             running = false;
+            activeController = undefined;
         }
     }
 
-    return { upscale, busy: () => running };
+    return {
+        upscale,
+        cancel: () => {
+            if (!running || !activeController) return false;
+            activeController.abort();
+            return true;
+        },
+        busy: () => running,
+    };
 }
