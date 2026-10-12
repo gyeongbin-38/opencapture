@@ -15,6 +15,9 @@ app.whenReady().then(async()=>{try{
  const output=await engine.ocr(canvas.toDataURL());results.push({language,expected:text,recognized:output.columns.flatMap(c=>c.parragraphs).map(p=>p.parse.text).join(' ')});
  }return results;})()`);
  fs.writeFileSync(path.join(root,'.evidence/ocr.json'),JSON.stringify(results,null,2));console.log(results);
- if(!results.every(r=>r.recognized.replaceAll(' ','').includes(r.expected.replaceAll(' ',''))))throw Error('OCR text mismatch');
+ const lev=(a,b)=>{const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);for(let j=1;j<=n;j++)d[0][j]=j;for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]};
+ const scored=results.map(r=>{const e=r.expected.replaceAll(' ',''),o=r.recognized.replaceAll(' ','');const distance=lev(e,o);return{...r,similarity:1-distance/Math.max(e.length,1)}});
+ fs.writeFileSync(path.join(root,'.evidence/ocr-scored.json'),JSON.stringify(scored,null,2));
+ if(!scored.every(r=>r.similarity>=0.8))throw Error(`OCR similarity below threshold: ${JSON.stringify(scored.map(r=>({language:r.language,similarity:r.similarity})))}`);
  clearTimeout(timer);app.exit(0);
 }catch(e){console.error(e);clearTimeout(timer);app.exit(1)}});

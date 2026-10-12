@@ -51,6 +51,7 @@ describe("CaptureWorkflowQueue", () => {
             autoPin: false,
             autoOcr: false,
             autoPreview: false,
+            autoClipboard: false,
         });
         const mutable = {
             autoCopy: true,
@@ -164,6 +165,7 @@ describe("parseCaptureWorkflowPreferences", () => {
             autoPin: true,
             autoOcr: true,
             autoPreview: false,
+            autoClipboard: false,
         });
         expect(() =>
             parseCaptureWorkflowPreferences({ upload: true }),

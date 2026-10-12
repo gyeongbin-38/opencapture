@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 vi.mock("electron", () => ({
     BrowserWindow: {},
     ClipboardItem: {},
@@ -16,6 +16,13 @@ import { isLibrary, isTrustedPage } from "../src/main/openCapture";
 const root = resolve("security-fixture");
 describe("translation sender URL boundary", () => {
     it("rejects corrupt or incomplete catalog metadata before persistence", () => {
+        const item = {
+            id: "i",
+            name: "a.png",
+            path: "C:/Shots/a.png",
+            createdAt: "2025-01-01T00:00:00Z",
+            collectionId: "a",
+        };
         expect(isLibrary({ collections: [], items: [] })).toBe(false);
         expect(
             isLibrary({
@@ -27,17 +34,31 @@ describe("translation sender URL boundary", () => {
         expect(
             isLibrary({
                 collections: [{ id: "a", name: "A", path: "C:/Shots" }],
+                items: [{ ...item, status: "temporary", draftRevision: 1 }],
+                activeCollectionId: "a",
+                comparisons: Array.from({ length: 51 }, (_, index) => ({
+                    id: String(index),
+                    name: "compare",
+                    itemIds: ["a", "b"],
+                    notes: [],
+                })),
+            }),
+        ).toBe(false);
+        expect(
+            isLibrary({
+                collections: [{ id: "a", name: "A", path: "C:/Shots" }],
+                items: [{ ...item, status: "temporary", draftRevision: 1 }],
+                activeCollectionId: "a",
+                colors: [{ value: "not-a-color", sampledAt: "now" }],
+            }),
+        ).toBe(false);
+        expect(
+            isLibrary({
+                collections: [{ id: "a", name: "A", path: "C:/Shots" }],
                 items: [],
                 activeCollectionId: "a",
             }),
         ).toBe(true);
-        const item = {
-            id: "i",
-            name: "a.png",
-            path: "C:/Shots/a.png",
-            createdAt: "2025-01-01T00:00:00Z",
-            collectionId: "a",
-        };
         expect(
             isLibrary({
                 collections: [{ id: "a", name: "A", path: "C:/Shots" }],

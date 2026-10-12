@@ -1,26 +1,314 @@
-const {spawn}=require('node:child_process');
-const fs=require('node:fs');const path=require('node:path');
-const root=path.resolve(__dirname,'..');
-const profile=path.join(root,'.evidence/packaged-profile');fs.mkdirSync(profile,{recursive:true});
-const models=path.join(root,'.omx/smoke-models-phase0');
-if(fs.existsSync(models))fs.cpSync(models,path.join(profile,'translation/models'),{recursive:true});
-const exe=path.join(root,'release/win-unpacked/OpenCapture.exe');
-const child=spawn(exe,['--remote-debugging-port=0',`--userData=${profile}`],{windowsHide:true,stdio:['ignore','pipe','pipe']});
-let socket;let id=0;const pending=new Map();let log='';child.stderr.on('data',d=>{log+=d.toString()});
-const call=(method,params={})=>new Promise((resolve,reject)=>{const request=++id;pending.set(request,{resolve,reject});socket.send(JSON.stringify({id:request,method,params}))});
-const evaluate=async(expression)=>{const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value};
-const timer=setTimeout(()=>{console.error('Package test timed out',log);child.kill();process.exit(1)},60000);
-(async()=>{try{
-let page;for(let i=0;i<100;i++){try{const port=log.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/)?.[1];if(!port)throw Error('Waiting for debugger');const pages=await(await fetch('http://127.0.0.1:'+port+'/json')).json();page=pages.find(p=>p.url.includes('dashboard.html'));if(page)break}catch{}await new Promise(r=>setTimeout(r,250))}
-if(!page)throw Error('Packaged dashboard missing: '+log);
-socket=new WebSocket(page.webSocketDebuggerUrl);await new Promise((r,j)=>{socket.onopen=r;socket.onerror=j});
-socket.onmessage=e=>{const msg=JSON.parse(e.data);if(!msg.id)return;const p=pending.get(msg.id);if(p){pending.delete(msg.id);msg.error?p.reject(Error(msg.error.message)):p.resolve(msg.result)}};
-for(let i=0;i<100;i++){try{if(await evaluate("typeof window.openCapture === 'object'"))break}catch{}await new Promise(r=>setTimeout(r,50))}
-const state=await evaluate('window.openCapture.getState()');
-const status=await evaluate('window.openCapture.translationStatus()');
-const translation=await evaluate('window.openCapture.translate({texts:["Hello, how are you?"],from:"en",to:"ko",engine:"local"})');
-const isolation=await evaluate('({require:typeof require,bridge:typeof window.openCapture})');
-const screenshot=await call('Page.captureScreenshot');fs.writeFileSync(path.join(root,'.evidence/packaged-dashboard.png'),Buffer.from(screenshot.data,'base64'));
-const evidence={exe,version:state.version,status,translation,isolation};fs.writeFileSync(path.join(root,'.evidence/package.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
-if(!status.runtimeReady||!status.modelsReady||!translation[0]||isolation.require!=='undefined')throw Error('Package verification failed');
-}catch(e){console.error(e);process.exitCode=1}finally{clearTimeout(timer);socket?.close();child.kill()}})();
+const { spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
+const fs = require("node:fs");
+const net = require("node:net");
+const path = require("node:path");
+
+const root = path.resolve(__dirname, "..");
+const requested = process.argv[2] || process.env.OPENCAPTURE_PACKAGE_OUTPUT;
+if (!requested)
+    throw new Error(
+        "Pass a fresh release/verify-* package output to verify-package.cjs.",
+    );
+const packageRoot = path.resolve(root, requested);
+const releaseRoot = path.join(root, "release");
+const relativePackage = path.relative(releaseRoot, packageRoot);
+if (
+    relativePackage.startsWith("..") ||
+    path.isAbsolute(relativePackage) ||
+    !path.basename(packageRoot).startsWith("verify-")
+)
+    throw new Error("Package verification only accepts release/verify-*.");
+
+const unpacked = path.join(packageRoot, "win-unpacked");
+const exe = path.join(unpacked, "OpenCapture.exe");
+const quick = path.join(unpacked, "OpenCaptureQuick.exe");
+const runtime = path.join(
+    unpacked,
+    "resources",
+    "app",
+    "assets",
+    "runtime",
+    "win32-x64",
+);
+const python = path.join(runtime, "python.exe");
+const clipboardHelper = path.join(runtime, "clipboard-files.py");
+for (const required of [exe, quick, python, clipboardHelper])
+    if (!fs.statSync(required).isFile())
+        throw new Error(`Packaged runtime asset missing: ${required}`);
+
+const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+const evidenceRoot = path.join(root, ".evidence", `package-${stamp}`);
+const profile = path.join(evidenceRoot, "profile");
+fs.mkdirSync(profile, { recursive: true });
+const models = path.join(root, ".omx", "smoke-models-phase0");
+if (fs.existsSync(models))
+    fs.cpSync(models, path.join(profile, "translation", "models"), {
+        recursive: true,
+    });
+
+function runHelper(args, label) {
+    const result = spawnSync(quick, args, {
+        windowsHide: true,
+        encoding: "utf8",
+        timeout: 15_000,
+    });
+    if (result.status !== 0)
+        throw new Error(
+            `${label} failed: ${result.stderr || result.error || result.status}`,
+        );
+}
+
+const helperDiagnostics = path.join(evidenceRoot, "quicklaunch-self-test.json");
+runHelper(
+    ["--self-test", "--userData", profile, "--diagnostics", helperDiagnostics],
+    "Packaged helper self-test",
+);
+const helperEvidence = JSON.parse(fs.readFileSync(helperDiagnostics, "utf8"));
+if (
+    helperEvidence.physicalKeyTested !== false ||
+    helperEvidence.capture.requested !== "CommandOrControl+Shift+Space" ||
+    helperEvidence.toggle.requested !== "CommandOrControl+Alt+Space" ||
+    helperEvidence.captureDispatch !== "--broker --native-dispatch --capture" ||
+    helperEvidence.toggleDispatch !== "--broker --native-dispatch --toggle"
+)
+    throw new Error("Packaged helper protocol metadata is invalid.");
+
+function freePort() {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+            const address = server.address();
+            const port = typeof address === "object" ? address.port : 0;
+            server.close((error) => (error ? reject(error) : resolve(port)));
+        });
+    });
+}
+
+async function until(read, message, timeout = 30_000) {
+    const started = Date.now();
+    let lastError;
+    while (Date.now() - started < timeout) {
+        try {
+            const value = await read();
+            if (value) return value;
+        } catch (error) {
+            lastError = error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`${message}${lastError ? `: ${lastError.message}` : ""}`);
+}
+
+async function verify() {
+    const port = await freePort();
+    const coldDiagnostics = path.join(
+        evidenceRoot,
+        "quicklaunch-cold-dispatch.json",
+    );
+    runHelper(
+        [
+            "--dispatch",
+            "toggle",
+            "--userData",
+            profile,
+            "--dispatch-extra",
+            `--remote-debugging-port=${port}`,
+            "--diagnostics",
+            coldDiagnostics,
+        ],
+        "Cold helper dispatch",
+    );
+    const coldDispatch = JSON.parse(fs.readFileSync(coldDiagnostics, "utf8"));
+    if (
+        !coldDispatch.dispatched ||
+        coldDispatch.action !== "toggle" ||
+        !Number.isSafeInteger(coldDispatch.pid)
+    )
+        throw new Error("Cold helper dispatch evidence is invalid.");
+    const appPid = coldDispatch.pid;
+    let socket;
+    let id = 0;
+    const pending = new Map();
+    const call = (method, params = {}) =>
+        new Promise((resolve, reject) => {
+            const request = ++id;
+            pending.set(request, { resolve, reject });
+            socket.send(JSON.stringify({ id: request, method, params }));
+        });
+    const evaluate = async (expression) => {
+        const response = await call("Runtime.evaluate", {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+        });
+        if (response.exceptionDetails)
+            throw new Error(JSON.stringify(response.exceptionDetails));
+        return response.result.value;
+    };
+
+    try {
+        const page = await until(async () => {
+            const pages = await (
+                await fetch(`http://127.0.0.1:${port}/json`)
+            ).json();
+            return pages.find((entry) => entry.url.includes("dashboard.html"));
+        }, "Cold-dispatched packaged dashboard did not appear");
+        socket = new WebSocket(page.webSocketDebuggerUrl);
+        await new Promise((resolve, reject) => {
+            socket.onopen = resolve;
+            socket.onerror = reject;
+        });
+        socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (!message.id) return;
+            const request = pending.get(message.id);
+            if (!request) return;
+            pending.delete(message.id);
+            message.error
+                ? request.reject(new Error(message.error.message))
+                : request.resolve(message.result);
+        };
+        await until(
+            () => evaluate("typeof window.openCapture === 'object'"),
+            "Packaged dashboard bridge did not initialize",
+        );
+
+        const warmDiagnostics = path.join(
+            evidenceRoot,
+            "quicklaunch-warm-dispatch.json",
+        );
+        runHelper(
+            [
+                "--dispatch",
+                "capture",
+                "--userData",
+                profile,
+                "--diagnostics",
+                warmDiagnostics,
+            ],
+            "Warm helper dispatch",
+        );
+        const warmDispatch = JSON.parse(
+            fs.readFileSync(warmDiagnostics, "utf8"),
+        );
+        const warmTrace = await until(
+            async () => {
+                const state = await evaluate("window.openCapture.getState()");
+                const trace = state.runtime?.captureDiagnostics ?? [];
+                const nativeTrace = trace.filter(
+                    (entry) => entry.input === "native-dispatch",
+                );
+                return nativeTrace.some(
+                    (entry) =>
+                        entry.phase === "ready" || entry.phase === "shown",
+                )
+                    ? nativeTrace
+                    : null;
+            },
+            "Warm helper capture did not reach renderer-ready",
+            45_000,
+        );
+
+        const state = await evaluate("window.openCapture.getState()");
+        const status = await evaluate("window.openCapture.translationStatus()");
+        const translation = await evaluate(
+            'window.openCapture.translate({texts:["Hello, how are you?"],from:"en",to:"ko",engine:"local"})',
+        );
+        const isolation = await evaluate(
+            "({require:typeof require,bridge:typeof window.openCapture})",
+        );
+        await evaluate(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}))',
+        );
+        const captureShortcutDisplay = await evaluate(
+            'document.querySelector(\'.command-result[data-command-id="capture:capture"] kbd\')?.textContent ?? ""',
+        );
+        const captureShortcut =
+            state.runtime.shortcuts.find(
+                (shortcut) => shortcut.id === "capture",
+            )?.active ?? "";
+        const normalizeShortcut = (value) =>
+            value
+                .replace(/CommandOrControl/gi, "Ctrl")
+                .replace(/Control/gi, "Ctrl")
+                .replace(/\s/g, "")
+                .toLowerCase();
+        if (
+            normalizeShortcut(captureShortcutDisplay) !==
+            normalizeShortcut(captureShortcut)
+        )
+            throw new Error(
+                "Command palette does not reflect the registered capture shortcut",
+            );
+        await evaluate('document.querySelector(".command-palette").close()');
+        const screenshot = await call("Page.captureScreenshot");
+        fs.writeFileSync(
+            path.join(evidenceRoot, "dashboard.png"),
+            Buffer.from(screenshot.data, "base64"),
+        );
+        const sha256 = (file) =>
+            createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+        const evidence = {
+            packageRoot,
+            unpacked: true,
+            signedInstallerTested: false,
+            physicalKeyTested: false,
+            physicalExtraMonitorTested: false,
+            simulatedMixedDpiTested: false,
+            exe,
+            version: state.version,
+            captureShortcutDisplay,
+            registeredCaptureShortcut: captureShortcut,
+            status,
+            translation,
+            isolation,
+            nativeDispatch: {
+                cold: coldDispatch,
+                warm: warmDispatch,
+                trace: warmTrace,
+            },
+            runtimeAssets: {
+                python: {
+                    path: python,
+                    bytes: fs.statSync(python).size,
+                },
+                clipboardHelper: {
+                    path: clipboardHelper,
+                    bytes: fs.statSync(clipboardHelper).size,
+                    sha256: sha256(clipboardHelper),
+                },
+                quickLaunch: {
+                    path: quick,
+                    bytes: fs.statSync(quick).size,
+                    sha256: sha256(quick),
+                    selfTest: helperEvidence,
+                },
+            },
+        };
+        fs.writeFileSync(
+            path.join(evidenceRoot, "package.json"),
+            JSON.stringify(evidence, null, 2),
+        );
+        console.log(JSON.stringify(evidence));
+        if (
+            !status.runtimeReady ||
+            !status.modelsReady ||
+            !translation[0] ||
+            isolation.require !== "undefined" ||
+            !warmDispatch.dispatched
+        )
+            throw new Error("Package verification failed");
+    } finally {
+        socket?.close();
+        try {
+            process.kill(appPid);
+        } catch {}
+    }
+}
+
+verify().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});
