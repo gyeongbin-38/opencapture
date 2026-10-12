@@ -1,4 +1,5 @@
 import { noI18n } from "dkh-ui";
+import { t } from "../../../lib/translate/translate";
 import { defaultOcrId, loadOCR } from "./ocr";
 import { ocrOnline } from "./ocr_online";
 
@@ -30,7 +31,7 @@ export function ocrOmniLoad(
                             } else if (result) {
                                 resolve(result.text.split("\n"));
                             } else {
-                                reject(new Error("未知错误"));
+                                reject(new Error(t("未知错误")));
                             }
                         },
                     );
@@ -39,7 +40,7 @@ export function ocrOmniLoad(
         };
     }
     const x = loadOCR(store, type);
-    if (!x) throw new Error("不支持的 OCR 类型");
+    if (!x) throw new Error(t("不支持的 OCR 类型"));
     const ocr = x.ocr.init(x.config);
     return {
         ocr: async (img: string) => {
@@ -66,7 +67,7 @@ export function ocrOmni(
         const ntype = type.slice(3);
         ocrOnline(store, ntype, arg, callback);
     } else {
-        callback(new Error("不支持的 OCR 类型"), null);
+        callback(new Error(t("不支持的 OCR 类型")), null);
     }
 }
 

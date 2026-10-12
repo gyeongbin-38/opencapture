@@ -5,7 +5,7 @@ import type {
 } from "../../../lib/openCaptureTypes";
 import { t } from "./t";
 
-export type PageName = "home" | "library" | "translate" | "settings";
+export type PageName = "home" | "library" | "board" | "translate" | "settings";
 
 export const emptyState: OpenCaptureState = {
     collections: [],

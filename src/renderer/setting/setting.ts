@@ -147,7 +147,7 @@ const tools: { key: 功能; icon: string; title: string }[] = [
     {
         key: "redact",
         icon: getImgUrl("hide.svg"),
-        title: "민감정보 자동 가림",
+        title: t("민감정보 자동 가림"),
     },
     { key: "copy", icon: getImgUrl("copy.svg"), title: t("复制") },
     { key: "save", icon: getImgUrl("save.svg"), title: t("保存") },
@@ -594,7 +594,7 @@ const s: Partial<settingItem<SettingPath>> = {
                     const urlEl = input().sv(item.url);
                     const keyEl = input().sv(item.key);
                     const modelEl = input().sv(item.model ?? "");
-                    const fetchModelList = button("获取模型列表").on(
+                    const fetchModelList = button(t("获取模型列表")).on(
                         "click",
                         async () => {
                             const [r, error] = tryx(async () => {
@@ -2075,11 +2075,11 @@ const xs: Record<
         name: "获取日志",
         el: () => {
             const el = xGroup("y").class(blockSetting);
-            const b = button("点击获取").on("click", () => {
+            const b = button(t("点击获取")).on("click", () => {
                 const data = renderSendSync("getLogs", []);
                 v.sv(JSON.stringify(data, null, 2));
             });
-            const v = textarea("暂无日志，点击按钮获取").attr({
+            const v = textarea(t("暂无日志，点击按钮获取")).attr({
                 readOnly: true,
             });
             el.add([b, v]);
@@ -5177,7 +5177,7 @@ function about() {
             " ",
             a(
                 renderSendSync("feedbackFeature", [
-                    { title: "建议在……添加……功能/改进" },
+                    { title: t("建议在……添加……功能/改进") },
                 ]),
             ).add("提供建议"),
             " ",

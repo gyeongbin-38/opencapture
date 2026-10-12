@@ -1,13 +1,25 @@
 import { button, ele, initDKH, input, p, select, textarea, view } from "dkh-ui";
 import type {
+    CaptureColorSample,
+    CaptureExperiencePreferences,
+    CaptureItemsQuery,
+    CaptureQueryScope,
+    NamedBeautifyStyle,
     OpenCaptureActionName,
     OpenCaptureItem,
     OpenCaptureItemsPage,
     OpenCaptureShortcut,
     OpenCaptureState,
+    SavedSmartFilter,
     TranslationEngine,
     TranslationStatus,
 } from "../../../lib/openCaptureTypes";
+import { fromSavedComparisonSession } from "../../../lib/referenceComparison";
+import { type ImageHoldHandle, createImageHold } from "../lib/imageHold";
+import { createBundleComposer } from "./bundleComposer";
+import { createCaptureBoard } from "./captureBoard";
+import { createCaptureExperiencePanel } from "./captureExperiencePanel";
+import { type DashboardCommand, createCommandPalette } from "./commandPalette";
 import {
     type GifDecoder,
     GifImageDecoder,
@@ -31,7 +43,13 @@ import {
     unsharpMask,
 } from "./dashboard-utils";
 import { icon } from "./icons";
+import { createMinimalHome } from "./minimalHome";
+import {
+    type ReferenceComparisonItem,
+    createReferenceComparison,
+} from "./referenceComparison";
 import { t } from "./t";
+import { virtualLibraryRange, virtualLibrarySlots } from "./virtualLibrary";
 
 initDKH({ pureStyle: true });
 
@@ -61,11 +79,31 @@ let sortMode: "new" | "old" | "name" = "new";
 let thumbSize = localStorage.getItem("oc:thumb-size") || "m";
 let quickLookId: string | null = null;
 const quickLookImages = new Map<string, string>();
+let compareItems: [OpenCaptureItem, OpenCaptureItem] | null = null;
+const comparePool: OpenCaptureItem[] = [];
+let compareLoadRequest = 0;
+let compareMode: "side" | "overlay" | "wipe" = "side";
+let compareZoom = 1;
+let compareMix = 50;
+let copyBundleBusy = false;
 const pendingOcrIds = new Set<string>();
 let renameTargetId: string | null = null;
 let noteTargetId: string | null = null;
 let beautifyTarget: { id: string; image: HTMLImageElement } | null = null;
 let upscaleTarget: { id: string; image: HTMLImageElement } | null = null;
+let experiencePreferences: CaptureExperiencePreferences | null = null;
+let libraryScope: CaptureQueryScope = "library";
+let queriedItems: Array<OpenCaptureItem | undefined> | null = null;
+let queriedTotal = 0;
+let querySequence = 0;
+let catalogRevision: number | undefined;
+let savedStyles: NamedBeautifyStyle[] = [];
+let savedSmartFilters: SavedSmartFilter[] = [];
+let recentColors: CaptureColorSample[] = [];
+let activeSavedSmartId = "";
+let virtualScrollScheduled = false;
+let libraryQueryTimer: ReturnType<typeof setTimeout> | undefined;
+const pendingQueryPages = new Set<number>();
 
 const label = (
     tag: "span" | "strong" | "small" | "h1" | "h2" | "h3",
@@ -75,7 +113,7 @@ const label = (
 view("x").class("window-titlebar").addInto();
 
 const shell = view("x").class("app-shell").addInto();
-if (localStorage.getItem("oc:nav-collapsed"))
+if (localStorage.getItem("oc:nav-collapsed") !== "0")
     shell.el.classList.add("nav-collapsed");
 const sidebar = ele("aside").class("sidebar").addInto(shell);
 const main = ele("main").class("main").addInto(shell);
@@ -90,6 +128,7 @@ const navigation = ele("nav").class("navigation").addInto(sidebar);
 const navItems: { page: PageName; icon: string; text: string }[] = [
     { page: "home", icon: "⌂", text: t("홈") },
     { page: "library", icon: "▧", text: t("라이브러리") },
+    { page: "board", icon: "▥", text: t("보드") },
     { page: "translate", icon: "文", text: t("번역") },
     { page: "settings", icon: "⚙", text: t("설정") },
 ];
@@ -99,6 +138,7 @@ for (const item of navItems) {
     const navButton = button()
         .class("nav-button")
         .attr({ type: "button", ariaLabel: item.text, title: item.text })
+        .data({ page: item.page })
         .add([icon(item.icon), label("span", item.text)])
         .on("click", () => showPage(item.page))
         .addInto(navigation);
@@ -117,7 +157,7 @@ button()
     .add(icon("⇤"))
     .on("click", () => {
         const collapsed = shell.el.classList.toggle("nav-collapsed");
-        localStorage.setItem("oc:nav-collapsed", collapsed ? "1" : "");
+        localStorage.setItem("oc:nav-collapsed", collapsed ? "1" : "0");
     })
     .addInto(sidebarTools);
 button()
@@ -147,6 +187,17 @@ const topbar = view("x").class("topbar").addInto(main);
 const titleGroup = view("y").class("title-group").addInto(topbar);
 const pageTitle = label("h1", t("캡처")).addInto(titleGroup);
 const topActions = view("x").class("top-actions").addInto(topbar);
+
+button()
+    .class("ghost-button", "compact", "command-trigger")
+    .attr({
+        type: "button",
+        title: t("명령 검색"),
+        ariaLabel: t("명령 검색"),
+    })
+    .add([icon("⌕"), label("span", "Ctrl K")])
+    .on("click", () => openDashboardCommands())
+    .addInto(topActions);
 
 button()
     .class("ghost-button", "compact", "icon-button")
@@ -189,8 +240,14 @@ function makePage(name: PageName) {
 
 const homePage = makePage("home");
 const libraryPage = makePage("library");
+const boardPage = makePage("board");
 const translatePage = makePage("translate");
 const settingsPage = makePage("settings");
+const legacyToolsCloseButton = button(t("간단한 홈으로 돌아가기"))
+    .class("outline-button", "legacy-tools-close")
+    .attr({ type: "button" })
+    .on("click", () => homePage.el.classList.remove("show-all-tools"))
+    .addInto(homePage);
 
 const captureActions: {
     name: OpenCaptureActionName;
@@ -320,7 +377,7 @@ function makeActionCard(action: (typeof captureActions)[number]) {
 const groupEls = new Map<string, { el: HTMLElement; head: HTMLElement }>();
 for (const group of actionGroups) {
     const groupEl = view("y")
-        .class("action-group")
+        .class("action-group", "legacy-home-action")
         .data({ group: group.key })
         .addInto(homePage);
     const head = button()
@@ -439,9 +496,13 @@ const collectionGroup = view("y").class("field-group").addInto(libraryToolbar);
 const collectionSelect = select([])
     .class("select-control")
     .attr({ ariaLabel: t("컬렉션 선택") })
-    .on("change", (_event, element) => {
+    .on("change", async (_event, element) => {
         const id = element.el.value;
-        if (id) runAction("choose-collection", id, true);
+        if (id) {
+            await runAction("choose-collection", id, true);
+            await refreshState();
+            void refreshLibraryQuery(true);
+        }
     })
     .addInto(collectionGroup);
 const searchGroup = view("y").class("field-group").addInto(libraryToolbar);
@@ -455,7 +516,7 @@ const searchInput = input("text")
     })
     .on("input", () => {
         searchQuery = searchInput.el.value.trim().toLowerCase();
-        renderState();
+        void refreshLibraryQuery();
     })
     .addInto(searchField);
 const libraryButtons = view("x")
@@ -474,7 +535,7 @@ const favFilterButton = button()
         favoritesOnly = !favoritesOnly;
         favFilterButton.el.classList.toggle("active", favoritesOnly);
         favFilterButton.attr({ ariaPressed: String(favoritesOnly) });
-        renderState();
+        void refreshLibraryQuery(true);
     })
     .addInto(libraryButtons);
 button()
@@ -500,13 +561,38 @@ button()
     .addInto(libraryButtons);
 
 const filterBar = view("x", "wrap").class("filter-bar").addInto(libraryPage);
+const scopeSegment = view("x")
+    .class("scope-segment")
+    .attr({ role: "tablist", ariaLabel: "보관 범위" })
+    .addInto(filterBar);
+const scopeButtons = new Map<CaptureQueryScope, HTMLButtonElement>();
+for (const [scope, text] of [
+    ["temporary", "임시"],
+    ["library", "보관함"],
+    ["trash", "휴지통"],
+] as const) {
+    const control = button(text)
+        .class("scope-segment-button")
+        .attr({
+            type: "button",
+            role: "tab",
+            ariaSelected: String(scope === libraryScope),
+        })
+        .on("click", () => {
+            libraryScope = scope;
+            selectedItemIds.clear();
+            void refreshLibraryQuery(true);
+        })
+        .addInto(scopeSegment);
+    scopeButtons.set(scope, control.el);
+}
 const todayChip = button()
     .class("chip-button")
     .attr({ type: "button", ariaPressed: "false" })
     .add([icon("◷"), label("span", t("오늘"))])
     .on("click", () => {
         todayOnly = !todayOnly;
-        renderState();
+        void refreshLibraryQuery(true);
     })
     .addInto(filterBar);
 const ocrChip = button()
@@ -519,7 +605,7 @@ const ocrChip = button()
     .add([icon("T"), label("span", t("텍스트"))])
     .on("click", () => {
         ocrOnly = !ocrOnly;
-        renderState();
+        void refreshLibraryQuery(true);
     })
     .addInto(filterBar);
 const smartSelect = select([
@@ -533,8 +619,26 @@ const smartSelect = select([
     .attr({ ariaLabel: t("스마트 보기") })
     .on("change", (_event, element) => {
         smartFilter = element.el.value as typeof smartFilter;
-        renderState();
+        todayOnly = false;
+        void refreshLibraryQuery(true);
     })
+    .addInto(filterBar);
+const savedSmartSelect = select([{ value: "", name: "저장된 보기" }])
+    .class("select-control", "smart-select", "saved-smart-select")
+    .attr({ ariaLabel: "저장된 스마트 컬렉션" })
+    .on("change", (_event, element) => {
+        activeSavedSmartId = element.el.value;
+        void refreshLibraryQuery(true);
+    })
+    .addInto(filterBar);
+button("+")
+    .class("chip-button", "smart-save-button")
+    .attr({
+        type: "button",
+        title: "현재 조건 저장",
+        ariaLabel: "현재 조건 저장",
+    })
+    .on("click", () => void saveCurrentSmartFilter())
     .addInto(filterBar);
 const tagChipRow = view("x", "wrap").class("tag-chip-row").addInto(filterBar);
 const filterBarEnd = view("x").class("filter-bar-end").addInto(filterBar);
@@ -547,7 +651,7 @@ const sortSelect = select([
     .attr({ ariaLabel: t("정렬") })
     .on("change", (_event, element) => {
         sortMode = element.el.value as typeof sortMode;
-        renderState();
+        void refreshLibraryQuery(true);
     })
     .addInto(filterBarEnd);
 const sizeSegment = view("x")
@@ -629,6 +733,65 @@ const clearSelectionButton = button(t("선택 해제"))
     .on("click", () => {
         selectedItemIds.clear();
         renderState();
+    })
+    .addInto(selectionActions);
+const copyBundleButton = button(t("묶음 복사"))
+    .class("outline-button", "compact", "bulk-action", "image-bulk-action")
+    .attr({
+        type: "button",
+        title: t("선택한 이미지를 한 장의 격자로 만들어 복사"),
+    })
+    .on("click", () => void openBundlePreview())
+    .addInto(selectionActions);
+const copySourceFilesButton = button("원본 파일 복사")
+    .class("outline-button", "compact", "bulk-action")
+    .attr({
+        type: "button",
+        title: "선택한 원본 파일을 Explorer에 붙여넣을 수 있게 복사",
+    })
+    .on("click", () => void copySelectedSourceFiles())
+    .addInto(selectionActions);
+const promoteSelectionButton = button("보관")
+    .class("outline-button", "compact", "bulk-action", "temporary-action")
+    .attr({ type: "button" })
+    .on("click", () => void mutateSelectedItems("promote"))
+    .addInto(selectionActions);
+const trashSelectionButton = button("휴지통")
+    .class("outline-button", "compact", "bulk-action", "trash-action")
+    .attr({ type: "button" })
+    .on("click", () => void mutateSelectedItems("trash"))
+    .addInto(selectionActions);
+const restoreSelectionButton = button("복원")
+    .class("outline-button", "compact", "bulk-action", "restore-action")
+    .attr({ type: "button" })
+    .on("click", () => void mutateSelectedItems("restore"))
+    .addInto(selectionActions);
+const compareSelectionButton = button(t("비교"))
+    .class("outline-button", "compact", "bulk-action", "compare-action")
+    .attr({
+        type: "button",
+        title: t("이미지 두 장을 나란히 또는 겹쳐 비교"),
+    })
+    .on("click", () => void openSelectedComparison())
+    .addInto(selectionActions);
+const addSelectionToBoardButton = button(t("보드에 추가"))
+    .class("outline-button", "compact", "bulk-action", "board-action")
+    .attr({
+        type: "button",
+        title: t("선택한 이미지를 현재 보드에 추가"),
+    })
+    .on("click", async () => {
+        const ids = [...selectedItemIds];
+        if (!ids.length) return;
+        try {
+            await captureBoardReady;
+            await captureBoard.addItems(ids);
+            selectedItemIds.clear();
+            await showPage("board");
+            showToast(`${ids.length}개 캡처를 보드에 추가했습니다.`);
+        } catch (error) {
+            showToast(errorMessage(error), true);
+        }
     })
     .addInto(selectionActions);
 for (const [text, action, direction] of [
@@ -890,6 +1053,12 @@ const runtimeShortcutList = view("y")
     .class("runtime-shortcut-list")
     .addInto(convenienceCard);
 
+const experiencePanel = createCaptureExperiencePanel({
+    save: (patch) => window.openCapture.configureExperience(patch),
+    announce: (message, error) => showToast(message, error),
+});
+settingsLayout.el.append(experiencePanel.element);
+
 const providerCard = view("y").class("settings-card").addInto(settingsLayout);
 providerCard.add(
     view("x")
@@ -924,10 +1093,424 @@ aboutCard.add([
     label("small", t("버전 확인 중")).class("version-pill"),
 ]);
 
+const savedToolsCard = view("y")
+    .class("settings-card", "saved-tools-card")
+    .addInto(settingsLayout);
+savedToolsCard.add(
+    view("x")
+        .class("settings-card-heading")
+        .add(label("h2", "저장된 스타일과 색상")),
+);
+const savedStyleRow = view("x", "wrap")
+    .class("saved-style-row")
+    .addInto(savedToolsCard);
+const savedSmartRow = view("x", "wrap")
+    .class("saved-style-row", "saved-smart-row")
+    .addInto(savedToolsCard);
+const recentColorRow = view("x", "wrap")
+    .class("recent-color-row")
+    .addInto(savedToolsCard);
+
+const diagnosticsCard = ele("details")
+    .class("settings-card", "diagnostics-card")
+    .addInto(settingsLayout);
+diagnosticsCard.add(
+    ele("summary").add([
+        label("strong", "단축키 진단"),
+        label("small", "입력부터 캡처 완료까지"),
+    ]),
+);
+const diagnosticsList = view("y")
+    .class("diagnostics-list")
+    .addInto(diagnosticsCard);
+button("새로고침")
+    .class("text-button", "compact")
+    .attr({ type: "button" })
+    .on("click", () => void refreshState())
+    .addInto(diagnosticsCard);
+
 const modalBackdrop = view()
     .class("modal-backdrop")
     .attr({ hidden: true })
     .addInto();
+const bundleComposer = createBundleComposer({
+    load: (id) => window.openCapture.getItemData(id),
+    copy: async (dataURL) => {
+        const ok = await runAction("copy-composed", { dataURL });
+        if (!ok) throw new Error("묶음을 복사하지 못했습니다.");
+    },
+    save: async (dataURL, bundleLabel) => {
+        const ok = await runAction("save-composed", {
+            dataURL,
+            label: bundleLabel,
+        });
+        if (!ok) throw new Error("묶음을 저장하지 못했습니다.");
+    },
+    openDialog: openModal,
+    closeDialog: closeModal,
+    announce: (message, error) => showToast(message, error),
+});
+modalBackdrop.el.append(bundleComposer.dialog);
+const referenceComparison = createReferenceComparison({
+    loadItemData: (id) => {
+        const reference = parseBoardReference(id);
+        return reference
+            ? window.openCapture.boards.assetData(
+                  reference.boardId,
+                  reference.assetId,
+                  "original",
+              )
+            : window.openCapture.getItemData(id);
+    },
+    listSessions: () => window.openCapture.listComparisons(),
+    saveSession: (session) => window.openCapture.saveComparison(session),
+    removeSession: (id) => window.openCapture.removeComparison(id),
+    saveExport: async (dataURL, exportLabel) => {
+        const ok = await runAction("save-composed", {
+            dataURL,
+            label: exportLabel,
+        });
+        if (!ok) throw new Error("비교 결과를 저장하지 못했습니다.");
+    },
+    copyExport: async (dataURL) => {
+        const ok = await runAction("copy-composed", { dataURL });
+        if (!ok) throw new Error("비교 결과를 복사하지 못했습니다.");
+    },
+    showToast: (message, error) => showToast(message, error),
+    translate: t,
+    openDialog: openModal,
+    closeDialog: closeModal,
+});
+
+function parseBoardReference(id: string) {
+    const match = /^board:([^:]+):(.+)$/.exec(id);
+    if (!match) return null;
+    try {
+        return {
+            boardId: decodeURIComponent(match[1]),
+            assetId: decodeURIComponent(match[2]),
+        };
+    } catch {
+        return null;
+    }
+}
+
+const captureBoard = createCaptureBoard({
+    api: window.openCapture.boards,
+    loadBeautifyStyles: () => window.openCapture.listStyles(),
+    announce: (message, error) => showToast(message, error),
+    compareItems: (ids) => {
+        const document = captureBoard.getDocument();
+        const items = ids.map((id) => {
+            const reference = parseBoardReference(id);
+            const node = document?.nodes.find(
+                (candidate) => candidate.assetId === reference?.assetId,
+            );
+            return {
+                id,
+                name: node?.name || node?.text || t("보드 이미지"),
+            };
+        });
+        referenceComparison.open(items);
+    },
+    capture: () => runAction("capture"),
+    changed: () => void renderMinimalHome(),
+});
+boardPage.el.append(captureBoard.root);
+let approvedBoardUnload = false;
+let requestedBoardClose = false;
+window.openCapture.onBoardFlushRequested((requestId) => {
+    requestedBoardClose = true;
+    captureBoard.root.inert = true;
+    void captureBoard
+        .flush()
+        .then(
+            () => {
+                approvedBoardUnload = true;
+                return window.openCapture.ackBoardFlush(requestId, true);
+            },
+            (error) => {
+                approvedBoardUnload = false;
+                requestedBoardClose = false;
+                captureBoard.root.inert = false;
+                const message = errorMessage(error);
+                showToast(message, true);
+                return window.openCapture.ackBoardFlush(
+                    requestId,
+                    false,
+                    message,
+                );
+            },
+        )
+        .catch((error) => {
+            approvedBoardUnload = false;
+            requestedBoardClose = false;
+            captureBoard.root.inert = false;
+            showToast(errorMessage(error), true);
+        });
+});
+window.addEventListener("beforeunload", (event) => {
+    if (approvedBoardUnload && !captureBoard.hasPendingChanges()) {
+        approvedBoardUnload = false;
+        return;
+    }
+    if (!captureBoard.hasPendingChanges()) return;
+    const closeAfterSave = requestedBoardClose;
+    approvedBoardUnload = false;
+    captureBoard.root.inert = true;
+    event.preventDefault();
+    event.returnValue = false;
+    void captureBoard
+        .flush()
+        .then(() => {
+            if (closeAfterSave) return window.openCapture.finishBoardClose();
+            approvedBoardUnload = true;
+            location.reload();
+        })
+        .catch((error) => {
+            approvedBoardUnload = false;
+            requestedBoardClose = false;
+            captureBoard.root.inert = false;
+            showToast(errorMessage(error), true);
+        });
+});
+const captureBoardReady = captureBoard.ready().catch((error) => {
+    showToast(errorMessage(error), true);
+});
+
+const minimalHome = createMinimalHome({
+    capture: () => runAction("capture"),
+    openCommands: () => openDashboardCommands(),
+    openItem: (item) => {
+        if (isVideoItem(item) || isProjectItem(item))
+            void runAction("open-item", item.id);
+        else openQuickLook(item);
+    },
+    async openBoard(id) {
+        await captureBoardReady;
+        await captureBoard.open(id);
+        await showPage("board");
+    },
+    showLibrary: () => void showPage("library"),
+});
+homePage.el.prepend(minimalHome.root);
+
+const captureCommands: DashboardCommand[] = captureActions.map((action) => ({
+    id: `capture:${action.name}`,
+    label: action.title,
+    detail: action.description,
+    keywords: ["캡처", action.name],
+    shortcut: action.shortcut,
+    run: () =>
+        action.name === "steps" ? toggleSteps() : runAction(action.name),
+}));
+const boardCommands: DashboardCommand[] = [
+    ["board:create", "새 보드", "create"],
+    ["board:layout-grid", "격자로 정렬", "layout-grid"],
+    ["board:layout-horizontal", "가로로 정렬", "layout-horizontal"],
+    ["board:layout-vertical", "세로로 정렬", "layout-vertical"],
+    ["board:group", "선택 항목 그룹", "group"],
+    ["board:focus", "선택 항목만 보기", "focus"],
+    ["board:tool-rect", "사각형 그리기", "tool:rect"],
+    ["board:tool-arrow", "화살표 그리기", "tool:arrow"],
+    ["board:tool-note", "보드 메모 추가", "tool:note"],
+    ["board:tool-callout", "설명 상자 추가", "tool:callout"],
+    ["board:preset-design", "디자인 피드백 프리셋", "preset:design"],
+    ["board:preset-bug", "버그 보고 프리셋", "preset:bug"],
+    ["board:preset-study", "공부 메모 프리셋", "preset:study"],
+    ["board:export-png", "보드를 PNG로 내보내기", "export-png"],
+    ["board:export-pdf", "보드를 PDF로 내보내기", "export-pdf"],
+].map(([id, commandLabel, command]) => ({
+    id,
+    label: commandLabel,
+    detail: t("캡처 보드"),
+    keywords: ["보드", "도형", "주석"],
+    async run() {
+        await captureBoardReady;
+        await showPage("board");
+        await captureBoard.command(command);
+    },
+}));
+const navigationCommands: DashboardCommand[] = [
+    ["go:home", "홈 열기", "home"],
+    ["go:library", "라이브러리 열기", "library"],
+    ["go:board", "캡처 보드 열기", "board"],
+    ["go:translate", "번역 열기", "translate"],
+    ["go:settings", "설정 열기", "settings"],
+].map(([id, commandLabel, page]) => ({
+    id,
+    label: commandLabel,
+    detail: t("화면 이동"),
+    run: () => showPage(page as PageName),
+}));
+const workspaceCommands: DashboardCommand[] = [
+    {
+        id: "home:all-tools",
+        label: "모든 캡처 도구 보기",
+        detail: "자동 작업과 전체 캡처 모드",
+        keywords: ["캡처", "자동", "전체", "기능"],
+        async run() {
+            await showPage("home");
+            homePage.el.classList.add("show-all-tools");
+            legacyToolsCloseButton.el.focus();
+        },
+    },
+    {
+        id: "library:add-board",
+        label: "선택 항목을 보드에 추가",
+        detail: "라이브러리 선택",
+        keywords: ["보드", "선택", "추가"],
+        async run() {
+            const ids = [...selectedItemIds];
+            await captureBoardReady;
+            await captureBoard.addItems(ids);
+            selectedItemIds.clear();
+            await showPage("board");
+        },
+    },
+    {
+        id: "settings:capture-tools",
+        label: "캡처 도구 구성",
+        detail: "툴바와 원형 메뉴 즐겨찾기",
+        keywords: ["설정", "즐겨찾기", "툴바", "원형 메뉴"],
+        async run() {
+            await showPage("settings");
+            settingsPage.el
+                .querySelector<HTMLElement>(".experience-settings")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+    },
+];
+const commandPalette = createCommandPalette(document.body, [
+    ...captureCommands,
+    ...boardCommands,
+    ...workspaceCommands,
+    ...navigationCommands,
+]);
+
+function openDashboardCommands() {
+    const selection = captureBoard.getSelection();
+    const selectedCount = selection.length;
+    const imageCount = selection.filter((node) => node.kind === "image").length;
+    const disabled = new Set<string>();
+    if (selectedCount < 2) {
+        disabled.add("board:group");
+        disabled.add("board:layout-grid");
+        disabled.add("board:layout-horizontal");
+        disabled.add("board:layout-vertical");
+    }
+    if (!selectedCount) disabled.add("board:focus");
+    if (!selectedItemIds.size) disabled.add("library:add-board");
+    commandPalette.setCommands(
+        [
+            ...captureCommands.map((command) => ({
+                ...command,
+                shortcut:
+                    formatShortcut(
+                        appState.runtime.shortcuts.find(
+                            (shortcut) =>
+                                command.id === `capture:${shortcut.id}`,
+                        )?.active ?? "",
+                    ) || undefined,
+            })),
+            ...boardCommands.map((command) => ({
+                ...command,
+                disabled: disabled.has(command.id),
+                detail:
+                    command.id === "board:focus" && imageCount
+                        ? `${imageCount}개 이미지 선택됨`
+                        : command.detail,
+            })),
+            ...workspaceCommands.map((command) => ({
+                ...command,
+                disabled: disabled.has(command.id),
+            })),
+            ...navigationCommands,
+        ].filter((command) =>
+            activePage === "board" || !command.id.startsWith("board:")
+                ? true
+                : ["board:create"].includes(command.id),
+        ),
+    );
+    commandPalette.open();
+}
+
+let minimalHomeRequest = 0;
+async function renderMinimalHome() {
+    const request = ++minimalHomeRequest;
+    try {
+        const [libraryRecent, temporaryRecent, boards] = await Promise.all([
+            window.openCapture.queryItems({
+                scope: "library",
+                sort: "newest",
+                offset: 0,
+                limit: 3,
+                queryId: `home-library-${request}`,
+            }),
+            window.openCapture.queryItems({
+                scope: "temporary",
+                sort: "newest",
+                offset: 0,
+                limit: 3,
+                queryId: `home-temporary-${request}`,
+            }),
+            window.openCapture.boards.list(),
+        ]);
+        if (request !== minimalHomeRequest) return;
+        const capture = appState.runtime.shortcuts.find(
+            (shortcut) => shortcut.id === "capture",
+        );
+        const activeId = captureBoard.getDocument()?.id;
+        const recentById = new Map(
+            [...libraryRecent.items, ...temporaryRecent.items].map((item) => [
+                item.id,
+                item,
+            ]),
+        );
+        minimalHome.render({
+            shortcut: capture?.active
+                ? formatShortcut(capture.active).replaceAll(" + ", "+")
+                : "",
+            recents: [...recentById.values()]
+                .sort(
+                    (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                )
+                .slice(0, 3),
+            activeBoard:
+                boards.find((board) => board.id === activeId) ??
+                boards.find((board) => board.active),
+        });
+    } catch (error) {
+        if (request === minimalHomeRequest)
+            showToast(errorMessage(error), true);
+    }
+}
+button()
+    .class("outline-button", "saved-comparison-button")
+    .attr({ type: "button", title: t("저장된 비교") })
+    .add([icon("▥"), label("span", t("저장된 비교"))])
+    .on("click", () => {
+        void window.openCapture
+            .listComparisons()
+            .then((sessions) => {
+                const saved = sessions[0];
+                if (!saved) {
+                    showToast(t("저장된 비교가 없습니다."));
+                    return;
+                }
+                referenceComparison.open(
+                    saved.itemIds.map((id) => ({
+                        id,
+                        name: `${saved.name} · ${id.slice(0, 8)}`,
+                    })),
+                    fromSavedComparisonSession(saved) ?? undefined,
+                );
+            })
+            .catch((error) => showToast(String(error), true));
+    })
+    .addInto(libraryButtons);
 const shortcutDialog = ele("dialog")
     .class("shortcut-dialog")
     .addInto(modalBackdrop);
@@ -1312,7 +1895,25 @@ view("x")
     .add([autoBalanceCheck, label("span", t("자동 균형"))])
     .addInto(beautifyControls);
 
+const beautifyStyleRow = view("x")
+    .class("beautify-style-row")
+    .addInto(beautifyControls);
+const beautifyStyleSelect = select([{ value: "", name: "스타일 프리셋" }])
+    .class("select-control")
+    .on("change", (_event, element) => applySavedStyle(element.el.value))
+    .addInto(beautifyStyleRow);
+button("현재 스타일 저장")
+    .class("text-button", "compact")
+    .attr({ type: "button" })
+    .on("click", () => void saveCurrentBeautifyStyle())
+    .addInto(beautifyStyleRow);
+
+const beautifySliderInputs = new Map<
+    "padding" | "radius" | "shadow",
+    HTMLInputElement
+>();
 function beautifySlider(
+    key: "padding" | "radius" | "shadow",
     title: string,
     min: number,
     max: number,
@@ -1333,6 +1934,7 @@ function beautifySlider(
             apply(v);
             renderBeautify();
         });
+    beautifySliderInputs.set(key, range.el);
     view("y")
         .class("slider-group")
         .add([
@@ -1343,13 +1945,13 @@ function beautifySlider(
         ])
         .addInto(beautifyControls);
 }
-beautifySlider(t("여백"), 0, 200, beautifyOptions.padding, (v) => {
+beautifySlider("padding", t("여백"), 0, 200, beautifyOptions.padding, (v) => {
     beautifyOptions.padding = v;
 });
-beautifySlider(t("둥글기"), 0, 120, beautifyOptions.radius, (v) => {
+beautifySlider("radius", t("둥글기"), 0, 120, beautifyOptions.radius, (v) => {
     beautifyOptions.radius = v;
 });
-beautifySlider(t("그림자"), 0, 120, beautifyOptions.shadow, (v) => {
+beautifySlider("shadow", t("그림자"), 0, 120, beautifyOptions.shadow, (v) => {
     beautifyOptions.shadow = v;
 });
 
@@ -1663,7 +2265,7 @@ for (const [glyph, text, run] of qlActionList) {
         .attr({ type: "button" })
         .add([icon(glyph), label("small", text)])
         .on("click", () => {
-            const item = appState.items.find((i) => i.id === quickLookId);
+            const item = quickLookId ? findKnownItem(quickLookId) : undefined;
             if (item) run(item);
         })
         .addInto(qlActions);
@@ -1680,7 +2282,7 @@ const qlTagInput = input("text")
     .addInto(qlSide);
 qlTagInput.on("keydown", async (event) => {
     event.stopPropagation();
-    const item = appState.items.find((i) => i.id === quickLookId);
+    const item = quickLookId ? findKnownItem(quickLookId) : undefined;
     if (!item) return;
     if (event.key === "Enter" || event.key === ",") {
         event.preventDefault();
@@ -1714,7 +2316,7 @@ button()
     .attr({ type: "button" })
     .add([icon("▣"), label("span", t("텍스트 복사"))])
     .on("click", async () => {
-        const item = appState.items.find((i) => i.id === quickLookId);
+        const item = quickLookId ? findKnownItem(quickLookId) : undefined;
         if (!item?.ocrText) return;
         await navigator.clipboard.writeText(item.ocrText);
         showToast("인식된 텍스트를 복사했습니다.");
@@ -1725,7 +2327,7 @@ button()
     .attr({ type: "button" })
     .add([icon("T"), label("span", t("텍스트 인식"))])
     .on("click", async () => {
-        const item = appState.items.find((i) => i.id === quickLookId);
+        const item = quickLookId ? findKnownItem(quickLookId) : undefined;
         if (!item) return;
         await requestOcrIndex(item.id);
         renderQuickLook();
@@ -1735,6 +2337,135 @@ quickLookDialog.el.addEventListener("cancel", (event) => {
     event.preventDefault();
     closeModal(quickLookDialog.el);
 });
+
+const compareDialog = ele("dialog")
+    .class("compare-dialog")
+    .attr({ ariaBusy: "false" })
+    .addInto(modalBackdrop);
+const compareHeader = view("x")
+    .class("dialog-header", "compare-header")
+    .addInto(compareDialog);
+compareHeader.add([
+    label("h2", t("레퍼런스 비교")),
+    button()
+        .class("close-button")
+        .attr({ type: "button", ariaLabel: t("닫기") })
+        .add(icon("×"))
+        .on("click", () => closeModal(compareDialog.el)),
+]);
+const compareToolbar = view("x", "wrap")
+    .class("compare-toolbar")
+    .addInto(compareDialog);
+const comparePairControls = view("x")
+    .class("compare-pair-controls")
+    .addInto(compareToolbar);
+const compareSelectA = ele("select")
+    .class("compare-pair-select")
+    .attr({ ariaLabel: t("첫 번째 레퍼런스") })
+    .addInto(comparePairControls);
+const compareSelectB = ele("select")
+    .class("compare-pair-select")
+    .attr({ ariaLabel: t("두 번째 레퍼런스") })
+    .addInto(comparePairControls);
+compareSelectA.on("change", () => void applyComparisonSelection());
+compareSelectB.on("change", () => void applyComparisonSelection());
+const compareModeButtons = new Map<
+    "side" | "overlay" | "wipe",
+    HTMLButtonElement
+>();
+for (const [mode, text] of [
+    ["side", t("나란히")],
+    ["overlay", t("겹치기")],
+    ["wipe", t("밀어서 비교")],
+] as const) {
+    const control = button(text)
+        .class("compare-mode-button")
+        .attr({ type: "button" })
+        .on("click", () => setCompareMode(mode))
+        .addInto(compareToolbar);
+    compareModeButtons.set(mode, control.el);
+}
+const compareMixControl = view("x")
+    .class("compare-mix-control")
+    .addInto(compareToolbar);
+const compareMixLabel = label("small", t("경계 50%"));
+const compareMixInput = input("range").attr({
+    min: "0",
+    max: "100",
+    step: "1",
+    value: "50",
+    ariaLabel: t("비교 경계"),
+});
+compareMixInput.on("input", () => {
+    compareMix = Number(compareMixInput.el.value);
+    renderComparison();
+});
+compareMixControl.add([compareMixLabel, compareMixInput]);
+const compareZoomControls = view("x")
+    .class("compare-zoom-controls")
+    .addInto(compareToolbar);
+const compareZoomLabel = label("small", "100%");
+compareZoomControls.add([
+    button("−")
+        .class("compare-icon-button")
+        .attr({ type: "button", ariaLabel: t("축소") })
+        .on("click", () => setCompareZoom(compareZoom - 0.25)),
+    compareZoomLabel,
+    button("+")
+        .class("compare-icon-button")
+        .attr({ type: "button", ariaLabel: t("확대") })
+        .on("click", () => setCompareZoom(compareZoom + 0.25)),
+    button(t("교체"))
+        .class("compare-swap-button")
+        .attr({ type: "button" })
+        .on("click", () => {
+            if (!compareItems) return;
+            void setComparisonPair(compareItems[1].id, compareItems[0].id);
+        }),
+]);
+const compareStage = view().class("compare-stage").addInto(compareDialog);
+const compareLoadingStatus = label("small", t("이미지 불러오는 중…"))
+    .class("compare-loading-status")
+    .attr({ role: "status", ariaLive: "polite" })
+    .addInto(compareStage);
+compareLoadingStatus.el.hidden = true;
+const compareSide = view("x").class("compare-side").addInto(compareStage);
+const compareSidePaneA = view("y").class("compare-pane").addInto(compareSide);
+const compareSideImageA = ele("img")
+    .class("compare-image")
+    .attr({ alt: "" })
+    .addInto(compareSidePaneA);
+const compareSideNameA = label("small", "A").addInto(compareSidePaneA);
+const compareSidePaneB = view("y").class("compare-pane").addInto(compareSide);
+const compareSideImageB = ele("img")
+    .class("compare-image")
+    .attr({ alt: "" })
+    .addInto(compareSidePaneB);
+const compareSideNameB = label("small", "B").addInto(compareSidePaneB);
+const compareOverlay = view().class("compare-overlay").addInto(compareStage);
+const compareOverlayBase = ele("img")
+    .class("compare-overlay-image", "compare-overlay-base")
+    .attr({ alt: "" })
+    .addInto(compareOverlay);
+const compareOverlayTop = ele("img")
+    .class("compare-overlay-image", "compare-overlay-top")
+    .attr({ alt: "" })
+    .addInto(compareOverlay);
+const compareDivider = view().class("compare-divider").addInto(compareOverlay);
+compareDialog.el.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeModal(compareDialog.el);
+});
+compareDialog.el.addEventListener("close", () => {
+    compareLoadRequest++;
+    compareDialog.el.classList.remove("loading");
+    compareDialog.el.setAttribute("aria-busy", "false");
+    compareLoadingStatus.el.hidden = true;
+});
+// The factory-backed comparison surface below replaces this legacy local view.
+// Keep the detached nodes temporarily so older helper functions remain harmless
+// while integrations migrate, without exposing duplicate controls in the DOM.
+compareDialog.el.remove();
 
 const onboardDialog = ele("dialog")
     .class("onboard-dialog")
@@ -1896,11 +2627,20 @@ function runAiUpscale(item: OpenCaptureItem) {
     });
 }
 
-function showPage(page: PageName) {
+async function showPage(page: PageName) {
+    if (activePage === "board" && page !== "board") {
+        try {
+            await captureBoard.flush();
+        } catch (error) {
+            showToast(errorMessage(error), true);
+            return;
+        }
+    }
     activePage = page;
     const titles: Record<PageName, string> = {
         home: t("캡처"),
         library: t("라이브러리"),
+        board: t("보드"),
         translate: t("번역"),
         settings: t("설정"),
     };
@@ -1911,6 +2651,7 @@ function showPage(page: PageName) {
     pageTitle.el.textContent = titles[page];
     content.el.scrollTop = 0;
     if (page === "translate") refreshTranslationStatus();
+    if (page === "home") void renderMinimalHome();
 }
 
 async function runAction(
@@ -1919,6 +2660,11 @@ async function runAction(
     refresh = false,
 ) {
     try {
+        if (
+            activePage === "board" &&
+            (name === "hide-window" || name === "open-image")
+        )
+            await captureBoard.flush();
         const result = await window.openCapture.action(name, payload);
         if (isState(result)) appState = result;
         else if (refresh) await refreshState();
@@ -1974,12 +2720,277 @@ async function toggleSteps() {
         );
 }
 
+function isComparableImage(item: OpenCaptureItem) {
+    return !isVideoItem(item) && !isProjectItem(item);
+}
+
+function selectedItemsInOrder() {
+    const available = new Map(
+        [...appState.items, ...visibleLibraryItems()].map((item) => [
+            item.id,
+            item,
+        ]),
+    );
+    return [...selectedItemIds]
+        .map((id) => available.get(id))
+        .filter((item): item is OpenCaptureItem => Boolean(item));
+}
+
+function findKnownItem(id: string) {
+    return (
+        appState.items.find((item) => item.id === id) ??
+        queriedItems?.find((item) => item?.id === id)
+    );
+}
+
+async function loadLibraryImage(item: OpenCaptureItem) {
+    const data =
+        quickLookImages.get(item.id) ??
+        (await window.openCapture.getItemData(item.id));
+    quickLookImages.set(item.id, data);
+    const image = new Image();
+    image.src = data;
+    await image.decode();
+    return { item, image, data };
+}
+
+async function copySelectedAsBundle() {
+    if (copyBundleBusy) return;
+    const items = selectedItemsInOrder();
+    if (items.length < 2) {
+        showToast(t("이미지를 두 장 이상 선택해 주세요."), true);
+        return;
+    }
+    if (items.length > 12) {
+        showToast(t("묶음 복사는 최대 12장까지 지원합니다."), true);
+        return;
+    }
+    if (items.some((item) => !isComparableImage(item))) {
+        showToast(t("이미지 항목만 묶어서 복사할 수 있습니다."), true);
+        return;
+    }
+    copyBundleBusy = true;
+    copyBundleButton.el.disabled = true;
+    copyBundleButton.el.textContent = t("복사 중…");
+    let canvas: HTMLCanvasElement | null = null;
+    try {
+        const columns = Math.min(4, Math.ceil(Math.sqrt(items.length)));
+        const rows = Math.ceil(items.length / columns);
+        const cellWidth = 760;
+        const cellHeight = 520;
+        const gap = 18;
+        const padding = 18;
+        canvas = document.createElement("canvas");
+        canvas.width = padding * 2 + columns * cellWidth + (columns - 1) * gap;
+        canvas.height = padding * 2 + rows * cellHeight + (rows - 1) * gap;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error(t("이미지 캔버스를 만들 수 없습니다."));
+        ctx.fillStyle = "#111114";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (const [index, item] of items.entries()) {
+            const data = await window.openCapture.getItemData(item.id);
+            const image = new Image();
+            image.src = data;
+            try {
+                await image.decode();
+                const column = index % columns;
+                const row = Math.floor(index / columns);
+                const x = padding + column * (cellWidth + gap);
+                const y = padding + row * (cellHeight + gap);
+                const scale = Math.min(
+                    cellWidth / image.naturalWidth,
+                    cellHeight / image.naturalHeight,
+                );
+                const width = Math.max(
+                    1,
+                    Math.round(image.naturalWidth * scale),
+                );
+                const height = Math.max(
+                    1,
+                    Math.round(image.naturalHeight * scale),
+                );
+                const drawX = x + Math.round((cellWidth - width) / 2);
+                const drawY = y + Math.round((cellHeight - height) / 2);
+                ctx.fillStyle = "#18181c";
+                ctx.fillRect(x, y, cellWidth, cellHeight);
+                ctx.drawImage(image, drawX, drawY, width, height);
+                ctx.strokeStyle = "rgba(255,255,255,.16)";
+                ctx.strokeRect(x + 0.5, y + 0.5, cellWidth - 1, cellHeight - 1);
+            } finally {
+                image.src = "";
+            }
+        }
+        const copied = await runAction("copy-composed", {
+            dataURL: canvas.toDataURL("image/png"),
+        });
+        if (copied)
+            showToast(
+                `${items.length}${t("장을 한 이미지로 묶어 복사했습니다.")}`,
+            );
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    } finally {
+        if (canvas) {
+            canvas.width = 1;
+            canvas.height = 1;
+        }
+        copyBundleBusy = false;
+        copyBundleButton.el.textContent = t("묶음 복사");
+        renderState();
+    }
+}
+
+async function openSelectedComparison() {
+    const items = selectedItemsInOrder();
+    if (items.length < 2) {
+        showToast(t("비교할 이미지를 두 장 이상 선택해 주세요."), true);
+        return;
+    }
+    if (items.length > 20) {
+        showToast(t("비교는 최대 20장까지 선택할 수 있습니다."), true);
+        return;
+    }
+    if (items.some((item) => !isComparableImage(item))) {
+        showToast(t("일반 이미지 두 장만 비교할 수 있습니다."), true);
+        return;
+    }
+    referenceComparison.open(
+        items.map<ReferenceComparisonItem>((item) => ({
+            id: item.id,
+            name: item.name,
+            thumbnail: item.thumbnail,
+        })),
+    );
+}
+
+function renderCompareSelectors(firstId: string, secondId: string) {
+    compareSelectA.clear();
+    compareSelectB.clear();
+    comparePool.forEach((item, index) => {
+        const text = `${String.fromCharCode(65 + index)} · ${item.name}`;
+        compareSelectA.add(
+            ele("option").attr({ value: item.id, textContent: text }),
+        );
+        compareSelectB.add(
+            ele("option").attr({ value: item.id, textContent: text }),
+        );
+    });
+    compareSelectA.el.value = firstId;
+    compareSelectB.el.value = secondId;
+}
+
+async function applyComparisonSelection() {
+    const firstId = compareSelectA.el.value;
+    const secondId = compareSelectB.el.value;
+    if (firstId === secondId) {
+        if (compareItems)
+            renderCompareSelectors(compareItems[0].id, compareItems[1].id);
+        showToast(t("서로 다른 이미지를 선택해 주세요."), true);
+        return;
+    }
+    await setComparisonPair(firstId, secondId);
+}
+
+async function setComparisonPair(firstId: string, secondId: string) {
+    const first = comparePool.find((item) => item.id === firstId);
+    const second = comparePool.find((item) => item.id === secondId);
+    if (!first || !second || first.id === second.id) return false;
+    const request = ++compareLoadRequest;
+    compareDialog.el.classList.add("loading");
+    compareDialog.el.setAttribute("aria-busy", "true");
+    compareLoadingStatus.el.textContent = t("이미지 불러오는 중…");
+    compareLoadingStatus.el.hidden = false;
+    try {
+        const [firstLoaded, secondLoaded] = await Promise.all([
+            loadLibraryImage(first),
+            loadLibraryImage(second),
+        ]);
+        if (request !== compareLoadRequest) return;
+        compareItems = [firstLoaded.item, secondLoaded.item];
+        compareSideImageA.el.src = firstLoaded.data;
+        compareSideImageB.el.src = secondLoaded.data;
+        compareOverlayBase.el.src = firstLoaded.data;
+        compareOverlayTop.el.src = secondLoaded.data;
+        renderCompareSelectors(first.id, second.id);
+        renderComparison();
+        compareLoadingStatus.el.hidden = true;
+        return true;
+    } catch (error) {
+        if (request === compareLoadRequest) {
+            if (compareItems)
+                renderCompareSelectors(compareItems[0].id, compareItems[1].id);
+            compareLoadingStatus.el.textContent = t(
+                "이미지를 불러오지 못했습니다.",
+            );
+            compareLoadingStatus.el.hidden = false;
+            showToast(errorMessage(error), true);
+        }
+        return false;
+    } finally {
+        if (request === compareLoadRequest) {
+            compareDialog.el.classList.remove("loading");
+            compareDialog.el.setAttribute("aria-busy", "false");
+        }
+    }
+}
+
+function setCompareMode(mode: "side" | "overlay" | "wipe") {
+    compareMode = mode;
+    renderComparison();
+}
+
+function setCompareZoom(value: number) {
+    compareZoom = Math.max(0.5, Math.min(3, value));
+    renderComparison();
+}
+
+function renderComparison() {
+    if (!compareItems) return;
+    const [first, second] = compareItems;
+    compareSideNameA.el.textContent = `A · ${first.name}`;
+    compareSideNameB.el.textContent = `B · ${second.name}`;
+    compareZoomLabel.el.textContent = `${Math.round(compareZoom * 100)}%`;
+    compareSide.el.hidden = compareMode !== "side";
+    compareOverlay.el.hidden = compareMode === "side";
+    for (const [mode, control] of compareModeButtons) {
+        control.classList.toggle("active", mode === compareMode);
+        control.setAttribute(
+            "aria-pressed",
+            mode === compareMode ? "true" : "false",
+        );
+    }
+    const width = `${compareZoom * 100}%`;
+    compareSideImageA.el.style.width = width;
+    compareSideImageB.el.style.width = width;
+    compareOverlayBase.el.style.width = width;
+    compareOverlayTop.el.style.width = width;
+    compareMixControl.el.hidden = compareMode === "side";
+    compareMixLabel.el.textContent =
+        compareMode === "overlay"
+            ? `${t("투명도")} ${compareMix}%`
+            : `${t("경계")} ${compareMix}%`;
+    if (compareMode === "overlay") {
+        compareOverlayTop.el.style.clipPath = "none";
+        compareOverlayTop.el.style.opacity = String(compareMix / 100);
+        compareDivider.el.hidden = true;
+    } else if (compareMode === "wipe") {
+        compareOverlayTop.el.style.opacity = "1";
+        compareOverlayTop.el.style.clipPath = `inset(0 ${100 - compareMix}% 0 0)`;
+        compareDivider.el.hidden = false;
+        const dividerPosition =
+            compareZoom < 1
+                ? (1 - compareZoom) * 50 + compareZoom * compareMix
+                : compareZoom * compareMix;
+        compareDivider.el.style.left = `${dividerPosition}%`;
+    }
+}
+
 async function composeLayout(
     ids: string[],
     mode: "steps" | "compare" | "timeline",
 ) {
     const ordered = ids
-        .map((id) => appState.items.find((i) => i.id === id))
+        .map((id) => findKnownItem(id))
         .filter((i): i is OpenCaptureItem => Boolean(i))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .slice(0, 20);
@@ -2060,6 +3071,7 @@ async function composeLayout(
 
 async function importFiles(files: File[]) {
     try {
+        if (activePage === "board") await captureBoard.flush();
         appState = await window.openCapture.importFiles(files);
         renderState();
         showToast(`${files.length}개 이미지를 가져왔습니다.`);
@@ -2072,7 +3084,20 @@ let shortcutWarned = false;
 
 async function refreshState() {
     try {
-        appState = await window.openCapture.getState();
+        const [nextState, preferences, styles, smartFilters, colors] =
+            await Promise.all([
+                window.openCapture.getState(),
+                window.openCapture.getPreferences(),
+                window.openCapture.listStyles(),
+                window.openCapture.listSmartFilters(),
+                window.openCapture.getSampledColors(),
+            ]);
+        appState = nextState;
+        experiencePreferences = preferences;
+        savedStyles = styles;
+        savedSmartFilters = smartFilters;
+        recentColors = colors;
+        experiencePanel.update(preferences);
         if (appState.recoveryWarning) showToast(appState.recoveryWarning, true);
         if (!shortcutWarned) {
             shortcutWarned = true;
@@ -2087,6 +3112,7 @@ async function refreshState() {
         }
         const previewId = appState.previewItemId;
         renderState();
+        void renderMinimalHome();
         if (previewId) void openPreviewById(previewId);
     } catch (error) {
         showToast(errorMessage(error), true);
@@ -2102,8 +3128,268 @@ async function openPreviewById(id: string) {
             return;
         }
     }
-    const item = appState.items.find((i) => i.id === id);
+    const item = findKnownItem(id);
     if (item) openQuickLook(item);
+}
+
+async function openBundlePreview() {
+    const items = selectedItemsInOrder().filter(isComparableImage);
+    await bundleComposer.open(items);
+}
+
+async function copySelectedSourceFiles() {
+    const ids = [...selectedItemIds];
+    if (!ids.length) return;
+    try {
+        const result = await window.openCapture.copySourceFiles(ids);
+        showToast(`원본 파일 ${result.copied}개를 복사했습니다.`);
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function mutateSelectedItems(kind: "promote" | "trash" | "restore") {
+    const ids = [...selectedItemIds];
+    if (!ids.length) return;
+    await mutateItems(ids, kind);
+}
+
+async function repairDraftItem(id: string) {
+    try {
+        await window.openCapture.repairDraft(id);
+        await refreshState();
+        await refreshLibraryQuery(true);
+        showToast(t("손상된 캡처를 복구했습니다."));
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function mutateItems(
+    ids: string[],
+    kind: "promote" | "trash" | "restore",
+) {
+    try {
+        if (kind === "promote") await window.openCapture.promoteItems(ids);
+        else if (kind === "trash") await window.openCapture.trashItems(ids);
+        else await window.openCapture.restoreItems(ids);
+        selectedItemIds.clear();
+        await refreshState();
+        await refreshLibraryQuery(true);
+        showToast(
+            kind === "promote"
+                ? "보관함으로 옮겼습니다."
+                : kind === "trash"
+                  ? "휴지통으로 옮겼습니다."
+                  : "복원했습니다.",
+        );
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function saveCurrentSmartFilter() {
+    const name = window.prompt("스마트 컬렉션 이름");
+    if (!name?.trim()) return;
+    const filter: SavedSmartFilter = {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        tags: activeTag ? [activeTag] : undefined,
+        date: todayOnly ? "today" : smartFilter === "week" ? "week" : undefined,
+        type: smartFilter === "videos" ? "video" : undefined,
+        favorites: favoritesOnly || undefined,
+        ocrOnly: ocrOnly || undefined,
+    };
+    try {
+        await window.openCapture.saveSmartFilter(filter);
+        savedSmartFilters = await window.openCapture.listSmartFilters();
+        activeSavedSmartId = filter.id;
+        renderSavedWorkspaceTools();
+        await refreshLibraryQuery(true);
+        showToast("스마트 컬렉션을 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function saveCurrentBeautifyStyle() {
+    const name = window.prompt("스타일 이름");
+    if (!name?.trim()) return;
+    const style: NamedBeautifyStyle = {
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        background: beautifyOptions.background,
+        padding: beautifyOptions.padding,
+        shadow: beautifyOptions.shadow,
+        radius: beautifyOptions.radius,
+        ratio: String(beautifyOptions.ratio),
+        align: beautifyOptions.align,
+        autoBalance: beautifyOptions.autoBalance,
+    };
+    try {
+        await window.openCapture.saveStyle(style);
+        savedStyles = await window.openCapture.listStyles();
+        renderSavedWorkspaceTools();
+        beautifyStyleSelect.el.value = style.id;
+        showToast("스타일을 저장했습니다.");
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+function applySavedStyle(id: string) {
+    const style = savedStyles.find((candidate) => candidate.id === id);
+    if (!style) return;
+    beautifyOptions.background = style.background;
+    beautifyOptions.padding = style.padding;
+    beautifyOptions.shadow = style.shadow;
+    beautifyOptions.radius = style.radius;
+    beautifyOptions.ratio = Number(style.ratio) || 0;
+    beautifyOptions.align = style.align;
+    beautifyOptions.autoBalance = style.autoBalance;
+    autoBalanceCheck.el.checked = style.autoBalance;
+    for (const [key, control] of beautifySliderInputs)
+        control.value = String(beautifyOptions[key]);
+    renderBeautify();
+}
+
+function renderSavedWorkspaceTools() {
+    savedSmartSelect.clear();
+    savedSmartSelect.add(
+        ele("option").attr({ value: "", textContent: "저장된 보기" }),
+    );
+    for (const filter of savedSmartFilters)
+        savedSmartSelect.add(
+            ele("option").attr({ value: filter.id, textContent: filter.name }),
+        );
+    savedSmartSelect.el.value = activeSavedSmartId;
+    savedSmartRow.clear();
+    for (const filter of savedSmartFilters)
+        savedSmartRow.add(
+            view("x")
+                .class("saved-tool-chip")
+                .add([
+                    button(filter.name)
+                        .class("text-button", "compact")
+                        .attr({ type: "button" })
+                        .on("click", () => {
+                            activeSavedSmartId = filter.id;
+                            savedSmartSelect.el.value = filter.id;
+                            showPage("library");
+                            void refreshLibraryQuery(true);
+                        }),
+                    button("×")
+                        .class("saved-tool-remove")
+                        .attr({
+                            type: "button",
+                            ariaLabel: `${filter.name} 삭제`,
+                        })
+                        .on(
+                            "click",
+                            () => void removeSavedSmartFilter(filter.id),
+                        ),
+                ]),
+        );
+    if (!savedSmartFilters.length)
+        savedSmartRow.add(label("small", "저장된 스마트 컬렉션 없음"));
+
+    beautifyStyleSelect.clear();
+    beautifyStyleSelect.add(
+        ele("option").attr({ value: "", textContent: "스타일 프리셋" }),
+    );
+    savedStyleRow.clear();
+    for (const style of savedStyles) {
+        beautifyStyleSelect.add(
+            ele("option").attr({ value: style.id, textContent: style.name }),
+        );
+        savedStyleRow.add(
+            view("x")
+                .class("saved-tool-chip")
+                .add([
+                    button(style.name)
+                        .class("text-button", "compact")
+                        .attr({ type: "button", title: "꾸미기에서 적용" })
+                        .on("click", () => applySavedStyle(style.id)),
+                    button("×")
+                        .class("saved-tool-remove")
+                        .attr({
+                            type: "button",
+                            ariaLabel: `${style.name} 삭제`,
+                        })
+                        .on("click", () => void removeSavedStyle(style.id)),
+                ]),
+        );
+    }
+    if (!savedStyles.length)
+        savedStyleRow.add(label("small", "저장된 스타일 없음"));
+
+    recentColorRow.clear();
+    for (const sample of recentColors.slice(0, 16))
+        recentColorRow.add(
+            button()
+                .class("recent-color-chip")
+                .style({ background: sample.value })
+                .attr({
+                    type: "button",
+                    title: `${sample.value} 복사`,
+                    ariaLabel: `${sample.value} 복사`,
+                })
+                .on("click", () => {
+                    void navigator.clipboard.writeText(sample.value);
+                    showToast(`${sample.value} 복사`);
+                }),
+        );
+    if (!recentColors.length)
+        recentColorRow.add(label("small", "최근 추출 색상 없음"));
+}
+
+async function removeSavedStyle(id: string) {
+    try {
+        await window.openCapture.removeStyle(id);
+        savedStyles = await window.openCapture.listStyles();
+        renderSavedWorkspaceTools();
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+async function removeSavedSmartFilter(id: string) {
+    try {
+        await window.openCapture.removeSmartFilter(id);
+        if (activeSavedSmartId === id) activeSavedSmartId = "";
+        savedSmartFilters = await window.openCapture.listSmartFilters();
+        renderSavedWorkspaceTools();
+        await refreshLibraryQuery(true);
+    } catch (error) {
+        showToast(errorMessage(error), true);
+    }
+}
+
+function renderDiagnostics() {
+    diagnosticsList.clear();
+    const records = appState.runtime.captureDiagnostics ?? [];
+    if (!records.length) {
+        diagnosticsList.add(label("small", "아직 캡처 진단 기록이 없습니다."));
+        return;
+    }
+    const latestByRequest = new Map<string, (typeof records)[number]>();
+    for (const record of records) latestByRequest.set(record.requestId, record);
+    for (const record of [...latestByRequest.values()].slice(-12).reverse())
+        diagnosticsList.add(
+            view("x")
+                .class(
+                    "diagnostic-row",
+                    record.phase === "failed" ? "failed" : "",
+                )
+                .add([
+                    label("strong", record.phase),
+                    label(
+                        "small",
+                        record.input ?? record.requestId.slice(0, 8),
+                    ),
+                    label("small", record.detail ?? formatDate(record.at)),
+                ]),
+        );
 }
 
 function renderState() {
@@ -2133,6 +3419,7 @@ function renderState() {
         }
         collectionSelect.el.value = activeCollection?.id ?? "";
     }
+    collectionSelect.el.disabled = libraryScope !== "library";
 
     folderPath.el.textContent =
         activeCollection?.path ||
@@ -2150,14 +3437,33 @@ function renderState() {
 
     const visibleItems = visibleLibraryItems();
     const filtered = isLibraryFiltered();
-    libraryTitle.el.textContent = activeCollection?.name ?? t("저장된 캡처");
+    libraryTitle.el.textContent =
+        libraryScope === "temporary"
+            ? "임시 캡처"
+            : libraryScope === "trash"
+              ? "휴지통"
+              : (activeCollection?.name ?? t("저장된 캡처"));
+    const displayedTotal = queriedItems ? queriedTotal : visibleItems.length;
     itemCount.el.textContent = filtered
-        ? `${visibleItems.length}개 표시 · 전체 ${appState.totalItemCount}개`
+        ? `${displayedTotal}개 · 전체 ${appState.totalItemCount}개`
         : appState.totalItemCount > appState.items.length
-          ? `${visibleItems.length}개 표시 · 전체 ${appState.totalItemCount}개`
-          : `${visibleItems.length}개`;
+          ? `${displayedTotal}개 · 전체 ${appState.totalItemCount}개`
+          : `${displayedTotal}개`;
+    for (const [scope, control] of scopeButtons) {
+        const active = scope === libraryScope;
+        control.classList.toggle("active", active);
+        control.setAttribute("aria-selected", String(active));
+    }
     for (const [key, checkbox] of workflowInputs)
         checkbox.checked = appState.workflow[key];
+    if (experiencePreferences) {
+        document.documentElement.dataset.captureMotion =
+            experiencePreferences.feedback.motion;
+        document.documentElement.classList.toggle(
+            "capture-visual-feedback",
+            experiencePreferences.feedback.visual,
+        );
+    }
     startAtLoginInput.el.checked = appState.runtime.startAtLogin;
     renderRuntimeShortcuts();
     const selectedCount = selectedItemIds.size;
@@ -2178,7 +3484,24 @@ function renderState() {
         ".combine-action",
     ))
         action.disabled = selectedCount < 2 || selectedCount > 20;
-    loadMoreButton.el.hidden = appState.items.length >= appState.totalItemCount;
+    const selectedItems = selectedItemsInOrder();
+    const selectedImagesOnly =
+        selectedItems.length === selectedCount &&
+        selectedItems.every(isComparableImage);
+    copyBundleButton.el.disabled =
+        copyBundleBusy ||
+        selectedCount < 2 ||
+        selectedCount > 12 ||
+        !selectedImagesOnly;
+    compareSelectionButton.el.disabled =
+        selectedCount < 2 || selectedCount > 20 || !selectedImagesOnly;
+    copySourceFilesButton.el.disabled = !selectedCount || selectedCount > 50;
+    promoteSelectionButton.el.hidden = libraryScope !== "temporary";
+    trashSelectionButton.el.hidden = libraryScope === "trash";
+    restoreSelectionButton.el.hidden = libraryScope !== "trash";
+    loadMoreButton.el.hidden =
+        Boolean(queriedItems) ||
+        appState.items.length >= appState.totalItemCount;
     loadMoreButton.el.textContent = `더 불러오기 (${appState.items.length}/${appState.totalItemCount})`;
     const stepsCard = homePage.el.querySelector<HTMLElement>(
         '[data-action="steps"]',
@@ -2245,11 +3568,17 @@ function renderState() {
         });
     itemGrid.el.dataset.size = thumbSize;
     renderTagChips();
-    renderItems(visibleItems);
+    renderLibraryWindow();
+    renderDiagnostics();
+    renderSavedWorkspaceTools();
     if (quickLookDialog.el.open) renderQuickLook();
 }
 
 function visibleLibraryItems() {
+    if (queriedItems)
+        return queriedItems.filter((item): item is OpenCaptureItem =>
+            Boolean(item),
+        );
     const activeCollection =
         appState.collections.find(
             (collection) => collection.id === appState.activeCollectionId,
@@ -2291,6 +3620,83 @@ function visibleLibraryItems() {
     else if (sortMode === "name")
         items = [...items].sort((a, b) => a.name.localeCompare(b.name, "ko"));
     return items;
+}
+
+function currentSmartId() {
+    if (activeSavedSmartId) return activeSavedSmartId;
+    if (todayOnly) return "builtin:today";
+    const builtins: Record<typeof smartFilter, string | undefined> = {
+        "": undefined,
+        week: "builtin:week",
+        uncategorized: "builtin:uncategorized",
+        videos: "builtin:video",
+        "no-ocr": "builtin:no-ocr",
+    };
+    return builtins[smartFilter];
+}
+
+function currentQuery(offset: number, limit: number): CaptureItemsQuery {
+    return {
+        scope: libraryScope,
+        collectionId:
+            libraryScope === "library"
+                ? (appState.activeCollectionId ?? undefined)
+                : undefined,
+        search: searchQuery || undefined,
+        tags: activeTag ? [activeTag] : undefined,
+        smartId: currentSmartId(),
+        favorites: favoritesOnly || undefined,
+        ocrOnly: ocrOnly || undefined,
+        sort:
+            sortMode === "new"
+                ? "newest"
+                : sortMode === "old"
+                  ? "oldest"
+                  : "name",
+        offset,
+        limit,
+        queryId: String(querySequence),
+        catalogRevision,
+    };
+}
+
+async function queryLibraryPage(offset: number, limit = 160) {
+    const sequence = querySequence;
+    if (pendingQueryPages.has(offset)) return;
+    pendingQueryPages.add(offset);
+    try {
+        const result = await window.openCapture.queryItems(
+            currentQuery(offset, limit),
+        );
+        if (sequence !== querySequence || result.queryId !== String(sequence))
+            return;
+        catalogRevision = result.catalogRevision;
+        queriedTotal = result.total;
+        if (!queriedItems || queriedItems.length !== result.total)
+            queriedItems = Array.from({ length: result.total });
+        result.items.forEach((item, index) => {
+            if (queriedItems) queriedItems[offset + index] = item;
+        });
+        renderState();
+    } catch (error) {
+        if (sequence === querySequence) showToast(errorMessage(error), true);
+    } finally {
+        pendingQueryPages.delete(offset);
+    }
+}
+
+async function refreshLibraryQuery(immediate = false) {
+    if (libraryQueryTimer) clearTimeout(libraryQueryTimer);
+    const run = () => {
+        querySequence += 1;
+        catalogRevision = undefined;
+        queriedItems = null;
+        queriedTotal = 0;
+        pendingQueryPages.clear();
+        void queryLibraryPage(0);
+    };
+    if (immediate) run();
+    else libraryQueryTimer = setTimeout(run, 140);
 }
 
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
@@ -2421,7 +3827,10 @@ function renderRuntimeShortcuts() {
         runtimeShortcutList.add(shortcutEditor(shortcut));
 }
 
-function renderItems(items: OpenCaptureItem[]) {
+function renderItems(
+    items: Array<OpenCaptureItem | undefined>,
+    options: { top?: number; bottom?: number; startIndex?: number } = {},
+) {
     itemGrid.clear();
     if (!items.length) {
         const filtered = isLibraryFiltered();
@@ -2458,8 +3867,38 @@ function renderItems(items: OpenCaptureItem[]) {
     }
 
     const fragment = document.createDocumentFragment();
+    if (options.top) {
+        const spacer = document.createElement("div");
+        spacer.className = "virtual-library-spacer";
+        spacer.style.height = `${options.top}px`;
+        fragment.append(spacer);
+    }
     for (const [itemIndex, item] of items.entries()) {
+        const absoluteIndex = (options.startIndex ?? 0) + itemIndex;
+        if (!item) {
+            const placeholder = document.createElement("div");
+            placeholder.className = "virtual-library-card-placeholder";
+            placeholder.dataset.itemIndex = String(absoluteIndex);
+            placeholder.setAttribute("aria-hidden", "true");
+            fragment.append(placeholder);
+            continue;
+        }
         const thumbnail = view().class("item-thumbnail");
+        const status = item.status ?? "library";
+        if (item.draftCorrupt)
+            thumbnail.add(
+                label("small", t("손상됨")).class(
+                    "item-status-badge",
+                    "corrupt",
+                ),
+            );
+        else if (status !== "library")
+            thumbnail.add(
+                label(
+                    "small",
+                    status === "temporary" ? "임시" : "휴지통",
+                ).class("item-status-badge", status),
+            );
         if (item.thumbnail) {
             thumbnail.add(
                 ele("img")
@@ -2529,17 +3968,18 @@ function renderItems(items: OpenCaptureItem[]) {
                 if (event.shiftKey && lastSelectIndex !== null) {
                     event.preventDefault();
                     const [from, to] = [
-                        Math.min(lastSelectIndex, itemIndex),
-                        Math.max(lastSelectIndex, itemIndex),
+                        Math.min(lastSelectIndex, absoluteIndex),
+                        Math.max(lastSelectIndex, absoluteIndex),
                     ];
-                    for (const range of items.slice(from, to + 1))
-                        selectedItemIds.add(range.id);
+                    const selectionSource = queriedItems ?? items;
+                    for (const range of selectionSource.slice(from, to + 1))
+                        if (range) selectedItemIds.add(range.id);
                     renderState();
                 }
             })
             .on("change", (event) => {
                 event.stopPropagation();
-                lastSelectIndex = itemIndex;
+                lastSelectIndex = absoluteIndex;
                 if (selectionInput.el.checked) selectedItemIds.add(item.id);
                 else selectedItemIds.delete(item.id);
                 renderState();
@@ -2612,9 +4052,59 @@ function renderItems(items: OpenCaptureItem[]) {
                 ? void runAction("open-item", item.id)
                 : openQuickLook(item),
         );
+        itemCard.el.dataset.itemId = item.id;
+        itemCard.el.dataset.itemIndex = String(absoluteIndex);
         fragment.append(itemCard.el);
     }
+    if (options.bottom) {
+        const spacer = document.createElement("div");
+        spacer.className = "virtual-library-spacer";
+        spacer.style.height = `${options.bottom}px`;
+        fragment.append(spacer);
+    }
     itemGrid.el.append(fragment);
+}
+
+function renderLibraryWindow() {
+    const items = visibleLibraryItems();
+    if (!queriedItems || queriedTotal <= 120) {
+        renderItems(items);
+        return;
+    }
+    const gridRect = itemGrid.el.getBoundingClientRect();
+    const contentRect = content.el.getBoundingClientRect();
+    const size = thumbSize === "s" ? 180 : thumbSize === "l" ? 300 : 235;
+    const range = virtualLibraryRange({
+        total: queriedTotal,
+        viewportTop: content.el.scrollTop,
+        viewportHeight: content.el.clientHeight,
+        gridTop: itemGrid.el.offsetTop,
+        gridWidth: gridRect.width || contentRect.width,
+        cardWidth: size,
+        rowHeight: thumbSize === "l" ? 310 : thumbSize === "s" ? 210 : 255,
+        gap: 16,
+        overscanRows: 3,
+    });
+    const missingIndex = queriedItems
+        .slice(range.start, range.end)
+        .findIndex((item) => !item);
+    if (missingIndex >= 0)
+        void queryLibraryPage(
+            Math.floor((range.start + missingIndex) / 160) * 160,
+        );
+    const windowSlots = virtualLibrarySlots(
+        queriedItems,
+        range.start,
+        range.end,
+    );
+    renderItems(
+        windowSlots.map((slot) => slot.item),
+        {
+            top: range.top,
+            bottom: range.bottom,
+            startIndex: windowSlots[0]?.index ?? range.start,
+        },
+    );
 }
 
 async function loadMoreItems() {
@@ -2711,6 +4201,30 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
                     () => runAction("reveal-item", item.id),
                 ],
             ];
+    if (item.draftCorrupt)
+        entries.unshift([
+            "↺",
+            t("손상된 임시 캡처 복구"),
+            () => void repairDraftItem(item.id),
+        ]);
+    if ((item.status ?? "library") === "temporary")
+        entries.unshift([
+            "▤",
+            "보관함으로 이동",
+            () => void mutateItems([item.id], "promote"),
+        ]);
+    if ((item.status ?? "library") === "trash")
+        entries.unshift([
+            "↺",
+            "복원",
+            () => void mutateItems([item.id], "restore"),
+        ]);
+    else
+        entries.push([
+            "×",
+            "휴지통으로 이동",
+            () => void mutateItems([item.id], "trash"),
+        ]);
     for (const [glyph, text, run] of entries) {
         menu.add(
             button()
@@ -2842,13 +4356,22 @@ const allDialogs = [
     foldDialog,
     gifDialog,
     quickLookDialog,
+    compareDialog,
     onboardDialog,
+];
+const externalDialogs = [
+    bundleComposer.dialog,
+    referenceComparison.dialog,
+    commandPalette.dialog,
 ];
 
 function closeModal(dialog: HTMLDialogElement) {
     if (!dialog.open) return;
     dialog.close();
-    if (!allDialogs.some((d) => d.el.open)) {
+    if (
+        !allDialogs.some((d) => d.el.open) &&
+        !externalDialogs.some((candidate) => candidate.open)
+    ) {
         modalBackdrop.el.hidden = true;
         document.body.classList.remove("modal-open");
     }
@@ -2856,6 +4379,7 @@ function closeModal(dialog: HTMLDialogElement) {
 
 function closeAllModals() {
     for (const dialog of allDialogs) if (dialog.el.open) dialog.el.close();
+    for (const dialog of externalDialogs) if (dialog.open) dialog.close();
     modalBackdrop.el.hidden = true;
     document.body.classList.remove("modal-open");
 }
@@ -2887,7 +4411,7 @@ async function submitRename() {
         return;
     }
     const id = renameTargetId;
-    const previous = appState.items.find((i) => i.id === id)?.name;
+    const previous = findKnownItem(id)?.name;
     closeModal(renameDialog.el);
     await runItemEdit(
         ["rename-item", { id, name }],
@@ -2905,7 +4429,7 @@ function openNote(item: OpenCaptureItem) {
 async function submitNote() {
     if (!noteTargetId) return;
     const id = noteTargetId;
-    const previous = appState.items.find((i) => i.id === id)?.note;
+    const previous = findKnownItem(id)?.note;
     closeModal(noteDialog.el);
     await runItemEdit(
         ["set-note", { id, note: noteInput.el.value }],
@@ -3148,6 +4672,67 @@ function openQuickLook(item: OpenCaptureItem) {
     void loadQuickLookImage(item.id);
 }
 
+let quickLookCutoutRequest = 0;
+async function cutoutQuickLookItem(item: OpenCaptureItem) {
+    const request = ++quickLookCutoutRequest;
+    quickLookHold.setBusy(true);
+    try {
+        const result = await window.openCapture.cutoutImage({
+            itemId: item.id,
+        });
+        if (request !== quickLookCutoutRequest || quickLookId !== item.id)
+            return;
+        await refreshState();
+        await refreshLibraryQuery(true);
+        openQuickLook(result.item);
+        showToast("배경을 제거한 사본을 만들었습니다.", false, [
+            ["원본 보기", () => openQuickLook(item)],
+            [
+                "되돌리기",
+                () => {
+                    void (async () => {
+                        try {
+                            await window.openCapture.trashItems([
+                                result.item.id,
+                            ]);
+                            await refreshState();
+                            await refreshLibraryQuery(true);
+                            openQuickLook(item);
+                        } catch (error) {
+                            showToast(errorMessage(error), true);
+                        }
+                    })();
+                },
+            ],
+        ]);
+    } catch (error) {
+        if (request === quickLookCutoutRequest)
+            showToast(errorMessage(error), true, [
+                ["다시 시도", () => void cutoutQuickLookItem(item)],
+            ]);
+    } finally {
+        if (request === quickLookCutoutRequest) quickLookHold.setBusy(false);
+    }
+}
+
+const quickLookHold: ImageHoldHandle = createImageHold(qlImage.el, {
+    progressLabel: "길게 눌러 배경 제거",
+    disabled: () => {
+        const item = quickLookId ? findKnownItem(quickLookId) : undefined;
+        return (
+            !item ||
+            !qlCropOverlay.el.hidden ||
+            isVideoItem(item) ||
+            isGifItem(item) ||
+            isProjectItem(item)
+        );
+    },
+    onHold: () => {
+        const item = quickLookId ? findKnownItem(quickLookId) : undefined;
+        if (item) return cutoutQuickLookItem(item);
+    },
+});
+
 let cropRect: { x: number; y: number; w: number; h: number } | null = null;
 let cropAnchor: { x: number; y: number } | null = null;
 
@@ -3212,7 +4797,7 @@ function exitQlCrop() {
 }
 
 async function applyQlCrop() {
-    const item = appState.items.find((i) => i.id === quickLookId);
+    const item = quickLookId ? findKnownItem(quickLookId) : undefined;
     const rect = cropRect;
     if (!item || !rect || rect.w < 0.005 || rect.h < 0.005) {
         exitQlCrop();
@@ -3522,7 +5107,7 @@ function quickLookNavigate(step: 1 | -1) {
 }
 
 function renderQuickLook() {
-    const item = appState.items.find((i) => i.id === quickLookId);
+    const item = quickLookId ? findKnownItem(quickLookId) : undefined;
     if (!item) {
         if (quickLookDialog.el.open) closeModal(quickLookDialog.el);
         quickLookId = null;
@@ -3637,7 +5222,7 @@ function renderTagChips() {
                 .add([icon("#"), label("span", `${tag} ${count}`)])
                 .on("click", () => {
                     activeTag = activeTag === tag ? null : tag;
-                    renderState();
+                    void refreshLibraryQuery(true);
                 }),
         );
     }
@@ -3692,6 +5277,15 @@ function showToast(
 
 document.addEventListener("keydown", (event) => {
     const tag = (event.target as HTMLElement).tagName;
+    if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "k" &&
+        !event.altKey
+    ) {
+        event.preventDefault();
+        openDashboardCommands();
+        return;
+    }
     if (event.key === "Escape" && !modalBackdrop.el.hidden) closeAllModals();
     if (
         quickLookDialog.el.open &&
@@ -3721,14 +5315,33 @@ const loadObserver = new IntersectionObserver(
     { root: content.el, rootMargin: "400px" },
 );
 loadObserver.observe(loadMoreButton.el);
+content.el.addEventListener("scroll", () => {
+    if (!queriedItems || queriedTotal <= 120 || virtualScrollScheduled) return;
+    virtualScrollScheduled = true;
+    requestAnimationFrame(() => {
+        virtualScrollScheduled = false;
+        const focusedId =
+            document.activeElement?.closest<HTMLElement>("[data-item-id]")
+                ?.dataset.itemId;
+        renderLibraryWindow();
+        if (focusedId)
+            itemGrid.el
+                .querySelector<HTMLElement>(
+                    `[data-item-id="${CSS.escape(focusedId)}"]`,
+                )
+                ?.focus({ preventScroll: true });
+    });
+});
 
-showPage(activePage);
+void showPage(activePage);
 let libraryRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 window.openCapture.onLibraryChanged(() => {
     if (libraryRefreshTimer) clearTimeout(libraryRefreshTimer);
     libraryRefreshTimer = setTimeout(async () => {
         const previousNewest = appState.items[0]?.id;
         await refreshState();
+        await refreshLibraryQuery(true);
+        await renderMinimalHome();
         const newest = appState.items[0];
         if (newest && newest.id !== previousNewest) showCaptureToast(newest);
     }, 150);
@@ -3747,7 +5360,36 @@ window.openCapture.onSrProgress(({ phase, percent }) => {
     }
 });
 window.openCapture.onPreviewItem((id) => void openPreviewById(id));
+window.openCapture.onCompareRequested((ids) => {
+    void (async () => {
+        libraryScope = "temporary";
+        await refreshLibraryQuery(true);
+        const result = await window.openCapture.queryItems({
+            ...currentQuery(0, 80),
+            scope: "temporary",
+            queryId: `compare-${Date.now()}`,
+            catalogRevision: undefined,
+        });
+        const requested = ids
+            .map((id) => result.items.find((item) => item.id === id))
+            .filter((item): item is OpenCaptureItem => Boolean(item));
+        if (requested.length < 2) {
+            showToast("비교할 임시 캡처를 찾지 못했습니다.", true);
+            return;
+        }
+        selectedItemIds.clear();
+        for (const item of requested) selectedItemIds.add(item.id);
+        referenceComparison.open(
+            requested.map((item) => ({
+                id: item.id,
+                name: item.name,
+                thumbnail: item.thumbnail,
+            })),
+        );
+    })();
+});
 void refreshState().then(() => {
+    void refreshLibraryQuery(true);
     if (!localStorage.getItem("oc:onboarded")) openOnboarding();
 });
 void refreshTranslationStatus();

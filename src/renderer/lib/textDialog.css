@@ -1,0 +1,58 @@
+.workspace-text-dialog {
+    width: min(340px, calc(100vw - 32px));
+    padding: 18px;
+    border: 1px solid #ffffff24;
+    border-radius: 12px;
+    background: #151518;
+    color: #f4f4f5;
+    box-shadow: 0 18px 55px #0008;
+}
+.workspace-text-dialog::backdrop {
+    background: #0008;
+}
+.workspace-text-dialog h2 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    font-weight: 600;
+}
+.workspace-text-dialog input,
+.workspace-text-dialog textarea,
+.workspace-text-dialog select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 34px;
+    padding: 8px 10px;
+    border: 1px solid #ffffff24;
+    border-radius: 7px;
+    background: #202025;
+    color: #f4f4f5;
+    font: inherit;
+    font-size: 13px;
+}
+.workspace-text-dialog textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+.workspace-text-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+}
+.workspace-text-dialog-actions button {
+    min-height: 30px;
+    padding: 0 13px;
+    border: 1px solid #ffffff24;
+    border-radius: 7px;
+    background: #202025;
+    color: #f4f4f5;
+    cursor: pointer;
+}
+.workspace-text-dialog-actions .workspace-text-dialog-confirm {
+    background: #eeeeef;
+    color: #141416;
+}
+.workspace-text-dialog :focus-visible {
+    outline: 2px solid #ffffffaa;
+    outline-offset: 2px;
+}

@@ -1,0 +1,163 @@
+.capture-workspace-status {
+    position: fixed;
+    z-index: 130;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 7px 12px;
+    border: 1px solid #ffffff24;
+    border-radius: 9px;
+    background: #17171bf5;
+    color: #f4f4f5;
+    font-size: 11px;
+    box-shadow: 0 5px 18px #0004;
+}
+.capture-workspace-status button {
+    background: transparent !important;
+    height: 24px;
+    font-size: 11px;
+}
+#capture_inline_shelf {
+    position: fixed;
+    z-index: 113;
+    right: 18px;
+    bottom: 18px;
+    display: flex !important;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 8px;
+    background: #17171bf5;
+    border: 1px solid #ffffff24;
+    border-radius: 11px;
+    max-width: min(640px, 70vw);
+    overflow-x: auto;
+    box-shadow: 0 6px 20px #0004;
+}
+.capture-shelf-count {
+    font-size: 10px;
+    color: #a1a1aa;
+    white-space: nowrap;
+    padding: 0 5px;
+}
+.capture-shelf-thumb {
+    padding: 0 !important;
+    width: 56px !important;
+    height: 38px !important;
+    flex-shrink: 0;
+    border-radius: 6px !important;
+    overflow: hidden;
+    background: #222227 !important;
+    outline: none !important;
+}
+.capture-shelf-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+.capture-text-box {
+    position: fixed;
+    z-index: 124;
+    padding: 0 !important;
+    border: 1px solid #fff9;
+    background: #ffffff12 !important;
+    border-radius: 3px !important;
+    cursor: text;
+}
+.capture-text-box:hover {
+    background: #ffffff32 !important;
+}
+#capture_palette {
+    position: fixed;
+    z-index: 125;
+    display: flex !important;
+    gap: 6px;
+    align-items: center;
+    left: 18px;
+    bottom: 18px;
+    padding: 8px;
+    border: 1px solid #ffffff24;
+    border-radius: 10px;
+    background: #17171bf5;
+    font-size: 11px;
+}
+.capture-color-swatch {
+    width: 22px !important;
+    height: 22px !important;
+    padding: 0 !important;
+    border-radius: 5px !important;
+    outline: 1px solid #ffffff30 !important;
+}
+#capture_redact_review {
+    width: min(400px, 90vw);
+    height: auto !important;
+    padding: 16px;
+    border: 1px solid #ffffff24;
+    border-radius: 14px;
+    background: #18181c;
+    color: #f4f4f5;
+    box-shadow: 0 20px 70px #0009;
+}
+#capture_redact_review::backdrop {
+    background: #0007;
+}
+.capture-review-list {
+    margin: 12px 0;
+    max-height: 280px;
+    overflow: auto;
+}
+.capture-review-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-size: 12px;
+    word-break: break-all;
+}
+.capture-review-line input {
+    width: 16px !important;
+    height: 16px !important;
+    accent-color: #e4e4e7;
+}
+.capture-review-actions {
+    justify-content: flex-end;
+    gap: 8px;
+}
+.capture-review-actions button {
+    font-size: 12px;
+    background: #242429 !important;
+}
+#capture_inline_shelf[hidden],
+#capture_palette[hidden],
+.capture-workspace-status[hidden] {
+    display: none !important;
+}
+.radial_item:hover {
+    box-shadow: 0 0 0 2px #ffffff35, 0 6px 18px #0006;
+}
+.radial_item.is-gesture-target {
+    background: #34343a !important;
+    box-shadow: 0 0 0 2px #ffffff85, 0 6px 18px #0006;
+}
+.capture-feedback-off .radial_item,
+.capture-motion-reduced .radial_item,
+.capture-feedback-off .radial-halo,
+.capture-motion-reduced .radial-halo {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+}
+.capture-feedback-off .radial-halo,
+.capture-motion-reduced .radial-halo {
+    transform: translate(-50%, -50%);
+}
+.capture-feedback-off .radial_item:hover {
+    box-shadow: 0 4px 12px #0005;
+}
+
+body.editor_bg {
+    background: #0d0d10 !important;
+}

@@ -2,6 +2,11 @@
 
 import chroma from "chroma-js";
 import hotkeys from "hotkeys-js";
+import {
+    captureDock,
+    fitCaptureToolbar,
+    radialLayout,
+} from "../../../lib/captureControls";
 import { ele2jsKeyCode, jsKeyCodeDisplay } from "../../../lib/key";
 import open_with from "../../../lib/open_with";
 import store from "../../../lib/store/renderStore";
@@ -56,7 +61,14 @@ import {
     txt,
     view,
 } from "dkh-ui";
+import { DEFAULT_CAPTURE_EXPERIENCE } from "../../../lib/captureExperience";
 import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
+import type {
+    CaptureExperiencePreferences,
+    CaptureSourceContext,
+    CaptureToolId,
+    OcrTextLine,
+} from "../../../lib/openCaptureTypes";
 import { filterSensitiveLines } from "../../../lib/redact";
 import { typedEntries, typedKeys } from "../../../lib/utils";
 import type {
@@ -70,6 +82,7 @@ import type { IconType } from "../../iconTypes";
 import xhistory from "../lib/history";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
+import { createCaptureWorkspace } from "./captureWorkspace";
 import {
     LatestLiveTranslation,
     normalizeTranslatedTexts,
@@ -80,6 +93,64 @@ const { ipcRenderer } = require("electron") as typeof import("electron");
 type SrcPoint = { x: number; y: number } & { readonly _: unique symbol };
 
 initStyle(store);
+let captureWorkspace: ReturnType<typeof createCaptureWorkspace> | null = null;
+let capturePreferences: CaptureExperiencePreferences = structuredClone(
+    DEFAULT_CAPTURE_EXPERIENCE,
+);
+let captureSourceContext: CaptureSourceContext = {
+    kind: "capture",
+    capturedAt: new Date().toISOString(),
+};
+let immutableSourceData: string | undefined;
+let captureInitSequence = 0;
+let screenRequestSequence = 0;
+let captureInitQueue: Promise<void> = Promise.resolve();
+let batchRegions: rect[] = [];
+let gestureOrigin: {
+    x: number;
+    y: number;
+    moved: boolean;
+    target: CaptureTool | null;
+} | null = null;
+let suppressContextUntil = 0;
+
+const captureIconPaths: Record<string, string> = {
+    stage: '<rect x="3" y="3" width="14" height="14" rx="3"/><path d="M6 10h8m-4-4v8"/>',
+    compare:
+        '<rect x="2" y="4" width="7" height="12" rx="2"/><rect x="11" y="4" width="7" height="12" rx="2"/>',
+    textselect: '<path d="M3 3h14v3M10 3v14m-4 0h8"/>',
+    promote: '<path d="M2 6h6l2-3h8v14H2zM7 11l2 2 4-4"/>',
+    trash: '<path d="M3 5h14M7 5V2h6v3M5 5l1 13h8l1-13M8 8v7m4-7v7"/>',
+    copy: '<rect x="7" y="7" width="10" height="11" rx="2"/><path d="M13 7V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/>',
+    save: '<path d="M10 2v10m-4-4 4 4 4-4M3 13v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
+    draw: '<path d="m3 14 9-9 3 3-9 9-4 1 1-4Zm9-9 2-2a2 2 0 0 1 3 3l-2 2"/>',
+    ding: '<path d="m7 2 6 0-1 5 3 3v2H5v-2l3-3-1-5Zm3 10v6"/>',
+    ocrcopy:
+        '<path d="M4 3H2v4m14-4h2v4M2 13v4h4m12-4v4h-4M6 6h8M10 6v8m-3 0h6"/>',
+    ocr: '<path d="M4 3H2v4m14-4h2v4M2 13v4h4m12-4v4h-4M6 6h8M10 6v8m-3 0h6"/>',
+    translate:
+        '<path d="M2 4h9M7 2v2M4 4c0 5 6 8 6 8M10 4c0 4-4 7-7 8m8 5 3-8 3 8m-5-3h4"/>',
+    color: '<path d="m5 15 8-8 2 2-8 8H3v-4l2 2ZM12 4l4 4m-2-5a2 2 0 0 1 3 3l-2 2-3-3 2-2Z"/>',
+    redact: '<rect x="2" y="4" width="16" height="12" rx="2"/><path d="M5 8h10M5 12h10"/>',
+    search: '<circle cx="8" cy="8" r="5"/><path d="m12 12 5 5"/>',
+    QR: '<path d="M2 2h6v6H2zM12 2h6v6h-6zM2 12h6v6H2zM12 12h2v2h4v4h-6v-2"/>',
+    editor: '<path d="M3 5h14v12H3zM3 13l4-4 3 3 2-2 5 5"/><circle cx="13" cy="8" r="1"/>',
+    record: '<rect x="2" y="4" width="11" height="12" rx="2"/><path d="m13 8 5-3v10l-5-3"/>',
+    long: '<rect x="3" y="2" width="14" height="16" rx="2"/><path d="M10 5v10m-3-3 3 3 3-3"/>',
+    screens:
+        '<rect x="2" y="3" width="16" height="11" rx="2"/><path d="M7 18h6m-3-4v4"/>',
+    open: '<path d="M9 3H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5M11 2h7v7m0-7-9 9"/>',
+    more: '<circle cx="4" cy="10" r=".8"/><circle cx="10" cy="10" r=".8"/><circle cx="16" cy="10" r=".8"/>',
+    close: '<path d="m5 5 10 10M15 5 5 15"/>',
+    lock: '<rect x="4" y="8" width="12" height="10" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3M10 12v2"/>',
+    position: '<path d="M10 2v16M2 10h16"/><circle cx="10" cy="10" r="5"/>',
+};
+
+function captureIcon(name: string) {
+    const icon = view().class("capture-icon").attr({ ariaHidden: "true" });
+    icon.el.innerHTML = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${captureIconPaths[name] ?? captureIconPaths.more}</svg>`;
+    return icon;
+}
 
 function iconEl(src: IconType) {
     return view().add(
@@ -302,7 +373,7 @@ function setSetting() {
         "--color-size": `${colorSize * colorISize}px`,
         "--color-i-size": `${colorISize}px`,
         "--color-i-i": `${colorSize}`,
-        "--bar-size": `${工具栏.按钮大小}px`,
+        "--bar-size": `${bSize}px`,
         "--bar-icon": `${工具栏.按钮图标比例}`,
     });
 }
@@ -312,10 +383,17 @@ function toCanvas(canvas: HTMLCanvasElement, img: ImageData) {
 }
 
 async function setScreen(i: (typeof allScreens)[0]) {
+    const generation = captureInitSequence;
+    const screenRequest = ++screenRequestSequence;
     let _img = screenShotCache.get(i.id);
     if (!_img) {
         try {
             const __img = (await i.capture()).toImageData();
+            if (
+                generation !== captureInitSequence ||
+                screenRequest !== screenRequestSequence
+            )
+                return;
             if (__img) {
                 screenShotCache.set(i.id, __img);
                 _img = __img;
@@ -326,6 +404,11 @@ async function setScreen(i: (typeof allScreens)[0]) {
         }
     }
     const img = _img;
+    if (
+        generation !== captureInitSequence ||
+        screenRequest !== screenRequestSequence
+    )
+        return;
     if (!img) return;
     const w = img.width;
     const h = img.height;
@@ -348,6 +431,7 @@ async function setScreen(i: (typeof allScreens)[0]) {
 }
 
 function setEditorP(zoom: number, x: number, y: number) {
+    captureWorkspace?.dismiss();
     const oldZoom = editorP.zoom;
     const t: string[] = [];
     if (zoom != null) {
@@ -379,6 +463,8 @@ function setEditorP(zoom: number, x: number, y: number) {
     // 线的本地宽度随缩放变化
     if (editorP.zoom !== oldZoom) refreshLines();
     whBar(finalRect);
+    syncSelectionHandles();
+    followBar();
 }
 
 /** 参考线在编辑器内的本地宽度：缩放后屏幕上至少 1 逻辑像素，放大时随缩放变粗 */
@@ -514,6 +600,12 @@ function 记忆框选f() {
 
 // 关闭
 async function closeWin() {
+    try {
+        await captureWorkspace?.flush();
+    } catch (error) {
+        captureWorkspace?.showError(error);
+        return;
+    }
     liveTranslationController.cancel();
     mainCanvas.width = drawCanvas.width = mainCanvas.width; // 确保清空画布
     cleanClip();
@@ -572,19 +664,18 @@ function drawM(v: boolean) {
         fabricCanvas.renderAll();
         whEl.style({ pointerEvents: "auto" });
     }
+    syncSelectionHandles();
 }
 
 /**
  * 编辑栏跟踪工具栏
  */
 function trackLocation() {
-    const h = radialFab.el.offsetTop;
-    let l = radialFab.el.offsetLeft + bSize + 8;
-    if (drawBarPosi === "left") {
-        l = radialFab.el.offsetLeft - drawBar.offsetWidth - 8;
-    }
-    drawBar.style.top = `${h}px`;
-    drawBar.style.left = `${l}px`;
+    const toolbar = toolBar.getBoundingClientRect();
+    drawBar.style.left = `${Math.max(12, Math.min(innerWidth - drawBar.offsetWidth - 12, toolbar.left))}px`;
+    const height = drawBar.offsetHeight;
+    const below = toolbar.bottom + 8;
+    drawBar.style.top = `${Math.max(12, below + height < innerHeight ? below : toolbar.top - height - 8)}px`;
 }
 
 // 在其他应用打开
@@ -1031,13 +1122,25 @@ async function translate() {
 
 // 复制
 async function runCopy() {
+    try {
+        await captureWorkspace?.stage(true);
+    } catch (error) {
+        captureWorkspace?.showError(error);
+        return;
+    }
     const c = getClipPhoto();
     const blob = await getBlob(c, "image/png");
     if (blob) await writeImage(blob);
     toolsX.close.f();
 }
 // 保存
-function runSave() {
+async function runSave() {
+    try {
+        await captureWorkspace?.stage();
+    } catch (error) {
+        captureWorkspace?.showError(error);
+        return;
+    }
     if (store.get("保存.快速保存")) {
         type = store.get("保存.默认格式");
         renderSend("clip_hide", []);
@@ -1381,12 +1484,14 @@ function clipStart(e: MouseEvent, inRect: boolean) {
     renderClip(e);
 
     // 隐藏
-    drawBar.style.opacity = radialFab.el.style.opacity = "0";
+    drawBar.style.opacity = toolBar.style.opacity = "0";
+    toolPopover.el.hidden = true;
     closeRadial();
 }
 
 function pickColor(e: MouseEvent | PointerEvent) {
     rightKey = !rightKey;
+    mouseBarEl.el.classList.toggle("mouse_bar_hide", !rightKey);
     // 自由右键取色
     mouseBar(finalRect, e2srcPoint(e));
     // 改成多格式样式
@@ -1439,6 +1544,15 @@ function clipEnd(e: MouseEvent) {
         finalRect = pointsOutRect(freeSelect);
     }
     // 此时 selecting 已为 false，选区已定，直接重绘
+    captureWorkspace?.feedback.settle(selectionHandles.el);
+    if (capturePreferences.defaultPreset === "copy-close") void runCopy();
+    else if (capturePreferences.defaultPreset === "stage-pin")
+        void captureWorkspace
+            ?.stage(true)
+            .then(() => toolsX.ding.f())
+            .catch((error) => captureWorkspace?.showError(error));
+    else if (capturePreferences.defaultPreset === "annotate")
+        setEditType("draw", "free");
     drawClip();
     renderClip(e);
     hisPush();
@@ -1492,6 +1606,7 @@ function drawClipRect() {
 
     // 大小栏
     whBar(finalRect);
+    syncSelectionHandles();
 }
 
 /** 画多边形(遮罩) */
@@ -1514,6 +1629,7 @@ function drawClipPoly(points: point[]) {
 
     // 大小栏
     whBar(pointsOutRect(points));
+    selectionHandles.el.hidden = true;
 }
 
 function drawClip() {
@@ -1524,6 +1640,9 @@ function drawClip() {
 
 function cleanClip() {
     showMask(null);
+    selectionHandles.el.hidden = true;
+    closeRadial();
+    toolPopover.el.hidden = true;
     edgeKey = "";
     for (const el of clipCkx) setElBox(el.el, 0, 0, 0, 0);
     clipEdge.el.replaceChildren();
@@ -1656,8 +1775,8 @@ function whBar(finalRect: rect) {
     const zx = (finalRect[0] + editorP.x) * editorP.zoom;
     const zy = (finalRect[1] + editorP.y) * editorP.zoom;
     const zw = finalRect[2] * editorP.zoom;
-    const dw = width;
-    const dh = 40;
+    const dw = whEl.el.offsetWidth || width;
+    const dh = 34;
     const gap = 8;
 
     let x: number;
@@ -1674,7 +1793,9 @@ function whBar(finalRect: rect) {
 
 function checkWhBarWidth() {
     for (const el of whL) {
-        el.style({ width: `${el.el.value.length}ch` });
+        el.style({
+            width: `${Math.max(4, Math.min(9, el.el.value.length + 1))}ch`,
+        });
     }
 }
 
@@ -1684,12 +1805,19 @@ function changeWH(el: ElType<HTMLInputElement>) {
         // 排除（数字运算符空格）之外的非法输入
         if (string.match(/[\d+\-*/.\s()]/g)?.length !== string.length)
             return null;
-        // todo sandbox math
-        // biome-ignore lint: 已经过滤（？） 计算math
-        return eval(string);
+        try {
+            // biome-ignore lint/security/noGlobalEval: Only numeric arithmetic characters are accepted above.
+            return eval(string);
+        } catch {
+            return null;
+        }
     });
 
-    if (l.includes(null)) {
+    if (
+        l.some((value) => !Number.isFinite(value)) ||
+        Number(l[4]) < 1 ||
+        Number(l[5]) < 1
+    ) {
         whBar(finalRect);
         return;
     }
@@ -1937,6 +2065,7 @@ function changeRightBar(v: boolean) {
  */
 function copy(e: ElType<HTMLElement>) {
     writeText(e.el.innerText);
+    if (theColor) captureWorkspace?.sampled(chroma(rgba2str(theColor)).hex());
     rightKey = false;
     changeRightBar(false);
 }
@@ -1944,97 +2073,24 @@ function copy(e: ElType<HTMLElement>) {
 /**
  * 工具栏自动跟随
  */
-function followBar(op?: { x: number; y: number }) {
-    const zx = (finalRect[0] + editorP.x) * editorP.zoom;
-    const zy = (finalRect[1] + editorP.y) * editorP.zoom;
-    const zw = finalRect[2] * editorP.zoom;
-    const zh = finalRect[3] * editorP.zoom;
-    let x = 0;
-    let y = 0;
-    if (!op) {
-        x = followBarList.at(-1)?.[0] ?? 0;
-        y = followBarList.at(-1)?.[1] ?? 0;
-    } else {
-        x = op.x;
-        y = op.y;
-    }
-    followBarList.push([x, y]);
-    const [x1, y1] = [zx, zy];
-    const x2 = x1 + zw;
-    const y2 = y1 + zh;
-    const maxWidth = window.innerWidth;
-    const maxHeight = window.innerHeight;
-    const toolW = bSize;
-    const drawW = drawBarOpen ? drawBar.offsetWidth : 0;
-    const gap = barGap;
-    const groupW = toolW + gap + drawW;
-
-    if ((x1 + x2) / 2 <= x) {
-        // 向右
-        if (x2 + groupW + gap <= maxWidth) {
-            radialFab.el.style.left = `${x2 + gap}px`; // 贴右边
-            drawBarPosi = "right";
-        } else {
-            if (工具栏跟随 === "展示内容优先") {
-                // 超出屏幕贴左边
-                if (x1 - groupW - gap >= 0) {
-                    radialFab.el.style.left = `${x1 - toolW - gap}px`;
-                    drawBarPosi = "left";
-                } else {
-                    // 还超贴右内
-                    radialFab.el.style.left = `${maxWidth - groupW}px`;
-                    drawBarPosi = "right";
-                }
-            } else {
-                // 直接贴右边,即使遮挡
-                radialFab.el.style.left = `${x2 - groupW - gap}px`;
-                drawBarPosi = "right";
-            }
-        }
-    } else {
-        // 向左
-        if (x1 - groupW - gap >= 0) {
-            radialFab.el.style.left = `${x1 - toolW - gap}px`; // 贴左边
-            drawBarPosi = "left";
-        } else {
-            if (工具栏跟随 === "展示内容优先") {
-                // 超出屏幕贴右边
-                if (x2 + groupW <= maxWidth) {
-                    radialFab.el.style.left = `${x2 + gap}px`;
-                    drawBarPosi = "right";
-                } else {
-                    // 还超贴左内
-                    radialFab.el.style.left = `${0 + drawW + gap}px`;
-                    drawBarPosi = "left";
-                }
-            } else {
-                radialFab.el.style.left = `${x1 + gap}px`;
-                drawBarPosi = "left";
-            }
-        }
-    }
-
-    if (y >= (y1 + y2) / 2) {
-        if (y2 - bSize >= 0) {
-            radialFab.el.style.top = `${y2 - bSize}px`;
-        } else {
-            if (y1 + bSize > maxHeight) {
-                radialFab.el.style.top = `${maxHeight - bSize}px`;
-            } else {
-                radialFab.el.style.top = `${y1}px`;
-            }
-        }
-    } else {
-        if (y1 + bSize <= maxHeight) {
-            radialFab.el.style.top = `${y1}px`;
-        } else {
-            radialFab.el.style.top = `${maxHeight - bSize}px`;
-        }
-    }
-    radialFab.el.style.opacity = "1";
-    radialFab.el.style.pointerEvents = "auto";
+function followBar(_op?: { x: number; y: number }) {
+    const dock = captureDock(
+        {
+            x: (finalRect[0] + editorP.x) * editorP.zoom,
+            y: (finalRect[1] + editorP.y) * editorP.zoom,
+            width: finalRect[2] * editorP.zoom,
+            height: finalRect[3] * editorP.zoom,
+        },
+        { width: innerWidth, height: innerHeight },
+        { width: toolBar.offsetWidth, height: toolBar.offsetHeight },
+    );
+    toolBar.style.left = `${dock.x}px`;
+    toolBar.style.top = `${dock.y}px`;
+    toolBar.style.opacity = "1";
+    toolBar.style.pointerEvents = "auto";
     updateDrawBarVis();
     trackLocation();
+    positionToolPopover();
 }
 
 // 修复final_rect负数
@@ -2316,6 +2372,7 @@ function hisPush() {
     const canvas = fabricCanvas?.toJSON() || {};
     undoStack.setData({ rect: finalRect, canvas: canvas });
     undoStack.apply();
+    captureWorkspace?.changed();
 }
 /**
  * 更改历史指针
@@ -2512,7 +2569,7 @@ function showSideBar(show: boolean) {
 }
 
 function showBars(b: boolean) {
-    for (const i of [radialFab.el, drawBar]) {
+    for (const i of [toolBar, drawBar]) {
         if (b && (i !== drawBar || drawBarOpen)) {
             i.style.pointerEvents = "";
             i.style.opacity = "";
@@ -2521,7 +2578,10 @@ function showBars(b: boolean) {
             i.style.opacity = "0";
         }
     }
-    if (!b) closeRadial();
+    if (!b) {
+        closeRadial();
+        toolPopover.el.hidden = true;
+    }
 }
 function pencilElClick() {
     fabricCanvas.freeDrawingBrush = new PencilBrush(fabricCanvas);
@@ -3245,7 +3305,6 @@ const allColorFormat: colorFormat[] = [
     "CMYK",
 ];
 
-const 工具栏跟随 = store.get("工具栏跟随");
 const 四角坐标 = store.get("显示四角坐标");
 const 遮罩颜色 = store.get("框选.颜色.遮罩") || "#0008";
 const 取色器默认格式 = store.get("取色器.默认格式");
@@ -3258,7 +3317,8 @@ const 记忆框选值 = store.get("框选.记忆.rects") as {
     [id: string]: rect;
 };
 const 识别窗口 = store.get("框选.识别窗口");
-const bSize = store.get("工具栏.按钮大小");
+let bSize = store.get("工具栏.按钮大小");
+if (!Number.isFinite(bSize) || bSize < 28 || bSize > 44) bSize = 32;
 
 const g光标参考线 = store.get("框选.参考线.光标");
 const x选区参考线 = store.get("框选.参考线.选区");
@@ -3641,28 +3701,42 @@ const whY1 = input();
 const whW = input();
 const whH = input();
 const whL = [whX0, whY0, whX1, whY1, whW, whH];
-const whXYStyle = { display: 四角坐标 ? "block" : "none" };
 let ratioLock = false;
 let ratioLockValue = 1;
-const whLock = button()
-    .attr({ title: t("비율 고정"), type: "button" })
-    .style({ fontSize: "11px", padding: "0 4px", cursor: "pointer" })
-    .add("🔓")
+const whCoordinates = view("x")
+    .class("capture-coordinates")
+    .add([
+        view().add([whX0, txt(", "), whY0]),
+        view().add([whX1, txt(", "), whY1]),
+    ]);
+whCoordinates.el.hidden = true;
+const coordinateToggle = button(captureIcon("position"))
+    .attr({ title: t("좌표"), type: "button", ariaExpanded: "false" })
+    .on("click", () => {
+        whCoordinates.el.hidden = !whCoordinates.el.hidden;
+        coordinateToggle.el.setAttribute(
+            "aria-expanded",
+            String(!whCoordinates.el.hidden),
+        );
+        whBar(finalRect);
+    });
+const whLock = button(captureIcon("lock"))
+    .attr({ title: t("비율 고정"), type: "button", ariaPressed: "false" })
     .on("click", () => {
         ratioLock = !ratioLock;
         if (ratioLock && finalRect[2] > 0 && finalRect[3] > 0)
             ratioLockValue = finalRect[2] / finalRect[3];
-        whLock.clear().add(ratioLock ? "🔒" : "🔓");
+        whLock.el.setAttribute("aria-pressed", String(ratioLock));
     });
+whW.attr({ ariaLabel: t("너비"), inputMode: "numeric" });
+whH.attr({ ariaLabel: t("높이"), inputMode: "numeric" });
 whEl.add([
-    view()
-        .style(whXYStyle)
-        .add([whX0, txt(",").style({ color: cssColor.ff }), whY0]),
-    view()
-        .style(whXYStyle)
-        .add([whX1, txt(",").style({ color: cssColor.ff }), whY1]),
-    view().add([whW, txt("×").style({ color: cssColor.ff }), whH]),
+    whCoordinates,
+    view("x")
+        .class("capture-dimensions")
+        .add([whW, txt("×"), whH, txt("px")]),
     whLock,
+    coordinateToggle,
 ]);
 
 let chPX = 0;
@@ -3812,7 +3886,7 @@ let liveOcrPromise: Promise<
 const liveTranslationController = new LatestLiveTranslation<string>(
     (text) => {
         liveTranslationPreview.el.textContent =
-            text || "번역할 텍스트가 없습니다.";
+            text || t("번역할 텍스트가 없습니다.");
     },
     (error) => {
         liveTranslationPreview.el.textContent =
@@ -3849,48 +3923,11 @@ async function translateCurrentSelection() {
 }
 
 async function autoRedact() {
-    if (finalRect[2] < 2 || finalRect[3] < 2) return;
-    let lines: {
-        text: string;
-        box: [number, number][];
-    }[];
     try {
-        const ocr = await getLiveOcr();
-        const result = await ocr.ocr(getClipPhoto().toDataURL());
-        lines = filterSensitiveLines(result.src);
-    } catch {
-        alert("텍스트 인식에 실패했습니다");
-        return;
+        await captureWorkspace?.reviewRedactions();
+    } catch (error) {
+        captureWorkspace?.showError(error);
     }
-    if (!lines.length) {
-        alert("민감한 텍스트를 찾지 못했습니다");
-        return;
-    }
-    for (const line of lines) {
-        const xs = line.box.map((pt) => pt[0]);
-        const ys = line.box.map((pt) => pt[1]);
-        const x = Math.min(...xs);
-        const y = Math.min(...ys);
-        const w = Math.max(...xs) - x;
-        const h = Math.max(...ys) - y;
-        const pad = Math.max(2, h * 0.15);
-        const rect = new Rect({
-            left: finalRect[0] + x - pad,
-            top: finalRect[1] + y - pad,
-            width: w + pad * 2,
-            height: h + pad * 2,
-            originX: "left",
-            originY: "top",
-            fill: "#111318",
-            canChangeFill: true,
-            形状: "rect",
-        });
-        shapes.push(rect);
-        fabricCanvas.add(rect);
-    }
-    fabricCanvas.renderAll();
-    hisPush();
-    alert(`${lines.length}개 민감한 텍스트를 가렸습니다`);
 }
 
 function scheduleLiveTranslation() {
@@ -3948,145 +3985,547 @@ ipcRenderer.on("oc:capture-mode", (_event, payload: unknown) => {
     followBar();
 });
 
-const toolBar = toolBarEl.el;
 const drawBar = drawBarEl.el;
-
-// 极简工具入口：默认只露出圆形按钮，点击后以光标为圆心展开放射菜单
 toolBarEl.style({ display: "none" });
-const radialFab = button(iconEl("add"))
-    .attr({ id: "radial_fab", title: "도구", role: "button" })
-    .class(Class.glassBar)
-    .style({ opacity: "0", pointerEvents: "none" })
-    .addInto();
-const radialMenu = view().attr({ id: "radial_menu" }).addInto();
 
-let drawBarOpen = false;
-let radialOpen = false;
-
-function updateDrawBarVis() {
-    drawBar.style.opacity = drawBarOpen ? "" : "0";
-    drawBar.style.pointerEvents = drawBarOpen ? "" : "none";
-}
-
-const radialItems: { id: 功能 | "draw"; icon: IconType; title: string }[] = [
-    { id: "copy", icon: "copy", title: "复制" },
-    { id: "save", icon: "save", title: "保存" },
-    { id: "draw", icon: "free_draw", title: "标注" },
-    { id: "ding", icon: "ding", title: "屏幕贴图" },
-    { id: "ocr", icon: "ocr", title: "文字识别" },
-    { id: "ocrcopy", icon: "text", title: "复制文字" },
-    { id: "translate", icon: "translate", title: "屏幕翻译" },
-    { id: "search", icon: "search", title: "以图搜图" },
-    { id: "QR", icon: "scan", title: "二维码" },
-    { id: "redact", icon: "hide", title: "민감한 텍스트 자동 가림" },
-    { id: "editor", icon: "super_edit", title: "高级图片编辑" },
-    { id: "record", icon: "record", title: "录屏" },
-    { id: "long", icon: "long_clip", title: "广截屏" },
-    { id: "screens", icon: "screen", title: "切换屏幕" },
-    { id: "open", icon: "open", title: "其他应用打开" },
-    { id: "close", icon: "close", title: "关闭" },
+type CaptureTool =
+    | 功能
+    | "draw"
+    | "color"
+    | "more"
+    | "stage"
+    | "compare"
+    | "textselect"
+    | "promote"
+    | "trash";
+let captureTools: { id: CaptureTool; title: string }[] = [
+    { id: "copy", title: "복사" },
+    { id: "stage", title: "임시 저장" },
+    { id: "draw", title: "주석" },
+    { id: "ding", title: "고정" },
+    { id: "ocrcopy", title: "텍스트 복사" },
+    { id: "translate", title: "번역" },
+    { id: "color", title: "색상 추출" },
+    { id: "more", title: "더보기" },
+];
+const secondaryTools: { id: CaptureTool; title: string }[] = [
+    { id: "save", title: "저장" },
+    { id: "textselect", title: "글자 선택" },
+    { id: "compare", title: "레퍼런스 비교" },
+    { id: "promote", title: "보관함으로 이동" },
+    { id: "trash", title: "휴지통으로 이동" },
+    { id: "long", title: "스크롤 캡처" },
+    { id: "record", title: "녹화" },
+    { id: "redact", title: "자동 가림" },
+    { id: "QR", title: "QR 코드" },
+    { id: "ocr", title: "텍스트 인식" },
+    { id: "search", title: "이미지 검색" },
+    { id: "editor", title: "상세 편집" },
+    { id: "open", title: "다른 앱에서 열기" },
+    { id: "screens", title: "화면 전환" },
 ];
 
+const quickToolbar = view("x")
+    .attr({ id: "quick_toolbar", role: "toolbar", ariaLabel: t("캡처 도구") })
+    .style({ opacity: "0", pointerEvents: "none" })
+    .addInto();
+const toolBar = quickToolbar.el;
+const toolPopover = view()
+    .attr({ id: "capture_tools", role: "group", ariaLabel: t("추가 도구") })
+    .addInto();
+toolPopover.el.hidden = true;
+const radialMenu = view()
+    .attr({ id: "radial_menu", role: "menu", ariaLabel: t("캡처 도구") })
+    .addInto();
+let drawBarOpen = false;
+let radialOpen = false;
+let radialOrigin = { x: 0, y: 0 };
+let radialPage = 0;
+
+function toolButton(
+    item: { id: CaptureTool; title: string },
+    withLabel = false,
+) {
+    const control = button(captureIcon(item.id))
+        .attr({
+            type: "button",
+            title: t(item.title),
+            ariaLabel: t(item.title),
+        })
+        .class("capture-tool");
+    const key =
+        item.id === "draw" ||
+        item.id === "stage" ||
+        item.id === "compare" ||
+        item.id === "textselect" ||
+        item.id === "promote" ||
+        item.id === "trash" ||
+        item.id === "more" ||
+        item.id === "color"
+            ? ""
+            : store.get(`工具快捷键.${item.id}` as never);
+    control.el.setAttribute(
+        "data-title",
+        `${t(item.title)}${key ? ` · ${String(key)}` : ""}`,
+    );
+    control.el.dataset.captureAction = item.id;
+    if (withLabel) control.add(txt(t(item.title)));
+    control.on("click", (e) => {
+        e.stopPropagation();
+        const bounds = control.el.getBoundingClientRect();
+        if (item.id === "more") {
+            if (radialOpen)
+                openRadial(
+                    radialOrigin.x,
+                    radialOrigin.y,
+                    (radialPage + 1) % radialPageCount(),
+                );
+            else {
+                toolPopover.el.hidden = !toolPopover.el.hidden;
+                moreButton.el.setAttribute(
+                    "aria-expanded",
+                    String(!toolPopover.el.hidden),
+                );
+                positionToolPopover();
+            }
+            return;
+        }
+        closeRadial();
+        toolPopover.el.hidden = true;
+        runCaptureTool(item.id, {
+            x: bounds.x + bounds.width / 2,
+            y: bounds.y + bounds.height / 2,
+        });
+    });
+    return control;
+}
+
+const moreButton = toolButton({ id: "more", title: "더보기" }).attr({
+    ariaExpanded: "false",
+});
+
+const controlSize = input("range")
+    .attr({ min: "28", max: "44", step: "2", ariaLabel: t("도구 크기") })
+    .sv(String(bSize))
+    .on("input", () => {
+        bSize = Number(controlSize.el.value);
+        store.set("工具栏.按钮大小", bSize);
+        setSetting();
+        updateCaptureToolbarFit(true);
+        followBar();
+    });
+toolPopover.add(
+    view("x")
+        .class("capture-size-setting")
+        .add([txt(t("도구 크기")), controlSize]),
+);
+
+const experienceTools: Record<
+    CaptureToolId,
+    { id: CaptureTool; title: string }
+> = {
+    copy: { id: "copy", title: "복사" },
+    stage: { id: "stage", title: "임시 저장" },
+    annotate: { id: "draw", title: "주석" },
+    pin: { id: "ding", title: "고정" },
+    ocr: { id: "textselect", title: "글자 선택" },
+    redact: { id: "redact", title: "자동 가림" },
+    compare: { id: "compare", title: "레퍼런스 비교" },
+    promote: { id: "promote", title: "보관함으로 이동" },
+    trash: { id: "trash", title: "휴지통으로 이동" },
+    more: { id: "more", title: "더보기" },
+    save: { id: "save", title: "저장" },
+    color: { id: "color", title: "색상 추출" },
+    scroll: { id: "long", title: "스크롤 캡처" },
+    record: { id: "record", title: "녹화" },
+    search: { id: "search", title: "이미지 검색" },
+    qr: { id: "QR", title: "QR 코드" },
+    open: { id: "open", title: "다른 앱에서 열기" },
+    screens: { id: "screens", title: "화면 전환" },
+};
+
+let visibleToolbarIds: CaptureToolId[] = [];
+let toolbarFixedWidth = 0;
+
+function renderQuickToolbar(ids: readonly CaptureToolId[]) {
+    quickToolbar.clear();
+    for (const id of ids) {
+        const control = toolButton(experienceTools[id]);
+        control.el.dataset.toolbarFavorite = "";
+        quickToolbar.add(control);
+    }
+    quickToolbar.add(view().class("capture-divider"));
+    quickToolbar.add(moreButton);
+    quickToolbar.add(toolButton({ id: "close", title: "닫기" }));
+}
+
+function updateCaptureToolbarFit(measureFixedWidth = false) {
+    const favorites = capturePreferences.toolbarOrder.filter(
+        (id) => id !== "more",
+    );
+    if (measureFixedWidth || !toolbarFixedWidth) {
+        visibleToolbarIds = [];
+        renderQuickToolbar(visibleToolbarIds);
+        toolbarFixedWidth = toolBar.getBoundingClientRect().width;
+    }
+    const style = getComputedStyle(toolBar);
+    const gap = Number.parseFloat(style.columnGap) || 0;
+    const fit = fitCaptureToolbar(favorites, {
+        viewportWidth: innerWidth,
+        favoriteWidth: bSize,
+        fixedWidth: toolbarFixedWidth,
+        gap,
+    });
+    if (
+        fit.visible.length === visibleToolbarIds.length &&
+        fit.visible.every((id, index) => id === visibleToolbarIds[index])
+    )
+        return;
+    visibleToolbarIds = fit.visible;
+    renderQuickToolbar(visibleToolbarIds);
+}
+
+function rebuildCaptureTools() {
+    captureTools = capturePreferences.radialOrder
+        .filter((id) => id !== "more")
+        .slice(0, 7)
+        .map((id) => experienceTools[id]);
+    captureTools.push({ id: "more", title: "더보기" });
+    toolPopover.clear();
+    const all = [...Object.values(experienceTools), ...secondaryTools];
+    const seen = new Set<CaptureTool>();
+    for (const item of all) {
+        if (item.id === "more" || seen.has(item.id)) continue;
+        seen.add(item.id);
+        toolPopover.add(toolButton(item, true));
+    }
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("도구 크기")), controlSize]),
+    );
+    updateCaptureToolbarFit(true);
+}
+rebuildCaptureTools();
+
+const toolbarResizeObserver = new ResizeObserver(() => {
+    updateCaptureToolbarFit();
+    if (mainCanvas.width) followBar();
+});
+toolbarResizeObserver.observe(toolBar);
+
+function positionToolPopover() {
+    if (toolPopover.el.hidden) return;
+    const bar = toolBar.getBoundingClientRect();
+    toolPopover.style({
+        left: `${Math.max(12, Math.min(innerWidth - toolPopover.el.offsetWidth - 12, bar.left))}px`,
+        top: `${Math.max(12, bar.bottom + toolPopover.el.offsetHeight + 8 < innerHeight ? bar.bottom + 8 : bar.top - toolPopover.el.offsetHeight - 8)}px`,
+    });
+}
+
+function updateDrawBarVis() {
+    drawBar.style.opacity = drawBarOpen ? "1" : "0";
+    drawBar.style.pointerEvents = drawBarOpen ? "auto" : "none";
+    toolBar
+        .querySelector<HTMLButtonElement>('[data-capture-action="draw"]')
+        ?.setAttribute("aria-pressed", String(drawBarOpen));
+    trackLocation();
+}
+
 function closeRadial() {
-    if (!radialOpen) return;
     radialOpen = false;
     radialMenu.style({ display: "none" });
     radialMenu.el.replaceChildren();
 }
 
-function runRadialItem(id: 功能 | "draw") {
+function runCaptureTool(id: CaptureTool, point = radialOrigin) {
+    if (id === "stage") {
+        void captureWorkspace
+            ?.stage(true)
+            .catch((error) => captureWorkspace?.showError(error));
+        return;
+    }
+    if (id === "compare") {
+        void captureWorkspace
+            ?.compare()
+            .catch((error) => captureWorkspace?.showError(error));
+        return;
+    }
+    if (id === "textselect") {
+        void captureWorkspace
+            ?.showText()
+            .catch((error) => captureWorkspace?.showError(error));
+        return;
+    }
+    if (id === "promote") {
+        void captureWorkspace
+            ?.promote()
+            .catch((error) => captureWorkspace?.showError(error));
+        return;
+    }
+    if (id === "trash") {
+        void captureWorkspace
+            ?.trash()
+            .then(() => closeWin())
+            .catch((error) => captureWorkspace?.showError(error));
+        return;
+    }
     if (id === "draw") {
         drawBarOpen = !drawBarOpen;
+        if (!drawBarOpen) setEditType("select", "rect");
         updateDrawBarVis();
+        return;
+    }
+    if (id === "color") {
+        if (nowMouseE) pickColor(nowMouseE);
+        void captureWorkspace
+            ?.showPalette()
+            .catch((error) => captureWorkspace?.showError(error));
         return;
     }
     if (id === "screens") {
         if (allScreens.length > 1) {
-            const i = allScreens.findIndex((s) => s.id === nowScreenId);
-            setScreen(allScreens[(i + 1) % allScreens.length]);
+            const index = allScreens.findIndex(
+                (screen) => screen.id === nowScreenId,
+            );
+            void setScreen(allScreens[(index + 1) % allScreens.length]);
         }
+        return;
+    }
+    if (id === "more") {
+        openRadial(point.x, point.y, 1);
         return;
     }
     toolsX[id].f();
 }
 
-function openRadial(cx: number, cy: number) {
-    const items = radialItems.filter(
-        (i) => i.id !== "screens" || allScreens.length > 1,
+function radialPageCount() {
+    const count = secondaryTools.filter(
+        (item) => item.id !== "screens" || allScreens?.length > 1,
+    ).length;
+    return 1 + Math.ceil(count / 7);
+}
+
+function openRadial(cx: number, cy: number, page = 0) {
+    toolPopover.el.hidden = true;
+    radialOrigin = { x: cx, y: cy };
+    radialPage = page;
+    const available = secondaryTools.filter(
+        (item) => item.id !== "screens" || allScreens?.length > 1,
+    );
+    const items =
+        page === 0
+            ? captureTools
+            : [
+                  ...available.slice((page - 1) * 7, page * 7),
+                  {
+                      id: "more" as const,
+                      title:
+                          page + 1 < radialPageCount()
+                              ? "다음 도구"
+                              : "처음으로",
+                  },
+              ];
+    const layout = radialLayout(
+        radialOrigin,
+        { width: innerWidth, height: innerHeight },
+        items.length,
+        bSize + 4,
     );
     radialMenu.el.replaceChildren();
-    const radius = Math.max(84, bSize * 1.7);
-    const base = Math.atan2(innerHeight / 2 - cy, innerWidth / 2 - cx);
-    const spread = Math.min((items.length - 1) * 0.36, Math.PI * 1.7);
-    const start = base - spread / 2;
-    for (const [i, it] of items.entries()) {
-        const a = start + (spread * i) / (items.length - 1);
-        const x = Math.min(
-            Math.max(cx + Math.cos(a) * radius, 26),
-            innerWidth - 26,
+    const halo = view()
+        .class("radial-halo")
+        .style({
+            left: `${layout.center.x}px`,
+            top: `${layout.center.y}px`,
+            width: `${layout.radius * 2}px`,
+            height: `${layout.radius * 2}px`,
+        });
+    radialMenu.add(halo);
+    const center = button(captureIcon("close"))
+        .class("radial-center")
+        .attr({ type: "button", title: t("닫기"), ariaLabel: t("닫기") })
+        .style({ left: `${layout.center.x}px`, top: `${layout.center.y}px` })
+        .on("click", closeRadial);
+    radialMenu.add(center);
+    for (const [index, item] of items.entries()) {
+        const point = layout.points[index];
+        const control = toolButton(item)
+            .class("radial_item")
+            .attr({ role: "menuitem" })
+            .style({ left: `${point.x}px`, top: `${point.y}px` });
+        control.el.style.setProperty(
+            "--radial-from-x",
+            `${layout.center.x - point.x}px`,
         );
-        const y = Math.min(
-            Math.max(cy + Math.sin(a) * radius, 26),
-            innerHeight - 26,
+        control.el.style.setProperty(
+            "--radial-from-y",
+            `${layout.center.y - point.y}px`,
         );
-        const b = button(iconEl(it.icon))
-            .class("radial_item", Class.glassBar)
-            .attr({ title: it.title })
-            .style({ left: `${x}px`, top: `${y}px` });
-        b.el.style.animationDelay = `${i * 22}ms`;
-        if (it.id === autoDo) b.el.classList.add("autodo");
-        b.el.onpointerup = (e) => {
-            e.stopPropagation();
-            if (e.button === 0) {
-                closeRadial();
-                runRadialItem(it.id);
-            } else if (
-                e.button === 1 &&
-                it.id !== "draw" &&
-                it.id !== "screens"
-            ) {
-                autoDo = "no";
-                setDefaultAction(store.get("框选后默认操作"));
-            }
-        };
-        radialMenu.add(b);
+        control.el.style.animationDelay = `${index * 12}ms`;
+        radialMenu.add(control);
     }
     radialMenu.style({ display: "block" });
     radialOpen = true;
+    radialMenu.el
+        .querySelector<HTMLButtonElement>('[role="menuitem"]')
+        ?.focus({ preventScroll: true });
 }
 
-radialFab.el.onpointerup = (e) => {
-    e.stopPropagation();
-    if (e.button !== 0) return;
-    if (radialOpen) closeRadial();
-    else {
-        const r = radialFab.el.getBoundingClientRect();
-        openRadial(r.left + r.width / 2, r.top + r.height / 2);
+document.addEventListener("contextmenu", (e) => {
+    const target = e.target as HTMLElement;
+    if (gestureOrigin || Date.now() < suppressContextUntil) {
+        e.preventDefault();
+        return;
     }
-};
+    if (
+        target.closest(
+            "#quick_toolbar, #radial_menu, #capture_inline_shelf, #capture_palette, #capture_redact_review",
+        )
+    ) {
+        e.preventDefault();
+        return;
+    }
+    if (
+        target.closest(
+            "input, textarea, #draw_bar, #center_bar, #capture_tools",
+        )
+    )
+        return;
+    e.preventDefault();
+    if (longInited) return;
+    nowMouseE = e;
+    rightKey = false;
+    changeRightBar(false);
+    openRadial(e.clientX, e.clientY);
+});
 
 document.addEventListener(
     "pointerdown",
     (e) => {
-        if (
-            radialOpen &&
-            !(e.target instanceof Node && radialMenu.el.contains(e.target))
-        )
-            closeRadial();
-    },
-    true,
-);
-document.addEventListener(
-    "keydown",
-    (e) => {
-        if (radialOpen && e.key === "Escape") {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-            closeRadial();
+        const target = e.target as Node;
+        if (e.button === 0 && !radialMenu.el.contains(target)) closeRadial();
+        if (!toolPopover.el.contains(target) && !toolBar.contains(target)) {
+            toolPopover.el.hidden = true;
+            moreButton.el.setAttribute("aria-expanded", "false");
         }
     },
     true,
 );
+
+document.addEventListener(
+    "keydown",
+    (e) => {
+        if (e.key === "Escape" && captureWorkspace?.hasPanel()) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            captureWorkspace.dismiss();
+            return;
+        }
+        if (
+            e.key === "Escape" &&
+            (radialOpen || !toolPopover.el.hidden || drawBarOpen)
+        ) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            closeRadial();
+            toolPopover.el.hidden = true;
+            drawBarOpen = false;
+            setEditType("select", "rect");
+            updateDrawBarVis();
+            toolBar.querySelector<HTMLButtonElement>("button")?.focus();
+        } else if (
+            radialOpen &&
+            ["ArrowRight", "ArrowLeft", "Tab"].includes(e.key)
+        ) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const controls = Array.from(
+                radialMenu.el.querySelectorAll<HTMLButtonElement>("button"),
+            );
+            const index = controls.indexOf(
+                document.activeElement as HTMLButtonElement,
+            );
+            const step = e.key === "ArrowLeft" || e.shiftKey ? -1 : 1;
+            controls[
+                (index + step + controls.length) % controls.length
+            ]?.focus();
+        }
+    },
+    true,
+);
+
+const selectionHandles = view().attr({ id: "selection_handles" }).addInto();
+selectionHandles.el.hidden = true;
+const handleDirections = [
+    ["nw", "西北"],
+    ["n", "北"],
+    ["ne", "东北"],
+    ["e", "东"],
+    ["se", "东南"],
+    ["s", "南"],
+    ["sw", "西南"],
+    ["w", "西"],
+] as const;
+for (const [position, resizeDirection] of handleDirections) {
+    const handle = button()
+        .attr({
+            type: "button",
+            ariaLabel: `${t("크기 조절")} ${position}`,
+            tabIndex: -1,
+        })
+        .class("capture-handle", `handle-${position}`)
+        .addInto(selectionHandles);
+    let drag: { rect: rect; origin: editor_position } | null = null;
+    handle.on("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeRadial();
+        drag = { rect: [...finalRect], origin: src2pXY(e2srcPoint(e)) };
+        handle.el.setPointerCapture(e.pointerId);
+    });
+    handle.on("pointermove", (e) => {
+        if (!drag) return;
+        direction = resizeDirection;
+        moveRect(drag.rect, drag.origin, src2pXY(e2srcPoint(e)));
+        drawClip();
+        followBar();
+    });
+    const finish = () => {
+        if (!drag) return;
+        drag = null;
+        finalRectFix();
+        hisPush();
+        drawClip();
+        followBar();
+    };
+    handle.on("pointerup", finish).on("pointercancel", finish);
+}
+
+function syncSelectionHandles() {
+    selectionHandles.el.hidden =
+        !isRect ||
+        selecting ||
+        nowType !== "select" ||
+        !finalRect[2] ||
+        !finalRect[3];
+    selectionHandles.style({
+        left: `${(finalRect[0] + editorP.x) * editorP.zoom}px`,
+        top: `${(finalRect[1] + editorP.y) * editorP.zoom}px`,
+        width: `${finalRect[2] * editorP.zoom}px`,
+        height: `${finalRect[3] * editorP.zoom}px`,
+    });
+}
+
+window.addEventListener("resize", () => {
+    updateCaptureToolbarFit();
+    if (!mainCanvas.width) return;
+    whBar(finalRect);
+    syncSelectionHandles();
+    followBar();
+    if (radialOpen) openRadial(radialOrigin.x, radialOrigin.y, radialPage);
+});
 
 let nowScreenId = 0;
 
@@ -4242,7 +4681,7 @@ let theColor: [number, number, number, number] | null = null;
 let theTextColor: [string, string] = ["", ""];
 type colorFormat = setting["取色器"]["默认格式"];
 type colorRGBA = [number, number, number, number];
-const undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
+let undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
     rect: [0, 0, mainCanvas.width, mainCanvas.height] as rect,
     canvas: {},
 });
@@ -4279,9 +4718,6 @@ let mouseBarX = 0;
 let mouseBarY = 0;
 
 // 工具栏跟随
-const followBarList = [[0, 0]];
-let drawBarPosi: "right" | "left" = "right";
-const barGap = 8;
 
 // 移动画画栏
 let drawBarMovingXY: [number, number] | null = null;
@@ -4425,121 +4861,175 @@ const clipReady = new Promise<void>((r) => {
     resolveClipReady = r;
 });
 
-renderOn("clip_init", async ([_displays, imgBuffer, mainid, act, project]) => {
-    await clipReady;
-    const wx = await screenShots(_displays, imgBuffer); // 只是截屏 也可能是小图片
-    allScreens = wx.screen;
-    const mainId = mainid;
-    const i = getNowScreen(mainId);
-    windows = wx.window.map((w) => {
-        w.rect.x -= i.bounds?.x ?? 0;
-        w.rect.y -= i.bounds?.y ?? 0;
-        return w;
-    });
-    console.log(allScreens, windows);
-    await setScreen(i);
-    const nowScreen = _displays.find((i) => i.id === mainId) || _displays[0]; // 非截屏，是屏幕
-    const xy = { x: 0, y: 0 };
-    if (wx.type === "normal") {
-        zoomW = i.size.width;
-        ratio = i.scaleFactor;
-    } else if (wx.type === "command") {
-        const x = store.get("自定义屏幕属性");
-        const s = x.find((i) => i.id === mainId);
-        zoomW = i.size.width;
-        if (s) ratio = s.scaleFactor;
-        else ratio = nowScreen.scaleFactor;
-    } else if (wx.type === "img")
-        if (
-            i.size.width < nowScreen.size.width ||
-            i.size.height < nowScreen.size.height
-        ) {
-            const x =
-                (nowScreen.size.width * window.devicePixelRatio) / 2 -
-                i.size.width / 2;
-            const y =
-                (nowScreen.size.height * window.devicePixelRatio) / 2 -
-                i.size.height / 2;
-            xy.x = x;
-            xy.y = y;
-            zoomW = i.size.width;
-            ratio = devicePixelRatio;
-        }
-    if (!zoomW) zoomW = mainCanvas.width;
-    setEditorP(1 / ratio, 0, 0);
-
-    document.body.style.opacity = "";
-
-    renderSend("clip_show", []);
-    const screensEl = toolsX.screens.el;
-    if (allScreens.length > 1) {
-        let minX = 0;
-        let maxX = 0;
-        let minY = 0;
-        let maxY = 0;
-        for (const i of allScreens) {
-            const right = i.bounds.x + i.bounds.width;
-            const bottom = i.bounds.y + i.bounds.height;
-            maxX = Math.max(maxX, right);
-            maxY = Math.max(maxY, bottom);
-            minX = Math.min(minX, i.bounds.x);
-            minY = Math.min(minY, i.bounds.y);
-        }
-        const tWidth = maxX - minX;
-        const tHeight = maxY - minY;
-        const el = view();
-        for (const i of allScreens) {
-            const x = (i.bounds.x - minX) / tWidth;
-            const y = (i.bounds.y - minY) / tHeight;
-            const width = i.bounds.width / tWidth;
-            const height = i.bounds.height / tHeight;
-            const div = view().style({
-                width: `${width * 100}%`,
-                height: `${height * 100}%`,
-                left: `${x * 100}%`,
-                top: `${y * 100}%`,
+renderOn(
+    "clip_init",
+    async ([_displays, imgBuffer, mainid, act, project, context]) => {
+        const initSequence = ++captureInitSequence;
+        const initialize = async () => {
+            await clipReady;
+            await captureWorkspace?.flush();
+            if (initSequence !== captureInitSequence) return;
+            captureSourceContext = project?.source ??
+                context?.source ?? {
+                    kind: imgBuffer ? "import" : "capture",
+                    capturedAt: new Date().toISOString(),
+                };
+            immutableSourceData = undefined;
+            batchRegions = [];
+            captureWorkspace?.begin(
+                project?.draftId
+                    ? {
+                          id: project.draftId,
+                          revision: project.draftRevision ?? 1,
+                      }
+                    : undefined,
+            );
+            await captureWorkspace?.loadPreferences();
+            const wx = await screenShots(_displays, imgBuffer); // 只是截屏 也可能是小图片
+            if (initSequence !== captureInitSequence) return;
+            screenShotCache.clear();
+            fabricCanvas.clear();
+            allScreens = wx.screen;
+            const mainId = mainid;
+            const i = getNowScreen(mainId);
+            windows = wx.window.map((w) => {
+                w.rect.x -= i.bounds?.x ?? 0;
+                w.rect.y -= i.bounds?.y ?? 0;
+                return w;
             });
-            if (i.id === nowScreenId) {
-                div.el.classList.add("now_screen");
+            console.log(allScreens, windows);
+            await setScreen(i);
+            if (initSequence !== captureInitSequence) return;
+            const nowScreen =
+                _displays.find((i) => i.id === mainId) || _displays[0]; // 非截屏，是屏幕
+            const xy = { x: 0, y: 0 };
+            if (wx.type === "normal") {
+                zoomW = i.size.width;
+                ratio = i.scaleFactor;
+            } else if (wx.type === "command") {
+                const x = store.get("自定义屏幕属性");
+                const s = x.find((i) => i.id === mainId);
+                zoomW = i.size.width;
+                if (s) ratio = s.scaleFactor;
+                else ratio = nowScreen.scaleFactor;
+            } else if (wx.type === "img")
+                if (
+                    i.size.width < nowScreen.size.width ||
+                    i.size.height < nowScreen.size.height
+                ) {
+                    const x =
+                        (nowScreen.size.width * window.devicePixelRatio) / 2 -
+                        i.size.width / 2;
+                    const y =
+                        (nowScreen.size.height * window.devicePixelRatio) / 2 -
+                        i.size.height / 2;
+                    xy.x = x;
+                    xy.y = y;
+                    zoomW = i.size.width;
+                    ratio = devicePixelRatio;
+                }
+            if (!zoomW) zoomW = mainCanvas.width;
+            setEditorP(1 / ratio, 0, 0);
+
+            document.body.style.opacity = "";
+
+            renderSend("clip_show", [context?.requestId]);
+            const screensEl = toolsX.screens.el;
+            if (allScreens.length > 1) {
+                let minX = 0;
+                let maxX = 0;
+                let minY = 0;
+                let maxY = 0;
+                for (const i of allScreens) {
+                    const right = i.bounds.x + i.bounds.width;
+                    const bottom = i.bounds.y + i.bounds.height;
+                    maxX = Math.max(maxX, right);
+                    maxY = Math.max(maxY, bottom);
+                    minX = Math.min(minX, i.bounds.x);
+                    minY = Math.min(minY, i.bounds.y);
+                }
+                const tWidth = maxX - minX;
+                const tHeight = maxY - minY;
+                const el = view();
+                for (const i of allScreens) {
+                    const x = (i.bounds.x - minX) / tWidth;
+                    const y = (i.bounds.y - minY) / tHeight;
+                    const width = i.bounds.width / tWidth;
+                    const height = i.bounds.height / tHeight;
+                    const div = view().style({
+                        width: `${width * 100}%`,
+                        height: `${height * 100}%`,
+                        left: `${x * 100}%`,
+                        top: `${y * 100}%`,
+                    });
+                    if (i.id === nowScreenId) {
+                        div.el.classList.add("now_screen");
+                    }
+                    el.add(div);
+                    div.on("click", () => {
+                        el.query(".now_screen")?.el.classList.remove(
+                            "now_screen",
+                        );
+                        div.class("now_screen");
+                        setScreen(i);
+                    });
+                }
+                screensEl.clear().add(el);
+            } else {
+                screensEl.el.style.display = "none";
             }
-            el.add(div);
-            div.on("click", () => {
-                el.query(".now_screen")?.el.classList.remove("now_screen");
-                div.class("now_screen");
-                setScreen(i);
+
+            setDefaultAction(act);
+
+            getWin();
+
+            if (project) {
+                const r = project.rect;
+                if (
+                    Array.isArray(r) &&
+                    r.length === 4 &&
+                    r.every((n) => Number.isFinite(n))
+                ) {
+                    finalRect = [r[0], r[1], r[2], r[3]];
+                    rectSelect = true;
+                    finalRectFix();
+                }
+                if (project.canvas && fabricCanvas)
+                    await fabricCanvas.loadFromJSON(project.canvas as string);
+            }
+            if (initSequence !== captureInitSequence) return;
+
+            drawClipRect();
+            setTimeout(() => {
+                whBar(finalRect);
+            }, 0);
+            rightKey = false;
+            changeRightBar(false);
+            undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
+                rect: [...finalRect],
+                canvas: fabricCanvas.toJSON(),
             });
+            captureWorkspace?.initialized();
+            followBar();
+            if (context?.requestId) {
+                renderSend("capture_ready", [context.requestId]);
+                requestAnimationFrame(() =>
+                    requestAnimationFrame(() =>
+                        renderSend("capture_shown", [context.requestId]),
+                    ),
+                );
+            }
+        };
+        captureInitQueue = captureInitQueue
+            .catch(() => undefined)
+            .then(initialize);
+        try {
+            await captureInitQueue;
+        } catch (error) {
+            captureWorkspace?.showError(error);
         }
-        screensEl.clear().add(el);
-    } else {
-        screensEl.el.style.display = "none";
-    }
-
-    setDefaultAction(act);
-
-    getWin();
-
-    if (project) {
-        const r = project.rect;
-        if (
-            Array.isArray(r) &&
-            r.length === 4 &&
-            r.every((n) => Number.isFinite(n))
-        ) {
-            finalRect = [r[0], r[1], r[2], r[3]];
-            rectSelect = true;
-            finalRectFix();
-        }
-        if (project.canvas && fabricCanvas)
-            fabricCanvas.loadFromJSON(project.canvas as string);
-    }
-
-    drawClipRect();
-    setTimeout(() => {
-        whBar(finalRect);
-    }, 0);
-    rightKey = false;
-    changeRightBar(false);
-});
+    },
+);
 
 renderOn("clip_stop_long", () => stopLong());
 
@@ -4732,24 +5222,24 @@ const finishLongB = longTip.els.finish.el;
 
 const lr = longTip.els.rect;
 
-trackPoint(pack(radialFab.el), {
+trackPoint(pack(toolBar), {
     start: (e) => {
         if (e.ctrlKey) {
-            radialFab.el.style.transition = "none";
+            toolBar.style.transition = "none";
             return {
-                x: radialFab.el.offsetLeft,
-                y: radialFab.el.offsetTop,
+                x: toolBar.offsetLeft,
+                y: toolBar.offsetTop,
             };
         }
         return null;
     },
     ing: (p) => {
-        radialFab.el.style.left = `${p.x}px`;
-        radialFab.el.style.top = `${p.y}px`;
+        toolBar.style.left = `${p.x}px`;
+        toolBar.style.top = `${p.y}px`;
         trackLocation();
     },
     end: () => {
-        radialFab.el.style.transition = "";
+        toolBar.style.transition = "";
     },
 });
 
@@ -4858,13 +5348,21 @@ clipEl.onmousedown = (e) => {
         inRect = isPointInPolygon({ x: e.offsetX, y: e.offsetY });
     }
     if (e.button === 0) {
+        if (e.shiftKey && finalRect[2] > 1 && finalRect[3] > 1 && rectSelect) {
+            if (batchRegions.length >= 11) {
+                captureWorkspace?.showStatus(
+                    t("한 번에 12개 영역까지 보관할 수 있습니다."),
+                );
+                return;
+            }
+            batchRegions.push([...finalRect]);
+            captureWorkspace?.nextRegion();
+            inRect = false;
+        }
         clipStart(e, inRect);
     }
-    if (e.button === 2) {
-        if (store.get("鼠标快捷键.右键") === "取色器") pickColor(e);
-        else toolsX.close.f();
-    }
-    radialFab.el.style.pointerEvents =
+    if (e.button !== 0) return;
+    toolBar.style.pointerEvents =
         drawBar.style.pointerEvents =
         whEl.el.style.pointerEvents =
             "none";
@@ -4893,7 +5391,7 @@ document.onmouseup = (e) => {
             scheduleLiveTranslation();
         }
     }
-    radialFab.el.style.pointerEvents = whEl.el.style.pointerEvents = "auto";
+    toolBar.style.pointerEvents = whEl.el.style.pointerEvents = "auto";
     drawBar.style.pointerEvents = drawBarOpen ? "auto" : "none";
 
     down = false;
@@ -5057,10 +5555,10 @@ document.onmousemove = (e) => {
             });
 
             const isDrawBar = drawBar.contains(ev.target as HTMLElement);
-            const isToolBar = radialFab.el.contains(ev.target as HTMLElement);
+            const isToolBar = toolBar.contains(ev.target as HTMLElement);
             mouseBarEl.el.classList.toggle(
                 "mouse_bar_hide",
-                isDrawBar || isToolBar,
+                isDrawBar || isToolBar || radialOpen || (!selecting && !moving),
             );
 
             // 画板栏移动
@@ -5452,5 +5950,156 @@ hotkeys("Ctrl+v", () => {
 });
 
 setEditType("select", editType.select);
+
+captureWorkspace = createCaptureWorkspace({
+    snapshot: (includeSource) => {
+        if (
+            !mainCanvas.width ||
+            !mainCanvas.height ||
+            finalRect[2] < 1 ||
+            finalRect[3] < 1 ||
+            selecting
+        )
+            return null;
+        if (mainCanvas.width * mainCanvas.height > 32_000_000)
+            throw new Error(t("임시 편집 원본이 너무 큽니다."));
+        if (includeSource)
+            immutableSourceData ??= mainCanvas.toDataURL("image/png");
+        return {
+            sourceDataURL: includeSource ? immutableSourceData : undefined,
+            previewDataURL: getClipPhoto().toDataURL("image/png"),
+            canvas: fabricCanvas.toJSON(),
+            rect: {
+                x: finalRect[0],
+                y: finalRect[1],
+                width: finalRect[2],
+                height: finalRect[3],
+            },
+            source: captureSourceContext,
+        };
+    },
+    screenRect: (r) => ({
+        x: (r.x + editorP.x) * editorP.zoom,
+        y: (r.y + editorP.y) * editorP.zoom,
+        width: r.width * editorP.zoom,
+        height: r.height * editorP.zoom,
+    }),
+    copiedText: writeText,
+    preferencesChanged: (value) => {
+        capturePreferences = value;
+        rebuildCaptureTools();
+        followBar();
+    },
+    settleElement: () => selectionHandles.el,
+    redact: (lines: OcrTextLine[], r) => {
+        for (const line of lines) {
+            const pad = Math.max(2, line.box.height * 0.15);
+            const mask = new Rect({
+                left: r.x + line.box.x - pad,
+                top: r.y + line.box.y - pad,
+                width: line.box.width + pad * 2,
+                height: line.box.height + pad * 2,
+                fill: "#111114",
+                originX: "left",
+                originY: "top",
+                canChangeFill: true,
+                形状: "rect",
+            });
+            shapes.push(mask);
+            fabricCanvas.add(mask);
+        }
+        fabricCanvas.renderAll();
+        hisPush();
+    },
+});
+Object.assign(window, {
+    captureDraftBridge: {
+        flush: () => captureWorkspace?.flush(),
+        stage: () => captureWorkspace?.stage(),
+        info: () => ({
+            id: captureWorkspace?.queue.current?.id,
+            revision: captureWorkspace?.queue.current?.revision,
+            dirty: captureWorkspace?.queue.current?.dirty,
+            savedIds: captureWorkspace?.queue.savedIds,
+        }),
+    },
+});
+fabricCanvas.on("object:modified", () => captureWorkspace?.changed());
+fabricCanvas.on("object:added", () => captureWorkspace?.changed());
+fabricCanvas.on("object:removed", () => captureWorkspace?.changed());
+fabricCanvas.on("text:changed", () => captureWorkspace?.changed());
+
+document.addEventListener(
+    "pointerdown",
+    (event) => {
+        if (
+            event.button !== 2 ||
+            longInited ||
+            (event.target as HTMLElement).closest(
+                "input,textarea,#quick_toolbar,#radial_menu,#draw_bar,#capture_inline_shelf,#capture_palette,#capture_redact_review,#center_bar",
+            )
+        )
+            return;
+        event.preventDefault();
+        captureWorkspace?.dismiss();
+        rightKey = false;
+        changeRightBar(false);
+        gestureOrigin = {
+            x: event.clientX,
+            y: event.clientY,
+            moved: false,
+            target: null,
+        };
+        openRadial(event.clientX, event.clientY);
+    },
+    true,
+);
+document.addEventListener(
+    "pointermove",
+    (event) => {
+        if (!gestureOrigin) return;
+        gestureOrigin.moved ||=
+            Math.hypot(
+                event.clientX - gestureOrigin.x,
+                event.clientY - gestureOrigin.y,
+            ) > 20;
+        let nearest: HTMLButtonElement | null = null;
+        let distance = 48;
+        for (const control of radialMenu.el.querySelectorAll<HTMLButtonElement>(
+            ".radial_item",
+        )) {
+            control.classList.remove("is-gesture-target");
+            const d = Math.hypot(
+                event.clientX - Number.parseFloat(control.style.left),
+                event.clientY - Number.parseFloat(control.style.top),
+            );
+            if (d < distance) {
+                nearest = control;
+                distance = d;
+            }
+        }
+        nearest?.classList.add("is-gesture-target");
+        gestureOrigin.target =
+            (nearest?.dataset.captureAction as CaptureTool) ?? null;
+    },
+    true,
+);
+document.addEventListener(
+    "pointerup",
+    (event) => {
+        if (event.button !== 2 || !gestureOrigin) return;
+        const gesture = gestureOrigin;
+        gestureOrigin = null;
+        suppressContextUntil = Date.now() + 350;
+        if (gesture.moved) {
+            if (gesture.target) {
+                const target = gesture.target;
+                if (target !== "more") closeRadial();
+                runCaptureTool(target, radialOrigin);
+            } else closeRadial();
+        }
+    },
+    true,
+);
 
 resolveClipReady();

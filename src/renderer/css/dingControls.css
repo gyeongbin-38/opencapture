@@ -1,0 +1,198 @@
+.pin-toolbar-host {
+    left: 8px;
+    top: 8px;
+    width: max-content;
+    max-width: calc(100vw - 16px);
+    pointer-events: none;
+}
+
+.pin-toolbar {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 5px;
+    max-width: calc(100vw - 16px);
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 11px;
+    background: rgb(12 12 14 / 94%);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 38%);
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 130ms ease, transform 180ms
+        cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pin-toolbar.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.pin-core-actions,
+.pin-controls-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+.pin-core-actions > button,
+.pin-radial-menu button {
+    width: 29px;
+    min-width: 29px;
+    height: 29px !important;
+    padding: 6px;
+    border: 0;
+    border-radius: 7px;
+    color: #f5f5f6;
+    background: transparent;
+}
+
+.pin-core-actions > button:hover,
+.pin-core-actions > button[aria-pressed="true"],
+.pin-core-actions > button[aria-expanded="true"] {
+    background: rgb(255 255 255 / 12%);
+}
+
+.pin-core-actions .icon,
+.pin-radial-menu .icon {
+    width: 17px;
+    height: 17px;
+    filter: invert(1);
+}
+
+.pin-controls-panel {
+    display: none;
+    min-height: 28px;
+    padding: 0 4px 4px;
+    border-bottom: 1px solid rgb(255 255 255 / 9%);
+    color: rgb(255 255 255 / 76%);
+    font: 500 11px / 1 system-ui, sans-serif;
+}
+
+.pin-controls-panel.is-open {
+    display: flex;
+    animation: pin-controls-in 140ms ease both;
+}
+
+.pin-controls-panel > div {
+    gap: 3px;
+    min-width: 76px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    background: rgb(255 255 255 / 6%);
+}
+
+.pin-controls-panel input[type="range"] {
+    width: clamp(72px, 18vw, 118px);
+    accent-color: #f4f4f5;
+}
+
+.pin-controls-panel input[type="range"] + * {
+    min-width: 34px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.pin-radial-menu {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.pin-radial-menu.is-open {
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.pin-radial-center,
+.pin-radial-action {
+    position: absolute;
+    margin: -17px 0 0 -17px;
+    border: 1px solid rgb(255 255 255 / 10%) !important;
+    border-radius: 999px !important;
+    background: rgb(12 12 14 / 96%) !important;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 42%);
+}
+
+.pin-radial-center {
+    z-index: 2;
+    width: 38px !important;
+    height: 38px !important;
+    margin: -19px 0 0 -19px;
+}
+
+.pin-radial-action {
+    opacity: 0;
+    transform: translate(var(--pin-radial-x, 0), var(--pin-radial-y, 0))
+        scale(0.55);
+}
+
+.pin-radial-menu.is-open .pin-radial-action {
+    animation: pin-radial-in 240ms cubic-bezier(0.18, 0.82, 0.2, 1.12)
+        var(--pin-radial-delay, 0ms) both;
+}
+
+.pin-radial-action:hover,
+.pin-radial-action:focus-visible,
+.pin-radial-action[aria-pressed="true"],
+.pin-radial-center:hover,
+.pin-radial-center:focus-visible {
+    background: #242428 !important;
+    outline: 1px solid rgb(255 255 255 / 28%);
+}
+
+@keyframes pin-controls-in {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
+}
+
+@keyframes pin-radial-in {
+    from {
+        opacity: 0;
+        transform: scale(0.55);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+body.pin-motion-reduced .pin-toolbar,
+body.pin-motion-reduced .pin-controls-panel,
+body.pin-motion-reduced .pin-radial-action,
+body.pin-feedback-disabled .pin-toolbar,
+body.pin-feedback-disabled .pin-controls-panel,
+body.pin-feedback-disabled .pin-radial-action {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body:not(.pin-motion-full) .pin-toolbar,
+    body:not(.pin-motion-full) .pin-controls-panel,
+    body:not(.pin-motion-full) .pin-radial-action {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* biome-ignore lint/correctness/noUnknownMediaFeatureName: Chromium exposes the OS transparency preference. */
+@media (prefers-reduced-transparency: reduce) {
+    .pin-toolbar,
+    .pin-radial-center,
+    .pin-radial-action {
+        background: #0c0c0e !important;
+        backdrop-filter: none;
+    }
+}

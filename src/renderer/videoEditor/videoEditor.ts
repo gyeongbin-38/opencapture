@@ -3649,7 +3649,7 @@ const timeLineFrameHl = addClass(
 const exportConfigEls = {
     gif: (() => {
         const el = view("x").style({ paddingInline: "8px" });
-        const dither = label([check("dither"), "平滑颜色"]).style({
+        const dither = label([check("dither"), t("平滑颜色")]).style({
             display: "flex",
             alignItems: "center",
         });

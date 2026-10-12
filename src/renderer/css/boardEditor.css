@@ -1,0 +1,305 @@
+.board-editor {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.board-editor__node {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.board-editor__node g[data-node-id] {
+    pointer-events: auto;
+}
+
+.board-editor__overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 10000;
+}
+
+.board-editor__overlay.is-drawing {
+    cursor: crosshair;
+    pointer-events: auto;
+}
+
+.board-editor g[data-node-id] {
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.board-editor g.is-selected > :first-child {
+    filter: drop-shadow(0 0 3px color-mix(in srgb, #7c5cff 70%, transparent));
+}
+
+.board-editor g.is-temporary {
+    opacity: 0.72;
+}
+
+.board-editor__vertex {
+    fill: #0f1014;
+    stroke: #fff;
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    cursor: move;
+    pointer-events: auto;
+}
+
+.board-editor__toolbar {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: max-content;
+    max-width: min(760px, calc(100vw - 32px));
+    min-height: 48px;
+    padding: 4px;
+    color: #f7f7f9;
+    background: color-mix(in srgb, #111319 92%, transparent);
+    border: 1px solid #ffffff18;
+    border-radius: 11px;
+    box-shadow: 0 12px 30px #0008;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    white-space: nowrap;
+    z-index: 10020;
+}
+
+.board-editor__toolbar button,
+.board-editor__toolbar summary {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0 11px;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    font: 500 12px / 1 system-ui, sans-serif;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.board-editor__toolbar button:hover,
+.board-editor__toolbar button:focus-visible,
+.board-editor__toolbar button.is-active,
+.board-editor__toolbar summary:hover {
+    background: #ffffff13;
+    outline: none;
+}
+
+.board-editor__primary {
+    background: #7657ff !important;
+}
+
+.board-editor__drawer {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(86px, 1fr));
+    gap: 3px;
+    width: min(240px, calc(100vw - 24px));
+    max-height: min(360px, 50vh);
+    padding: 7px;
+    overflow: auto;
+    background: #111319f5;
+    border: 1px solid #ffffff18;
+    border-radius: 11px;
+    box-shadow: 0 14px 34px #0009;
+    transform: translateX(-50%);
+}
+
+.board-editor__drawer[hidden] {
+    display: none;
+}
+
+.board-editor__properties {
+    position: static;
+}
+
+.board-editor__properties > summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+}
+
+.board-editor__context {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+    gap: 8px;
+    box-sizing: border-box;
+    width: min(420px, calc(100vw - 24px));
+    max-height: min(360px, 50vh);
+    padding: 10px;
+    overflow: auto;
+    background: #111319f7;
+    border: 1px solid #ffffff18;
+    border-radius: 11px;
+    box-shadow: 0 14px 34px #0009;
+    transform: translateX(-50%);
+}
+
+.board-editor__control-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+    padding: 7px;
+    background: #ffffff08;
+    border-radius: 9px;
+}
+
+.board-editor__control-title {
+    flex: 0 0 100%;
+    color: #ffffff8c;
+    font: 600 10px / 1.2 system-ui, sans-serif;
+    letter-spacing: 0.02em;
+}
+
+.board-editor__field {
+    display: grid;
+    grid-template-columns: auto minmax(48px, 1fr);
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    color: #ffffffb8;
+    font: 500 11px / 1 system-ui, sans-serif;
+    white-space: nowrap;
+}
+
+.board-editor__control-group > button {
+    flex: 1 0 auto;
+}
+
+.board-editor__number,
+.board-editor__color {
+    box-sizing: border-box;
+    width: 58px;
+    height: 40px;
+    padding: 3px 5px;
+    color: inherit;
+    background: #ffffff0c;
+    border: 1px solid #ffffff16;
+    border-radius: 7px;
+    font: 500 11px / 1 system-ui, sans-serif;
+}
+
+.board-editor__color {
+    width: 40px;
+    padding: 3px;
+}
+
+.board-editor__layers {
+    position: static;
+}
+
+.board-editor__layers > summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+}
+
+.board-editor__layer-list {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    width: min(280px, calc(100vw - 24px));
+    max-height: min(380px, 55vh);
+    padding: 5px;
+    overflow: auto;
+    background: #111319f7;
+    border: 1px solid #ffffff18;
+    border-radius: 11px;
+    box-shadow: 0 14px 34px #0009;
+    transform: translateX(-50%);
+}
+
+@media (max-width: 520px) {
+    .board-editor__toolbar {
+        max-width: calc(100vw - 16px);
+        gap: 2px;
+        padding: 3px;
+    }
+
+    .board-editor__toolbar button,
+    .board-editor__toolbar summary {
+        min-width: 36px;
+        padding-inline: 8px;
+        font-size: 11px;
+    }
+
+    .board-editor__context {
+        grid-template-columns: 1fr;
+        width: min(300px, calc(100vw - 16px));
+    }
+
+    .board-editor__control-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .board-editor__control-title {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (pointer: coarse) {
+    .board-editor__toolbar button,
+    .board-editor__toolbar summary,
+    .board-editor__number,
+    .board-editor__color {
+        min-height: 44px;
+    }
+}
+
+.board-editor__layer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 7px;
+}
+
+.board-editor__layer:hover {
+    background: #ffffff0b;
+}
+
+.board-editor__layer-name {
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .board-editor__drawer:not([hidden]),
+    .board-editor__properties[open] .board-editor__context,
+    .board-editor__layer-list {
+        animation: board-editor-reveal 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        transform-origin: bottom center;
+    }
+}
+
+@keyframes board-editor-reveal {
+    from {
+        opacity: 0;
+        translate: 0 5px;
+    }
+}

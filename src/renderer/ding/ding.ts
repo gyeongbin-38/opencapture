@@ -10,12 +10,13 @@ import {
     ele,
     image,
     initDKH,
-    spacer,
+    input,
     trackPoint,
     txt,
     view,
 } from "dkh-ui";
 import xtranslator from "xtranslator";
+import { captureDock, radialLayout } from "../../../lib/captureControls";
 import { PinBlinkController, PinFocusState } from "../../../lib/pinState";
 import store from "../../../lib/store/renderStore";
 import { Class, cssVar, getImgUrl, initStyle, setTitle } from "../root/root";
@@ -24,8 +25,14 @@ import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import { t } from "../../../lib/translate/translate";
 import type { DingStart, Dire } from "../../ShareTypes";
 import type { IconType } from "../../iconTypes";
+import { createImageHold } from "../lib/imageHold";
 import { loadTranslator } from "../lib/translate";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
+import {
+    pinOutputSize,
+    transformPinPoint,
+    withDerivedPinImage,
+} from "./pinRendering";
 
 initStyle(store);
 
@@ -46,6 +53,8 @@ const focusButtons = new Map<string, HTMLButtonElement>();
 const blinkButtons = new Map<string, HTMLButtonElement>();
 const ignoreButtons = new Map<string, HTMLButtonElement>();
 const ignoredPins = new Set<string>();
+const pinDisposers = new Map<string, Set<() => void>>();
+const pinToolbarPositioners = new Map<string, () => void>();
 const blinkState = new PinBlinkController((id, visible) => {
     const image = elFromId(id)?.query(".img")?.el;
     if (image) image.style.visibility = visible ? "" : "hidden";
@@ -93,11 +102,52 @@ renderOn("dingShare", ([data]) => {
 });
 
 const { ipcRenderer } = require("electron") as typeof import("electron");
+void ipcRenderer
+    .invoke("oc:preferences:get")
+    .then(
+        (preferences: {
+            feedback?: {
+                visual?: boolean;
+                motion?: "system" | "full" | "reduced";
+            };
+        }) => {
+            const feedback = preferences.feedback;
+            document.body.classList.toggle(
+                "pin-feedback-disabled",
+                feedback?.visual === false,
+            );
+            document.body.classList.toggle(
+                "pin-motion-reduced",
+                feedback?.motion === "reduced",
+            );
+            document.body.classList.toggle(
+                "pin-motion-full",
+                feedback?.motion === "full",
+            );
+        },
+    )
+    .catch(() => {
+        // Preferences are optional for legacy pin windows; CSS defaults stay active.
+    });
 ipcRenderer.on("oc:pins-control", (_event, command) => {
     if (command === "restore") restorePinEffects();
 });
 
 const dives: ElType<HTMLElement>[] = [];
+
+type SavedDingPin = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    src: string;
+    opacity: number;
+    z: number;
+};
+let sessionDirty = true;
+function markSessionDirty() {
+    sessionDirty = true;
+}
 
 let changing: { x: number; y: number } | null = null;
 const dingData: Map<
@@ -119,15 +169,20 @@ const setNewDing = (
     url: string,
     type: "translate" | "ding",
 ) => {
+    const previousDisposers = pinDisposers.get(wid);
+    if (previousDisposers) for (const dispose of previousDisposers) dispose();
+    const disposers = new Set<() => void>();
+    pinDisposers.set(wid, disposers);
     dingData.set(wid, {
         rect: [x, y, w, h],
         url,
         translation: "",
         isTranslate: false,
     });
+    markSessionDirty();
     const div = view()
         .attr({ id: wid, tabIndex: 0 })
-        .style({ position: "fixed", overflow: "hidden" })
+        .style({ position: "fixed", overflow: "visible" })
         .class(dingPhotoClass);
     dives.push(div);
     if (store.get("贴图.窗口.提示")) div.class(dingPhotoHightClass);
@@ -142,37 +197,28 @@ const setNewDing = (
         .class("img")
         .add(img)
         .class(imageClass)
+        .style({ overflow: "hidden" })
         .class(Class.transition);
-    const toolBar = view().style({
-        overflow: "hidden",
-        width: "100%",
-        position: "absolute",
+    const toolBar = view().class("pin-toolbar-host").style({
+        overflow: "visible",
+        position: "fixed",
         zIndex: 2,
     });
     const toolBarC = view("x")
-        .attr({ id: "tool_bar_c" })
-        .style({
-            padding: "4px",
-            gap: "4px",
-            boxSizing: "border-box",
-            width: "100%",
-            alignItems: "center",
-            userSelect: "none",
-        })
-        .class(Class.glassBar)
-        .class(toolBarIClass)
+        .attr({ id: `pin-toolbar-${wid}` })
+        .class("pin-toolbar", toolBarIClass)
         .bindSet((v: { forceShow?: boolean; show?: boolean }, el) => {
             if (v.forceShow !== undefined)
                 el.setAttribute("data-force-show", String(v.forceShow));
             if (v.show !== undefined)
                 el.setAttribute("data-show", String(v.show));
             if (el.getAttribute("data-force-show") === "true") {
-                el.style.transform = "translateY(0)";
+                el.classList.add("is-visible");
             } else {
-                el.style.transform =
-                    el.getAttribute("data-show") === "true"
-                        ? "translateY(0)"
-                        : "translateY(-105%)";
+                el.classList.toggle(
+                    "is-visible",
+                    el.getAttribute("data-show") === "true",
+                );
             }
         })
         .sv({ show: false })
@@ -192,11 +238,14 @@ const setNewDing = (
         },
         {
             "& .icon": {
-                width: "32px",
+                width: "18px",
                 position: "initial",
             },
         },
     );
+    const controlsPanel = view("x")
+        .class("pin-controls-panel")
+        .attr({ role: "group", ariaLabel: "핀 크기와 투명도" });
 
     // 透明
     const opacityEl = txt()
@@ -222,10 +271,11 @@ const setNewDing = (
         },
         end: () => {
             toolBarC.sv({ forceShow: false });
+            markSessionDirty();
         },
     });
 
-    toolBarC.add(opacityElP);
+    controlsPanel.add(opacityElP);
     // 大小
     const sizeInput = txt()
         .bindSet((v: string, el) => {
@@ -235,20 +285,35 @@ const setNewDing = (
             return Number.parseInt(el.innerText);
         })
         .sv("100");
+    const sizeRange = input("range")
+        .attr({
+            min: "10",
+            max: "300",
+            step: "5",
+            ariaLabel: "핀 크기",
+        })
+        .sv("100")
+        .on("input", () => {
+            sizeInput.sv(sizeRange.el.value);
+            sizeChange();
+        });
     const sizeEl = view("x")
         .class(concorlClass)
         .attr({ title: "大小" })
-        .add([iconEl("size"), sizeInput]);
+        .add([iconEl("size"), sizeRange, sizeInput]);
 
     trackPoint(sizeEl, {
-        start: () => {
+        start: (event) => {
+            if ((event.target as HTMLElement).closest('input[type="range"]'))
+                return false;
             toolBarC.sv({ forceShow: true });
             return { x: 0, y: 0, data: sizeInput.gv };
         },
         ing: (p, _e, { startData }) => {
             const d = Math.round(p.x / 2);
-            const newS = Math.max(0, startData + d);
+            const newS = Math.max(10, Math.min(300, startData + d));
             sizeInput.sv(newS.toString());
+            sizeRange.sv(newS.toString());
             sizeChange();
         },
         end: () => {
@@ -266,7 +331,7 @@ const setNewDing = (
         }
     }
 
-    toolBarC.add(sizeEl);
+    controlsPanel.add(sizeEl);
 
     const sizePresets = [50, 75, 100, 150];
     sizeEl.el.oncontextmenu = (e) => {
@@ -278,14 +343,29 @@ const setNewDing = (
                     sizePresets.length
             ];
         sizeInput.sv(String(next));
+        sizeRange.sv(String(next));
         sizeChange();
     };
     sizeEl.el.title = `${sizeEl.el.title} (우클릭: ${sizePresets.join("/")})`;
 
     const pinFx = { rot: 0, flip: false };
+    let disposed = false;
+    let cutoutGeneration = 0;
+    let cutoutBusy = false;
+    let visualRevision = 0;
     const applyPinFx = () => {
+        const quarterTurn = pinFx.rot % 180 !== 0;
+        const fit = quarterTurn
+            ? Math.min(
+                  div.el.clientWidth / Math.max(1, div.el.clientHeight),
+                  div.el.clientHeight / Math.max(1, div.el.clientWidth),
+              )
+            : 1;
+        const transform = `rotate(${pinFx.rot}deg) scaleX(${pinFx.flip ? -1 : 1}) scale(${fit})`;
         img.el.style.transformOrigin = "center";
-        img.el.style.transform = `rotate(${pinFx.rot}deg) scaleX(${pinFx.flip ? -1 : 1})`;
+        img.el.style.transform = transform;
+        drawCanvas.style.transformOrigin = "center";
+        drawCanvas.style.transform = transform;
     };
 
     const drawCanvas = document.createElement("canvas");
@@ -318,6 +398,7 @@ const setNewDing = (
     drawCanvas.addEventListener("pointerdown", (e) => {
         if (!drawMode || e.button !== 0) return;
         e.stopPropagation();
+        visualRevision += 1;
         pinDrawing = true;
         strokes.push({
             pts: [
@@ -347,9 +428,13 @@ const setNewDing = (
     drawCanvas.addEventListener("pointerup", endPinStroke);
     drawCanvas.addEventListener("pointercancel", endPinStroke);
     drawCanvas.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        strokes.length = 0;
-        redrawPinStrokes();
+        if (e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            visualRevision += 1;
+            strokes.length = 0;
+            redrawPinStrokes();
+        }
     });
     const drawButton = button(iconEl("draw"))
         .attr({ title: "그리기 (우클릭 지우기)" })
@@ -361,15 +446,244 @@ const setNewDing = (
                 : "";
             if (drawMode) redrawPinStrokes();
         });
-    div.el.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && drawMode) drawButton.el.click();
-    });
-    new ResizeObserver(() => {
+    let toolbarPlacementFrame = 0;
+    const updateToolbarPlacement = () => {
+        window.cancelAnimationFrame(toolbarPlacementFrame);
+        toolbarPlacementFrame = window.requestAnimationFrame(() => {
+            if (!div.el.isConnected || !toolBarC.el.isConnected) return;
+            const rect = div.el.getBoundingClientRect();
+            const toolbarSize = {
+                width: toolBarC.el.offsetWidth,
+                height: toolBarC.el.offsetHeight,
+            };
+            if (!toolbarSize.width || !toolbarSize.height) return;
+            const point = captureDock(
+                {
+                    x: rect.left,
+                    y: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                },
+                { width: window.innerWidth, height: window.innerHeight },
+                toolbarSize,
+            );
+            toolBar.style({ left: `${point.x}px`, top: `${point.y}px` });
+        });
+    };
+    pinToolbarPositioners.set(wid, updateToolbarPlacement);
+    const pinResizeObserver = new ResizeObserver(() => {
         if (strokes.length) redrawPinStrokes();
-    }).observe(div.el);
+        updateToolbarPlacement();
+    });
+    pinResizeObserver.observe(div.el);
+    pinResizeObserver.observe(toolBarC.el);
+    const pinPositionObserver = new MutationObserver(updateToolbarPlacement);
+    pinPositionObserver.observe(div.el, {
+        attributes: true,
+        attributeFilter: ["style"],
+    });
+    window.addEventListener("resize", updateToolbarPlacement);
+    disposers.add(() => {
+        window.cancelAnimationFrame(toolbarPlacementFrame);
+        window.removeEventListener("resize", updateToolbarPlacement);
+        pinResizeObserver.disconnect();
+        pinPositionObserver.disconnect();
+        pinToolbarPositioners.delete(wid);
+    });
+
+    const renderPinBlob = async () => {
+        let source = img.el;
+        const composedUrl = getUrl(wid);
+        if (composedUrl && composedUrl !== source.src) {
+            const translated = new Image();
+            translated.src = composedUrl;
+            await translated.decode();
+            source = translated;
+        }
+        if (!source.complete) await source.decode();
+        const sourceSize = {
+            width: source.naturalWidth || div.el.clientWidth,
+            height: source.naturalHeight || div.el.clientHeight,
+        };
+        const outputSize = pinOutputSize(
+            sourceSize.width,
+            sourceSize.height,
+            pinFx.rot,
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = outputSize.width;
+        canvas.height = outputSize.height;
+        const context = canvas.getContext("2d")!;
+        context.save();
+        context.translate(canvas.width / 2, canvas.height / 2);
+        context.rotate((pinFx.rot * Math.PI) / 180);
+        context.scale(pinFx.flip ? -1 : 1, 1);
+        context.drawImage(
+            source,
+            -sourceSize.width / 2,
+            -sourceSize.height / 2,
+            sourceSize.width,
+            sourceSize.height,
+        );
+        context.restore();
+        context.lineWidth = Math.max(2, canvas.width / 240);
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.strokeStyle = "#ff3355";
+        for (const stroke of strokes) {
+            if (stroke.pts.length < 2) continue;
+            context.beginPath();
+            for (const [index, point] of stroke.pts.entries()) {
+                const transformed = transformPinPoint(
+                    point,
+                    sourceSize,
+                    pinFx.rot,
+                    pinFx.flip,
+                );
+                if (index) context.lineTo(transformed.x, transformed.y);
+                else context.moveTo(transformed.x, transformed.y);
+            }
+            context.stroke();
+        }
+        return await new Promise<Blob>((resolve, reject) =>
+            canvas.toBlob(
+                (blob) => (blob ? resolve(blob) : reject(new Error("PNG"))),
+                "image/png",
+            ),
+        );
+    };
+    type PinVisualSnapshot = {
+        url: string;
+        translation: string;
+        isTranslate: boolean;
+        rotation: number;
+        flip: boolean;
+        strokes: { pts: [number, number][] }[];
+    };
+    let cutoutUndo: PinVisualSnapshot | null = null;
+    const visualSnapshot = (): PinVisualSnapshot | null => {
+        const data = dingData.get(wid);
+        if (!data) return null;
+        return {
+            url: data.url,
+            translation: data.translation,
+            isTranslate: data.isTranslate,
+            rotation: pinFx.rot,
+            flip: pinFx.flip,
+            strokes: strokes.map((stroke) => ({
+                pts: stroke.pts.map((point) => [...point]),
+            })),
+        };
+    };
+    const restoreVisualSnapshot = (snapshot: PinVisualSnapshot) => {
+        const data = dingData.get(wid);
+        if (!data || disposed) return;
+        data.url = snapshot.url;
+        data.translation = snapshot.translation;
+        data.isTranslate = snapshot.isTranslate;
+        img.el.src = snapshot.url;
+        pinFx.rot = snapshot.rotation;
+        pinFx.flip = snapshot.flip;
+        strokes.splice(0, strokes.length, ...snapshot.strokes);
+        applyPinFx();
+        redrawPinStrokes();
+    };
+    let cutoutStatusRetry: (() => void) | null = null;
+    let holdHandle: ReturnType<typeof createImageHold> | null = null;
+    const runCutout = async () => {
+        if (cutoutBusy || disposed) return;
+        const snapshot = visualSnapshot();
+        if (!snapshot) return;
+        const generation = ++cutoutGeneration;
+        const sourceRevision = visualRevision;
+        cutoutBusy = true;
+        holdHandle?.setBusy(true);
+        ocrTransStateBar.el.classList.remove(Class.hide);
+        ocrTransStateBar.sv("배경을 제거하는 중…");
+        cutoutStatusRetry = null;
+        try {
+            const dataURL = getUrl(wid);
+            if (!dataURL) throw new Error("PIN_SOURCE_MISSING");
+            const result = (await ipcRenderer.invoke("oc:image:cutout", {
+                dataURL,
+            })) as { itemId: string; dataURL: string };
+            if (
+                disposed ||
+                generation !== cutoutGeneration ||
+                !dingData.has(wid)
+            )
+                return;
+            if (sourceRevision !== visualRevision) {
+                ocrTransStateBar.sv(
+                    "이미지가 변경되어 배경 제거 결과를 적용하지 않았습니다",
+                );
+                return;
+            }
+            cutoutUndo = snapshot;
+            const next = withDerivedPinImage(snapshot, result.dataURL);
+            const data = dingData.get(wid)!;
+            data.url = next.url;
+            data.translation = next.translation;
+            data.isTranslate = next.isTranslate;
+            img.el.src = next.url;
+            pinFx.rot = next.rotation;
+            pinFx.flip = next.flip;
+            strokes.splice(0, strokes.length, ...next.strokes);
+            visualRevision += 1;
+            applyPinFx();
+            redrawPinStrokes();
+            ocrTransStateBar.sv("배경을 제거했습니다 · U로 실행 취소");
+            cutoutUndoButton.el.classList.remove(Class.hide);
+        } catch {
+            if (disposed || generation !== cutoutGeneration) return;
+            ocrTransStateBar.sv("배경 제거에 실패했습니다");
+            cutoutStatusRetry = () => void runCutout();
+            cutoutRetryButton.el.classList.remove(Class.hide);
+        } finally {
+            if (generation === cutoutGeneration) {
+                cutoutBusy = false;
+                holdHandle?.setBusy(false);
+            }
+        }
+    };
+    const undoCutout = () => {
+        if (!cutoutUndo || disposed) return;
+        ++cutoutGeneration;
+        cutoutBusy = false;
+        holdHandle?.setBusy(false);
+        restoreVisualSnapshot(cutoutUndo);
+        visualRevision += 1;
+        cutoutUndo = null;
+        cutoutUndoButton.el.classList.add(Class.hide);
+        cutoutRetryButton.el.classList.add(Class.hide);
+        ocrTransStateBar.el.classList.remove(Class.hide);
+        ocrTransStateBar.sv("배경 제거를 실행 취소했습니다");
+    };
+    const copyPin = async () => {
+        await writeImage(await renderPinBlob());
+        ocrTransStateBar.el.classList.remove(Class.hide);
+        ocrTransStateBar.sv("이미지를 복사했습니다");
+    };
+    const savePin = async () => {
+        renderSend("windowTopest", [false]);
+        const path = renderSendSync("save_file_path", ["png"]);
+        renderSend("windowTopest", [true]);
+        if (!path) return;
+        const bytes = Buffer.from(await (await renderPinBlob()).arrayBuffer());
+        fs.writeFileSync(path, bytes);
+        renderSend("ok_save", [path]);
+    };
+    const editPin = async () => {
+        const bytes = Buffer.from(await (await renderPinBlob()).arrayBuffer());
+        renderSend("edit_pic", [bytes]);
+    };
 
     let linkTimer: NodeJS.Timeout | null = null;
     let linkedApp = "";
+    disposers.add(() => {
+        if (linkTimer) clearInterval(linkTimer);
+        linkTimer = null;
+    });
     const focusedApp = () => {
         try {
             NodeScreenshots ??= require("node-screenshots");
@@ -451,6 +765,7 @@ const setNewDing = (
                     }
                     div.query("canvas")?.style({ display: "" });
                 }
+                visualRevision += 1;
             }
         });
     // 工具栏
@@ -507,64 +822,239 @@ const setNewDing = (
             }
         });
 
-    toolBarC.add([
-        spacer(),
-        view()
-            .class(Class.transition, toolBarButtonsClass)
-            .add([
-                transB,
-                focusButton,
-                blinkButton,
-                ignoreButton,
-                ocrTextButton,
-                drawButton,
-                button(iconEl("reload"))
-                    .attr({ title: "90° 회전" })
-                    .on("click", () => {
-                        pinFx.rot = (pinFx.rot + 90) % 360;
-                        applyPinFx();
-                    }),
-                button(iconEl("mirror"))
-                    .attr({ title: "좌우 반전" })
-                    .on("click", () => {
-                        pinFx.flip = !pinFx.flip;
-                        applyPinFx();
-                    }),
-                linkButton,
-                button(iconEl("free_draw"))
-                    .attr({ title: "编辑" })
-                    .on("click", () => {
-                        edit(wid);
-                    }),
-                button(iconEl("save"))
-                    .attr({ title: "保存" })
-                    .on("click", () => {
-                        save(wid);
-                    }),
-                button(iconEl("copy"))
-                    .attr({ title: "复制" })
-                    .on("click", () => {
-                        copy(wid);
-                    }),
-                button(iconEl("minimize"))
-                    .attr({ title: "最小化" })
-                    .on("click", () => {
-                        minimize(div.el);
-                    }),
-                button(iconEl("back"))
-                    .attr({ title: "归位" })
-                    .on("click", () => {
-                        back(wid);
-                    }),
-                button(iconEl("close"))
-                    .attr({ title: "关闭" })
-                    .on("click", () => {
-                        close(wid);
-                    }),
-            ]),
-    ]);
+    const rotateButton = button(iconEl("reload"))
+        .attr({ title: "90° 회전" })
+        .on("click", () => {
+            pinFx.rot = (pinFx.rot + 90) % 360;
+            visualRevision += 1;
+            applyPinFx();
+        });
+    const mirrorButton = button(iconEl("mirror"))
+        .attr({ title: "좌우 반전" })
+        .on("click", () => {
+            pinFx.flip = !pinFx.flip;
+            visualRevision += 1;
+            applyPinFx();
+        });
+    const saveButton = button(iconEl("save"))
+        .attr({ title: "저장  Ctrl+S" })
+        .on("click", () => void savePin());
+    const minimizeButton = button(iconEl("minimize"))
+        .attr({ title: "숨기기" })
+        .on("click", () => minimize(div.el));
+    const backButton = button(iconEl("back"))
+        .attr({ title: "원본 위치로 돌아가기" })
+        .on("click", () => back(wid));
+    const copyButton = button(iconEl("copy"))
+        .attr({ title: "복사  Ctrl+C", ariaLabel: "이미지 복사" })
+        .on("click", () => void copyPin());
+    const editButton = button(iconEl("free_draw"))
+        .attr({ title: "편집  E", ariaLabel: "편집기에서 열기" })
+        .on("click", () => void editPin());
+    const cutoutButton = button(iconEl("cut"))
+        .attr({ title: "배경 제거  X", ariaLabel: "배경 제거" })
+        .on("click", () => void runCutout());
+    drawButton.attr({ title: "그리기  D", ariaLabel: "핀 위에 그리기" });
+    focusButton.attr({ title: "이 핀만 보기  F" });
+    const closeButton = button(iconEl("close"))
+        .attr({ title: "닫기  Esc", ariaLabel: "핀 닫기" })
+        .on("click", () => close(wid));
+    const moreButton = button(iconEl("setting"))
+        .attr({
+            title: "크기와 투명도",
+            ariaLabel: "크기와 투명도",
+            ariaExpanded: "false",
+        })
+        .on("click", () => {
+            const open = controlsPanel.el.classList.toggle("is-open");
+            moreButton.el.setAttribute("aria-expanded", String(open));
+            toolBarC.sv({ forceShow: open });
+            updateToolbarPlacement();
+        });
+    const coreActions = view("x")
+        .class("pin-core-actions", toolBarButtonsClass)
+        .add([
+            copyButton,
+            editButton,
+            drawButton,
+            focusButton,
+            moreButton,
+            closeButton,
+        ]);
+    toolBarC.add([controlsPanel, coreActions]);
+
+    const radialMenu = view()
+        .class("pin-radial-menu")
+        .attr({ role: "menu", ariaLabel: "핀 도구", ariaHidden: "true" });
+    const radialCenter = button(iconEl("close"))
+        .class("pin-radial-center")
+        .attr({ title: "도구 닫기", ariaLabel: "도구 닫기" });
+    radialMenu.add(radialCenter);
+    let radialOpen = false;
+    const closeRadial = () => {
+        if (!radialOpen) return;
+        radialOpen = false;
+        radialMenu.el.classList.remove("is-open");
+        radialMenu.el.setAttribute("aria-hidden", "true");
+    };
+    const radialActions: {
+        label: string;
+        icon: IconType;
+        run: () => void;
+        active?: () => boolean;
+    }[] = [
+        {
+            label: "배경 제거",
+            icon: "cut" as IconType,
+            run: () => cutoutButton.el.click(),
+            active: () => cutoutBusy,
+        },
+        {
+            label: "배경 제거 실행 취소",
+            icon: "back" as IconType,
+            run: undoCutout,
+            active: () => cutoutUndo !== null,
+        },
+        {
+            label: "번역",
+            icon: "translate" as IconType,
+            run: () => transB.el.click(),
+        },
+        {
+            label: "깜빡 비교",
+            icon: "hide",
+            run: () => blinkButton.el.click(),
+            active: () => blinkState.isActive(wid),
+        },
+        {
+            label: "클릭 통과",
+            icon: "ignore",
+            run: () => ignoreButton.el.click(),
+            active: () => ignoredPins.has(wid),
+        },
+        {
+            label: "텍스트 복사",
+            icon: "ocr" as IconType,
+            run: () => ocrTextButton.el.click(),
+        },
+        {
+            label: "90° 회전",
+            icon: "reload" as IconType,
+            run: () => rotateButton.el.click(),
+        },
+        {
+            label: "좌우 반전",
+            icon: "mirror" as IconType,
+            run: () => mirrorButton.el.click(),
+        },
+        {
+            label: "앱에 연결",
+            icon: "link",
+            run: () => linkButton.el.click(),
+            active: () => linkTimer !== null,
+        },
+        {
+            label: "저장",
+            icon: "save" as IconType,
+            run: () => saveButton.el.click(),
+        },
+        {
+            label: "숨기기",
+            icon: "minimize" as IconType,
+            run: () => minimizeButton.el.click(),
+        },
+        {
+            label: "원위치",
+            icon: "back" as IconType,
+            run: () => backButton.el.click(),
+        },
+    ];
+    const radialButtons = radialActions.map((action, index) =>
+        button(iconEl(action.icon))
+            .class("pin-radial-action")
+            .attr({
+                title: action.label,
+                ariaLabel: action.label,
+                role: "menuitem",
+            })
+            .on("click", () => {
+                action.run();
+                radialButtons[index].el.setAttribute(
+                    "aria-pressed",
+                    String(action.active?.() ?? false),
+                );
+                closeRadial();
+            }),
+    );
+    radialMenu.add(radialButtons);
+    div.add(radialMenu);
+    const openRadial = (x: number, y: number) => {
+        const layout = radialLayout(
+            { x, y },
+            { width: window.innerWidth, height: window.innerHeight },
+            radialButtons.length,
+            34,
+        );
+        const bounds = div.el.getBoundingClientRect();
+        radialCenter.style({
+            left: `${layout.center.x - bounds.left}px`,
+            top: `${layout.center.y - bounds.top}px`,
+        });
+        radialButtons.forEach((item, index) =>
+            item
+                .attr({
+                    ariaPressed: String(
+                        radialActions[index].active?.() ?? false,
+                    ),
+                })
+                .style({
+                    left: `${layout.points[index].x - bounds.left}px`,
+                    top: `${layout.points[index].y - bounds.top}px`,
+                    "--pin-radial-delay": `${index * 18}ms`,
+                }),
+        );
+        radialOpen = true;
+        radialMenu.el.setAttribute("aria-hidden", "false");
+        radialMenu.el.classList.add("is-open");
+        radialCenter.el.focus();
+    };
+    radialCenter.on("click", closeRadial);
+    imageP.el.addEventListener("contextmenu", (event) => {
+        if (drawMode && event.shiftKey) {
+            visualRevision += 1;
+            strokes.length = 0;
+            redrawPinStrokes();
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        openRadial(event.clientX, event.clientY);
+    });
+    div.el.addEventListener("pointerdown", (event) => {
+        const target = event.target as Node;
+        if (radialOpen && !radialMenu.el.contains(target)) closeRadial();
+        if (
+            controlsPanel.el.classList.contains("is-open") &&
+            !toolBarC.el.contains(target)
+        ) {
+            controlsPanel.el.classList.remove("is-open");
+            moreButton.el.setAttribute("aria-expanded", "false");
+            toolBarC.sv({ forceShow: false });
+        }
+    });
 
     const ocrTransStateBarText = txt();
+    const cutoutRetryButton = button(txt("재시도"))
+        .class(Class.hide)
+        .attr({ title: "배경 제거 다시 시도" })
+        .on("click", () => {
+            cutoutRetryButton.el.classList.add(Class.hide);
+            cutoutStatusRetry?.();
+        });
+    const cutoutUndoButton = button(txt("실행 취소"))
+        .class(Class.hide)
+        .attr({ title: "배경 제거 실행 취소" })
+        .on("click", undoCutout);
     const ocrTransStateBar = view("x")
         .class(Class.glassBar)
         .class(Class.hide)
@@ -581,6 +1071,8 @@ const setNewDing = (
         })
         .add([
             ocrTransStateBarText,
+            cutoutRetryButton,
+            cutoutUndoButton,
             button(iconEl("close"))
                 .attr({ title: "关闭" })
                 .on("click", () => {
@@ -600,16 +1092,48 @@ const setNewDing = (
         div.el.style.zIndex = String(toppest + 1);
         dockEl.el.style.zIndex = String(toppest + 2);
         toppest += 1;
+        markSessionDirty();
     };
     // 快捷键
     div.on("keydown", (e) => {
         if ((e.target as HTMLElement).tagName === "INPUT") return;
         if (e.key === "Escape") {
-            if (focusState.isActive || blinkState.isAnyActive) {
+            if (radialOpen) {
+                closeRadial();
+            } else if (controlsPanel.el.classList.contains("is-open")) {
+                controlsPanel.el.classList.remove("is-open");
+                moreButton.el.setAttribute("aria-expanded", "false");
+                toolBarC.sv({ forceShow: false });
+            } else if (drawMode) {
+                drawButton.el.click();
+            } else if (focusState.isActive || blinkState.isAnyActive) {
                 sendPinShare({ type: "restore" });
             } else {
                 close(wid);
             }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+            e.preventDefault();
+            void copyPin();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+            e.preventDefault();
+            void savePin();
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "d") {
+            drawButton.el.click();
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "e") {
+            void editPin();
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "f") {
+            focusButton.el.click();
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "x") {
+            void runCutout();
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "u") {
+            undoCutout();
         }
         if (e.key.startsWith("Arrow")) {
             e.preventDefault();
@@ -625,6 +1149,7 @@ const setNewDing = (
             if (dx || dy) {
                 div.el.style.left = `${div.el.offsetLeft + dx}px`;
                 div.el.style.top = `${div.el.offsetTop + dy}px`;
+                markSessionDirty();
             }
         }
         if (!Number.isNaN(Number(e.key))) {
@@ -632,7 +1157,39 @@ const setNewDing = (
         }
     });
     div.add(toolBar).add(imageP).add(ocrTransStateBar);
+    holdHandle = createImageHold(img.el, {
+        durationMs: 650,
+        moveTolerance: 8,
+        progressLabel: "길게 눌러 배경 제거",
+        disabled: () => drawMode || cutoutBusy,
+        onHold: () => runCutout(),
+        onDragStart: ({ event }) => {
+            resizeSender = true;
+            const { dx, dy } = dxdy(event, div);
+            renderSend("dingShare", [
+                {
+                    type: "move_start",
+                    more: {
+                        id: wid,
+                        dx,
+                        dy,
+                        d: dire(div.el, {
+                            x: event.clientX,
+                            y: event.clientY,
+                        }),
+                    },
+                },
+            ]);
+        },
+    });
+    disposers.add(() => {
+        disposed = true;
+        ++cutoutGeneration;
+        holdHandle?.dispose();
+        holdHandle = null;
+    });
     photoEl.add(div);
+    updateToolbarPlacement();
     applyFocusChanges(focusState.reconcile(readPinVisibility()));
 
     // dock
@@ -646,7 +1203,12 @@ const setNewDing = (
 
     return {
         opacity: (v: string) => opacityEl.sv(v),
-        size: (v: string) => sizeInput.sv(v),
+        size: (v: string) => {
+            sizeInput.sv(v);
+            sizeRange.sv(
+                String(Math.max(10, Math.min(300, Number.parseInt(v) || 100))),
+            );
+        },
         id: wid,
     };
 };
@@ -747,6 +1309,9 @@ function restorePinEffects() {
 }
 
 window.addEventListener("beforeunload", () => {
+    for (const disposers of pinDisposers.values())
+        for (const dispose of disposers) dispose();
+    pinDisposers.clear();
     blinkState.clear();
 });
 
@@ -827,6 +1392,9 @@ function close(id: string) {
     ]);
 }
 function close2(id: string) {
+    const disposers = pinDisposers.get(id);
+    if (disposers) for (const dispose of disposers) dispose();
+    pinDisposers.delete(id);
     blinkState.stop(id);
     applyFocusChanges(focusState.remove(id));
     focusButtons.delete(id);
@@ -836,6 +1404,7 @@ function close2(id: string) {
     elFromId(id)?.remove();
     dingData.delete(id);
     elMap = elMap.filter((e) => e.id !== id);
+    markSessionDirty();
     dockI();
 }
 function getUrl(id: string) {
@@ -844,32 +1413,6 @@ function getUrl(id: string) {
     const _isTranslate = data.isTranslate;
     return _isTranslate ? data.translation : data.url;
 }
-async function copy(id: string) {
-    const url = getUrl(id);
-    const response = await fetch(url);
-    const blob = await response.blob();
-    await writeImage(blob);
-}
-function save(id: string) {
-    const b = Buffer.from(
-        getUrl(id).replace(/^data:image\/\w+;base64,/, ""),
-        "base64",
-    );
-    renderSend("windowTopest", [false]);
-    const save = renderSendSync("save_file_path", ["png"]);
-    renderSend("windowTopest", [true]);
-    if (!save) return;
-    fs.writeFileSync(save, b);
-    renderSend("ok_save", [save]);
-}
-function edit(id: string) {
-    const b = Buffer.from(
-        getUrl(id).replace(/^data:image\/\w+;base64,/, ""),
-        "base64",
-    );
-    renderSend("edit_pic", [b]);
-}
-
 async function ocr(img: string) {
     const p = await lo.ocr(img);
     return p.columns.flatMap((c) => c.parragraphs);
@@ -1007,9 +1550,14 @@ let windowDiv: ElType<HTMLElement> | null = null; // todo 使用id代替
 let resizeSender = false;
 
 document.onmousedown = (e) => {
+    if (e.button !== 0) return;
     const el = e.target as HTMLElement;
     const div = dives.find((d) => d.el.contains(el));
-    if (div && (el.id === "tool_bar_c" || el.tagName === "IMG")) {
+    const isControl = Boolean(
+        el.closest(".pin-toolbar, .pin-radial-menu, .pin-controls-panel"),
+    );
+    if (el.closest('[data-image-hold="true"]')) return;
+    if (div && !isControl && el.tagName === "IMG") {
         const { dx, dy } = dxdy(e, div);
         renderSend("dingShare", [
             {
@@ -1067,6 +1615,7 @@ function mouseEnd() {
     changing = null;
     windowDiv = null;
     direction = "";
+    markSessionDirty();
     cursor(direction);
 }
 
@@ -1231,6 +1780,7 @@ function move(el: ElType<HTMLElement>, e: { x: number; y: number }) {
                     width: `${pS[2]}px`,
                     height: `${pS[3]}px`,
                 });
+                pinToolbarPositioners.get(el.el.id)?.();
                 return;
         }
         // @ts-ignore
@@ -1272,17 +1822,6 @@ function resize(
     const pS = [x, y, toWidth, toHeight];
     const clip = toWidth < rect[2] ? false : _clip;
 
-    const bar = el.query("#tool_bar_c") as ElType<HTMLElement>;
-    const w = pS[2];
-    let zoomN = "";
-    const smallSize = 390;
-    if (w <= smallSize) {
-        zoomN = String(w / smallSize);
-    } else {
-        zoomN = "";
-    }
-    if (!clip) bar.style({ zoom: zoomN });
-
     if (clip) {
         const style = {
             left: `${pS[0] - rect[0]}px`,
@@ -1310,6 +1849,8 @@ function resize(
     for (const i of el.queryAll(".img>*")) {
         i.style({ "image-rendering": zoom > 1.5 ? "pixelated" : "initial" });
     }
+    pinToolbarPositioners.get(id)?.();
+    markSessionDirty();
 
     if (resizeSender)
         renderSend("dingShare", [
@@ -1494,7 +2035,7 @@ function dockI() {
         let iTran_v = -1;
 
         const dockItem = view();
-        const iPhoto = image(getUrl(i), "预览")
+        const iPhoto = image(getUrl(i), t("미리보기"))
             .style({ width: "100%" })
             .on("click", () => {
                 const div = document.getElementById(i);
@@ -1548,7 +2089,60 @@ function dockI() {
 }
 renderOn("addDing", ([wid, x, y, w, h, url, type]) => {
     elMap.push(setNewDing(String(wid), x, y, w, h, url, type));
+    markSessionDirty();
 });
+
+function collectSessionPins(): SavedDingPin[] {
+    const pins: SavedDingPin[] = [];
+    for (const [id, data] of dingData) {
+        const el = elFromId(id)?.el;
+        const img = el?.querySelector<HTMLImageElement>(".img > img");
+        if (!el || !img || !data.url.startsWith("data:image/")) continue;
+        pins.push({
+            x: el.offsetLeft,
+            y: el.offsetTop,
+            w: el.offsetWidth,
+            h: el.offsetHeight,
+            src: data.url,
+            opacity: Number(img.style.opacity || 1),
+            z: Number(el.style.zIndex || 0),
+        });
+    }
+    return pins;
+}
+
+setInterval(() => {
+    if (!sessionDirty) return;
+    sessionDirty = false;
+    void ipcRenderer
+        .invoke("ding:session:save", collectSessionPins())
+        .catch(() => {
+            sessionDirty = true;
+        });
+}, 2500);
+
+void ipcRenderer
+    .invoke("ding:session:get")
+    .then((pins: SavedDingPin[]) => {
+        if (!Array.isArray(pins) || !pins.length) return;
+        for (const [index, pin] of pins.entries()) {
+            const entry = setNewDing(
+                `restored-${Date.now()}-${index}`,
+                pin.x,
+                pin.y,
+                pin.w,
+                pin.h,
+                pin.src,
+                "ding",
+            );
+            entry.opacity(String(Math.round(pin.opacity * 100)));
+            const el = elFromId(entry.id)?.el;
+            if (el) el.style.zIndex = String(pin.z);
+            elMap.push(entry);
+        }
+        toppest = Math.max(toppest, ...pins.map((p) => p.z)) + 1;
+    })
+    .catch(() => {});
 
 let seg: Intl.Segmenter;
 try {

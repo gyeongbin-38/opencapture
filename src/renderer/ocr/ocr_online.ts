@@ -1,3 +1,4 @@
+import { t } from "../../../lib/translate/translate";
 import { runAI } from "../lib/ai";
 
 type ocrResult = {
@@ -38,9 +39,9 @@ function llmOCR(
     ) => void,
 ) {
     const aiConfig = store.get("AI.在线模型").find((i) => i.name === type);
-    if (!aiConfig) return callback(new Error("未找到模型"), null);
+    if (!aiConfig) return callback(new Error(t("未找到模型")), null);
     if (!aiConfig.supportVision)
-        return callback(new Error("模型不支持视觉"), null);
+        return callback(new Error(t("模型不支持视觉")), null);
     const prompt = "recognize the text in the image and return it in text raw";
     runAI([{ role: "user", content: { text: prompt, img } }], aiConfig)
         .text.then((text) => {
@@ -75,7 +76,7 @@ function baiduOcr(
     const clientId = store.get("在线OCR.baidu.id");
     const clientSecret = store.get("在线OCR.baidu.secret");
     if (!clientId || !clientSecret)
-        return callback(new Error("未填写 API Key 或 Secret Key"), null);
+        return callback(new Error(t("未填写 API Key 或 Secret Key")), null);
     const arg = sarg.replace("data:image/png;base64,", "");
     if (
         !store.get("在线OCR.baidu.token") ||
@@ -92,13 +93,16 @@ function baiduOcr(
                 if (!access_token) {
                     if (result.error) {
                         if (result.error_description === "unknown client id") {
-                            return callback(new Error("API Key 错误"), null);
+                            return callback(new Error(t("API Key 错误")), null);
                         }
                         if (
                             result.error_description ===
                             "Client authentication failed"
                         )
-                            return callback(new Error("Secret Key 错误"), null);
+                            return callback(
+                                new Error(t("Secret Key 错误")),
+                                null,
+                            );
                     }
                     return callback(new Error(JSON.stringify(result)), null);
                 }
@@ -230,7 +234,7 @@ function youdaoOcr(
     const clientId = store.get("在线OCR.youdao.id");
     const clientSecret = store.get("在线OCR.youdao.secret");
     if (!clientId || !clientSecret)
-        return callback(new Error("未填写 API Key 或 Secret Key"), null);
+        return callback(new Error(t("未填写 API Key 或 Secret Key")), null);
     const arg = sarg.replace("data:image/png;base64,", "");
     const crypto = require("node:crypto") as typeof import("crypto");
     const input =

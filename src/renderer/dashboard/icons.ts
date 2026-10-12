@@ -39,6 +39,18 @@ const shapes: Record<string, readonly IconShape[]> = {
         ["rect", { x: "4", y: "13", width: "7", height: "7", rx: "1.6" }],
         ["rect", { x: "13", y: "13", width: "7", height: "7", rx: "1.6" }],
     ],
+    // board — layered canvases
+    "▥": [
+        ["rect", { x: "4", y: "5", width: "14", height: "14", rx: "2" }],
+        [
+            "path",
+            {
+                d: "M8 5V3.8A1.8 1.8 0 0 1 9.8 2h8.4A1.8 1.8 0 0 1 20 3.8v9.4a1.8 1.8 0 0 1-1.8 1.8H18",
+            },
+        ],
+        ["circle", { cx: "8", cy: "9", r: "1.2" }],
+        ["path", { d: "m6.5 16 3.3-3.5 2.4 2.3 1.8-1.7 2 2" }],
+    ],
     // translate — languages glyph
     文: [
         ["path", { d: "M3 5h12M8 3v2" }],

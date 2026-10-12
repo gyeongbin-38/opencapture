@@ -2561,7 +2561,7 @@ async function localOcr(
                     return callback(new Error(x), null);
                 }
             } else if (error) return callback(error as Error, null);
-            if (!x) return callback(new Error("未找到OCR模型"), null);
+            if (!x) return callback(new Error(t("未找到OCR模型")), null);
 
             x.config.det.on = (dr) => {
                 if (dr.length <= 2) return;
