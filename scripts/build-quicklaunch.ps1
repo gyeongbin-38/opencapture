@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$Verify
+)
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -22,8 +24,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $file = Get-Item -LiteralPath $outputPath
-[pscustomobject]@{
+$result = [pscustomobject]@{
     Path = $file.FullName
     Bytes = $file.Length
+    Sha256 = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
     LastWriteTimeUtc = $file.LastWriteTimeUtc
+}
+$result
+
+if ($Verify) {
+    & node (Join-Path $repositoryRoot "scripts\verify-quicklaunch.cjs")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Quick Launch verification failed with exit code $LASTEXITCODE"
+    }
 }

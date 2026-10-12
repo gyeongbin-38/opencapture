@@ -7,10 +7,16 @@ $ErrorActionPreference = "Stop"
 if (-not $ExecutablePath) { $ExecutablePath = Join-Path (Split-Path -Parent $PSScriptRoot) "native\bin\OpenCaptureQuick.exe" }
 $resolvedExecutable = (Resolve-Path -LiteralPath $ExecutablePath).Path
 $diagnosticsPath = Join-Path ([System.IO.Path]::GetTempPath()) ("OpenCaptureQuick-{0}.json" -f [Guid]::NewGuid().ToString("N"))
+$profilePath = Join-Path ([System.IO.Path]::GetTempPath()) ("OpenCaptureQuick-profile-{0}" -f [Guid]::NewGuid().ToString("N"))
 $process = $null
 
 try {
-    $process = Start-Process -FilePath $resolvedExecutable -ArgumentList @("--diagnostics", $diagnosticsPath) -WindowStyle Hidden -PassThru
+    New-Item -ItemType Directory -Path $profilePath -Force | Out-Null
+    $process = Start-Process -FilePath $resolvedExecutable -ArgumentList @(
+        "--diagnostics", $diagnosticsPath,
+        "--userData", $profilePath,
+        "--test-instance", ([Guid]::NewGuid().ToString("N"))
+    ) -WindowStyle Hidden -PassThru
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     while (-not (Test-Path -LiteralPath $diagnosticsPath -PathType Leaf)) {
         if ($process.HasExited) {
@@ -58,4 +64,5 @@ finally {
         $process.Dispose()
     }
     Remove-Item -LiteralPath $diagnosticsPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue
 }
