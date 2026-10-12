@@ -1,0 +1,325 @@
+.reference-windows {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    pointer-events: none;
+    font: 14px / 1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+}
+
+.reference-window {
+    position: fixed;
+    box-sizing: border-box;
+    min-width: 34px;
+    min-height: 74px;
+    overflow: visible;
+    border: 1px solid rgb(255 255 255 / 28%);
+    border-radius: 12px;
+    background: #16181d;
+    box-shadow: 0 16px 50px rgb(0 0 0 / 32%);
+    color: #f7f8fa;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+}
+
+.reference-window.is-moving,
+.reference-window.is-resizing {
+    cursor: grabbing;
+}
+
+.reference-window.is-locked {
+    border-color: rgb(92 176 255 / 72%);
+}
+
+.reference-window__header {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px 0 12px;
+    border-bottom: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 11px 11px 0 0;
+    background: #202329;
+    cursor: grab;
+}
+
+.reference-window.is-locked .reference-window__header {
+    cursor: default;
+}
+
+.reference-window__caption {
+    flex: 0 0 auto;
+    color: #b7d9ff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.reference-window__name {
+    min-width: 0;
+    overflow: hidden;
+    flex: 1;
+    color: #eef1f5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reference-window__viewport {
+    position: absolute;
+    inset: 40px 0 0;
+    overflow: hidden;
+    border-radius: 0 0 11px 11px;
+    background-image: linear-gradient(45deg, #2b2e34 25%, transparent 25%),
+        linear-gradient(-45deg, #2b2e34 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2b2e34 75%),
+        linear-gradient(-45deg, transparent 75%, #2b2e34 75%);
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+}
+
+.reference-window__image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: grab;
+    -webkit-user-drag: none;
+}
+
+.reference-window.is-locked .reference-window__image {
+    cursor: default;
+}
+
+.reference-window.is-busy .reference-window__image {
+    cursor: progress;
+}
+
+.reference-window__toolbar {
+    position: fixed;
+    display: flex;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    min-height: 48px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 12px;
+    background: rgb(24 27 32 / 97%);
+    box-shadow: 0 10px 32px rgb(0 0 0 / 28%);
+    color: #f7f8fa;
+    pointer-events: auto;
+    white-space: nowrap;
+}
+
+.reference-window__button {
+    display: inline-flex;
+    min-width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 8px;
+    background: #30343c;
+    color: #f5f7fa;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 650;
+}
+
+.reference-window__button.is-icon {
+    width: 40px;
+    padding: 0;
+}
+
+.reference-window__button:hover:not(:disabled) {
+    background: #414752;
+}
+
+.reference-window__button:focus-visible,
+.reference-window input:focus-visible,
+.reference-window textarea:focus-visible {
+    outline: 3px solid #72b7ff;
+    outline-offset: 2px;
+}
+
+.reference-window__button.is-active {
+    background: #1769aa;
+    color: #fff;
+}
+
+.reference-window__button:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+}
+
+.reference-window__button svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.reference-window__controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 4px;
+}
+
+.reference-window__field {
+    display: grid;
+    min-width: 144px;
+    grid-template-columns: auto 72px 42px;
+    align-items: center;
+    gap: 7px;
+    color: #dfe4ea;
+    font-size: 12px;
+}
+
+.reference-window__field input {
+    width: 72px;
+    height: 40px;
+    margin: 0;
+    accent-color: #5aabff;
+}
+
+.reference-window__field output {
+    color: #b9c1ca;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.reference-window__text {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(420px, calc(100vw - 24px));
+    padding: 12px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 12px;
+    background: #202329;
+    box-shadow: 0 14px 40px rgb(0 0 0 / 32%);
+}
+
+.reference-window__text[hidden] {
+    display: none;
+}
+
+.reference-window__text-heading {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.reference-window__text-output {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 132px;
+    margin-top: 8px;
+    padding: 12px;
+    resize: vertical;
+    border: 1px solid #484e59;
+    border-radius: 8px;
+    background: #111318;
+    color: #f5f7fa;
+    font: inherit;
+    line-height: 1.55;
+    user-select: text;
+    white-space: pre-wrap;
+}
+
+.reference-window__resize {
+    position: absolute;
+    z-index: 2;
+    display: block;
+}
+
+.reference-window.is-locked .reference-window__resize {
+    display: none;
+}
+
+.reference-window__resize.is-n,
+.reference-window__resize.is-s {
+    right: 10px;
+    left: 10px;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.reference-window__resize.is-n {
+    top: -5px;
+}
+
+.reference-window__resize.is-s {
+    bottom: -5px;
+}
+
+.reference-window__resize.is-e,
+.reference-window__resize.is-w {
+    top: 10px;
+    bottom: 10px;
+    width: 10px;
+    cursor: ew-resize;
+}
+
+.reference-window__resize.is-e {
+    right: -5px;
+}
+
+.reference-window__resize.is-w {
+    left: -5px;
+}
+
+.reference-window__resize.is-ne,
+.reference-window__resize.is-se,
+.reference-window__resize.is-sw,
+.reference-window__resize.is-nw {
+    width: 16px;
+    height: 16px;
+}
+
+.reference-window__resize.is-ne,
+.reference-window__resize.is-sw {
+    cursor: nesw-resize;
+}
+
+.reference-window__resize.is-se,
+.reference-window__resize.is-nw {
+    cursor: nwse-resize;
+}
+
+.reference-window__resize.is-ne {
+    top: -7px;
+    right: -7px;
+}
+
+.reference-window__resize.is-se {
+    right: -7px;
+    bottom: -7px;
+}
+
+.reference-window__resize.is-sw {
+    bottom: -7px;
+    left: -7px;
+}
+
+.reference-window__resize.is-nw {
+    top: -7px;
+    left: -7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reference-window,
+    .reference-window__toolbar {
+        scroll-behavior: auto;
+    }
+}

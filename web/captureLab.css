@@ -1,0 +1,413 @@
+.capture-lab {
+    --capture-lab-tool-size: 40px;
+    display: grid;
+    gap: 14px;
+    color: var(--ink, #202124);
+    outline: none;
+}
+
+.capture-lab__heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.capture-lab__title,
+.capture-lab__subtitle {
+    margin: 0;
+}
+
+.capture-lab__title {
+    color: var(--ink-strong, #111827);
+    font-size: 20px;
+}
+
+.capture-lab__subtitle,
+.capture-lab__source-status {
+    color: var(--ink-muted, #68707d);
+    line-height: 1.5;
+}
+
+.capture-lab__subtitle {
+    max-width: 640px;
+    margin-top: 6px;
+}
+
+.capture-lab__source-status {
+    min-height: 24px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.capture-lab__source-status.is-sample {
+    color: #795500;
+}
+
+.capture-lab__source-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    max-width: 620px;
+}
+
+.capture-lab__button,
+.capture-lab__tool,
+.capture-lab__dimensions input {
+    box-sizing: border-box;
+    min-height: 40px;
+    border: 1px solid var(--line, #cbd1d8);
+    border-radius: 8px;
+    font: inherit;
+}
+
+.capture-lab__button {
+    padding: 0 14px;
+    border-color: var(--accent, #1f6feb);
+    background: var(--accent, #1f6feb);
+    color: #fff;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.capture-lab__button.is-secondary {
+    border-color: var(--line, #cbd1d8);
+    background: var(--surface, #fff);
+    color: var(--ink, #202124);
+}
+
+.capture-lab__stage {
+    position: relative;
+    overflow: hidden;
+    min-height: 360px;
+    border: 1px solid var(--line, #ccd3dc);
+    border-radius: 14px;
+    background: #151921;
+    box-shadow: inset 0 0 0 1px #fff1;
+    user-select: none;
+    touch-action: none;
+}
+
+.capture-lab__canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 360px;
+    object-fit: contain;
+}
+
+.capture-lab.is-picking-color .capture-lab__canvas {
+    cursor: crosshair;
+}
+
+.capture-lab__selection {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #101828aa, 0 0 0 9999px #08101f5c;
+    cursor: move;
+    outline: none;
+}
+
+.capture-lab__selection:focus-visible,
+.capture-lab__button:focus-visible,
+.capture-lab__tool:focus-visible,
+.capture-lab__dimensions input:focus-visible,
+.capture-lab__ratio:focus-within {
+    outline: 3px solid
+        color-mix(in srgb, var(--accent, #1f6feb) 36%, transparent);
+    outline-offset: 2px;
+}
+
+.capture-lab__handle {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+}
+
+.capture-lab__handle::after {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: 15px;
+    border: 1px solid #1d2939;
+    border-radius: 2px;
+    background: #fff;
+}
+
+.capture-lab__handle.is-nw {
+    left: 0;
+    top: 0;
+    cursor: nwse-resize;
+}
+.capture-lab__handle.is-n {
+    left: 50%;
+    top: 0;
+    cursor: ns-resize;
+}
+.capture-lab__handle.is-ne {
+    left: 100%;
+    top: 0;
+    cursor: nesw-resize;
+}
+.capture-lab__handle.is-e {
+    left: 100%;
+    top: 50%;
+    cursor: ew-resize;
+}
+.capture-lab__handle.is-se {
+    left: 100%;
+    top: 100%;
+    cursor: nwse-resize;
+}
+.capture-lab__handle.is-s {
+    left: 50%;
+    top: 100%;
+    cursor: ns-resize;
+}
+.capture-lab__handle.is-sw {
+    left: 0;
+    top: 100%;
+    cursor: nesw-resize;
+}
+.capture-lab__handle.is-w {
+    left: 0;
+    top: 50%;
+    cursor: ew-resize;
+}
+
+.capture-lab__toolbar,
+.capture-lab__dimensions,
+.capture-lab__more,
+.capture-lab__countdown {
+    position: absolute;
+    z-index: 5;
+    box-sizing: border-box;
+    border: 1px solid #ffffff24;
+    background: rgba(24, 27, 34, 0.96);
+    color: #f8fafc;
+    box-shadow: 0 10px 30px #0006;
+    backdrop-filter: blur(14px);
+}
+
+.capture-lab__toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 3px;
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    padding: 5px;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.capture-lab__tool {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    width: max(40px, var(--capture-lab-tool-size));
+    height: max(40px, var(--capture-lab-tool-size));
+    min-height: 40px;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.capture-lab__tool:hover,
+.capture-lab__tool:focus-visible {
+    background: #ffffff19;
+}
+
+.capture-lab__tool svg {
+    width: 19px;
+    height: 19px;
+    pointer-events: none;
+}
+
+.capture-lab__tool span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.capture-lab__divider {
+    flex: 0 0 1px;
+    width: 1px;
+    height: 22px;
+    margin: 0 4px;
+    background: #ffffff24;
+}
+
+.capture-lab__dimensions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 42px;
+    padding: 4px 7px;
+    border-radius: 10px;
+    font-size: 12px;
+}
+
+.capture-lab__dimensions input[type="number"] {
+    width: 74px;
+    min-height: 32px;
+    padding: 0 6px;
+    border-color: #ffffff22;
+    background: #ffffff0d;
+    color: #fff;
+    text-align: center;
+}
+
+.capture-lab__ratio {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 5px;
+    white-space: nowrap;
+}
+
+.capture-lab__ratio input {
+    width: 18px;
+    height: 18px;
+    accent-color: #8ab4ff;
+}
+
+.capture-lab__more {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+    gap: 5px;
+    width: min(380px, calc(100% - 24px));
+    padding: 8px;
+    border-radius: 12px;
+}
+
+.capture-lab__more[hidden] {
+    display: none;
+}
+
+.capture-lab__more .capture-lab__tool {
+    justify-content: flex-start;
+    width: 100%;
+    padding: 0 11px;
+}
+
+.capture-lab__size {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr minmax(120px, 1.5fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 5px 9px;
+    border-top: 1px solid #ffffff22;
+    font-size: 12px;
+}
+
+.capture-lab__size input {
+    width: 100%;
+    accent-color: #8ab4ff;
+}
+
+.capture-lab__radial {
+    position: absolute;
+    z-index: 8;
+    width: 0;
+    height: 0;
+}
+
+.capture-lab__radial[hidden] {
+    display: none;
+}
+
+.capture-lab__radial .capture-lab__tool {
+    position: absolute;
+    left: -20px;
+    top: -20px;
+    border-color: #ffffff2b;
+    border-radius: 50%;
+    background: rgba(24, 27, 34, 0.97);
+    box-shadow: 0 6px 18px #0007;
+    opacity: 0;
+    transform: rotate(calc(var(--radial-index) * 60deg)) translateY(-70px)
+        rotate(calc(var(--radial-index) * -60deg)) scale(0.55);
+    animation: capture-lab-radial 170ms ease-out forwards;
+    animation-delay: calc(var(--radial-index) * 16ms);
+}
+
+@keyframes capture-lab-radial {
+    to {
+        opacity: 1;
+        transform: rotate(calc(var(--radial-index) * 60deg)) translateY(-70px)
+            rotate(calc(var(--radial-index) * -60deg)) scale(1);
+    }
+}
+
+.capture-lab__countdown {
+    inset: 50% auto auto 50%;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    min-width: 210px;
+    padding: 18px;
+    border-radius: 14px;
+    transform: translate(-50%, -50%);
+}
+
+.capture-lab__countdown[hidden] {
+    display: none;
+}
+
+.capture-lab__countdown strong {
+    font-size: 42px;
+    line-height: 1;
+}
+
+@media (max-width: 760px) {
+    .capture-lab__heading {
+        display: grid;
+    }
+
+    .capture-lab__source-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 520px) {
+    .capture-lab__source-actions .capture-lab__button {
+        flex: 1 1 180px;
+    }
+
+    .capture-lab__dimensions {
+        gap: 4px;
+    }
+
+    .capture-lab__dimensions input[type="number"] {
+        width: 58px;
+    }
+
+    .capture-lab__ratio {
+        font-size: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .capture-lab__radial .capture-lab__tool {
+        animation: none;
+        opacity: 1;
+        transform: rotate(calc(var(--radial-index) * 60deg)) translateY(-70px)
+            rotate(calc(var(--radial-index) * -60deg));
+    }
+}
