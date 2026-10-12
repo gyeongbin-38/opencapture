@@ -17,6 +17,19 @@ import type {
     translateWinType,
     功能,
 } from "../src/ShareTypes";
+import type { CaptureSourceContext } from "./openCaptureTypes";
+
+export type ClipProject = {
+    canvas?: unknown;
+    rect?: number[];
+    draftId?: string;
+    draftRevision?: number;
+    source?: CaptureSourceContext;
+};
+export type ClipCaptureContext = {
+    requestId: string;
+    source: CaptureSourceContext;
+};
 
 type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y
     ? 1
@@ -43,7 +56,10 @@ export type RecordRect = {
 };
 
 type Message = {
-    clip_show: () => void;
+    clip_show: (requestId?: string) => void;
+    capture_ready: (requestId: string) => void;
+    capture_shown: (requestId: string) => void;
+    capture_shelf_close: () => void;
     clip_close: () => void;
     clip_ocr: (img: string, type: string) => void;
     clip_ocr_clipboard: (img: string, type: string) => void;
@@ -82,7 +98,8 @@ type Message = {
         imgBuffer: Buffer | undefined,
         mainid: number,
         act: 功能 | undefined,
-        project?: { canvas?: unknown; rect?: number[] },
+        project?: ClipProject,
+        context?: ClipCaptureContext,
     ) => void;
     open_this_browser: (window_name: number, url: string) => void;
     edit_pic: (img: Buffer<ArrayBufferLike>) => void;

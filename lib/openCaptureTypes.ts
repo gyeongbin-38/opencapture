@@ -1,3 +1,9 @@
+import type {
+    CaptureBoardApi,
+    CaptureCutoutInput,
+    CaptureCutoutResult,
+} from "./captureBoard";
+
 export type OpenCaptureActionName =
     | "capture"
     | "steps"
@@ -32,6 +38,7 @@ export type OpenCaptureActionName =
     | "toggle-favorite"
     | "rename-item"
     | "duplicate-item"
+    | "copy-composed"
     | "save-composed"
     | "set-note"
     | "set-tags"
@@ -41,6 +48,205 @@ export type OpenCaptureActionName =
     | "save-pin-set"
     | "remove-pin-set"
     | "pin-set";
+
+export type CaptureItemStatus = "temporary" | "library" | "trash";
+export type CaptureRendererRole =
+    | "dashboard"
+    | "clip"
+    | "shelf"
+    | "pin"
+    | "ocr-worker";
+export type CaptureToolId =
+    | "copy"
+    | "save"
+    | "stage"
+    | "annotate"
+    | "pin"
+    | "color"
+    | "scroll"
+    | "record"
+    | "search"
+    | "qr"
+    | "open"
+    | "screens"
+    | "ocr"
+    | "redact"
+    | "compare"
+    | "promote"
+    | "trash"
+    | "more";
+
+export interface CaptureRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+export interface CaptureSourceContext {
+    kind: "capture" | "import" | "clipboard";
+    appName?: string;
+    windowTitle?: string;
+    displayId?: string;
+    capturedAt: string;
+}
+
+export interface CaptureDraftManifest {
+    version: 1;
+    id: string;
+    revision: number;
+    generation: string;
+    sourcePath: string;
+    previewPath: string;
+    canvasPath: string;
+    rect: CaptureRect;
+    source: CaptureSourceContext;
+    committedAt: string;
+}
+
+export interface StageCaptureInput {
+    id?: string;
+    expectedRevision?: number;
+    sourceDataURL?: string;
+    previewDataURL: string;
+    canvas: unknown;
+    rect: CaptureRect;
+    source?: CaptureSourceContext;
+}
+
+export interface CaptureDraft {
+    id: string;
+    revision: number;
+    sourceDataURL: string;
+    previewDataURL: string;
+    canvas: unknown;
+    rect: CaptureRect;
+    source: CaptureSourceContext;
+}
+
+export interface StageCaptureResult {
+    id: string;
+    revision: number;
+    item: OpenCaptureItem;
+}
+
+export type CaptureQueryScope = "temporary" | "library" | "trash" | "all";
+export type CaptureSort = "newest" | "oldest" | "name";
+
+export interface CaptureItemsQuery {
+    scope: CaptureQueryScope;
+    collectionId?: string;
+    search?: string;
+    tags?: string[];
+    smartId?: string;
+    favorites?: boolean;
+    ocrOnly?: boolean;
+    sort: CaptureSort;
+    offset: number;
+    limit: number;
+    queryId: string;
+    catalogRevision?: number;
+}
+
+export interface CaptureItemsQueryResult {
+    items: OpenCaptureItem[];
+    total: number;
+    queryId: string;
+    catalogRevision: number;
+}
+
+export interface CaptureFeedbackPreferences {
+    visual: boolean;
+    sound: boolean;
+    motion: "system" | "full" | "reduced";
+}
+
+export interface CaptureExperiencePreferences {
+    version: 1;
+    toolbarOrder: CaptureToolId[];
+    radialOrder: CaptureToolId[];
+    feedback: CaptureFeedbackPreferences;
+    defaultPreset: "copy-close" | "stage-only" | "stage-pin" | "annotate";
+    shelfEnabled: boolean;
+}
+
+export interface NamedBeautifyStyle {
+    id: string;
+    name: string;
+    background: string;
+    padding: number;
+    shadow: number;
+    radius: number;
+    ratio: string;
+    align: string;
+    autoBalance: boolean;
+}
+
+export interface SavedSmartFilter {
+    id: string;
+    name: string;
+    tags?: string[];
+    date?: "today" | "week" | "month";
+    type?: "image" | "video" | "gif" | "project";
+    favorites?: boolean;
+    ocrOnly?: boolean;
+}
+
+export interface ComparisonPointNote {
+    id: string;
+    x: number;
+    y: number;
+    text: string;
+}
+
+export interface SavedComparisonSession {
+    id: string;
+    name: string;
+    itemIds: string[];
+    mode: "side-by-side" | "overlay" | "slider" | "difference";
+    zoom: number;
+    zoomMode?: "fit" | "actual";
+    opacity?: number;
+    wipe?: number;
+    panX: number;
+    panY: number;
+    offsetX: number;
+    offsetY: number;
+    scale: number;
+    threshold: number;
+    notes: ComparisonPointNote[];
+    updatedAt: string;
+}
+
+export interface CaptureColorSample {
+    value: string;
+    sampledAt: string;
+}
+
+export interface OcrTextBox {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+export interface OcrTextLine {
+    text: string;
+    box: OcrTextBox;
+    confidence?: number;
+}
+
+export interface OcrJobResult {
+    jobId: string;
+    itemId: string;
+    revision: number;
+    width: number;
+    height: number;
+    lines: OcrTextLine[];
+    text: string;
+    cancelled?: boolean;
+    error?: string;
+}
 
 export type TranslationEngine = "local" | "deepl" | "google";
 
@@ -62,6 +268,14 @@ export interface OpenCaptureItem {
     tags?: string[];
     ocrText?: string;
     ocrDone?: boolean;
+    ocrLines?: OcrTextLine[];
+    status?: CaptureItemStatus;
+    previousStatus?: Exclude<CaptureItemStatus, "trash">;
+    draftRevision?: number;
+    draftCorrupt?: boolean;
+    draftManifestPath?: string;
+    source?: CaptureSourceContext;
+    thumbnailPath?: string;
 }
 
 export interface OpenCaptureWorkflow {
@@ -90,6 +304,14 @@ export interface OpenCaptureShortcut {
     lastUsed?: number | null;
 }
 
+export interface CaptureDiagnosticTrace {
+    requestId: string;
+    phase: "input" | "preparing" | "ready" | "shown" | "committed" | "failed";
+    input?: string;
+    detail?: string;
+    at: string;
+}
+
 export type MouseChordAction = "关闭" | "截屏" | "快速截屏" | "录屏" | "起始页";
 
 export interface OpenCaptureRuntime {
@@ -97,6 +319,7 @@ export interface OpenCaptureRuntime {
     shortcuts: OpenCaptureShortcut[];
     mouseChord?: MouseChordAction;
     stepCapture?: boolean;
+    captureDiagnostics?: CaptureDiagnosticTrace[];
 }
 
 export interface OpenCaptureItemsPage {
@@ -116,6 +339,12 @@ export interface OpenCaptureState {
     recoveryWarning?: string;
     previewItemId?: string;
     pinSets?: OpenCapturePinSet[];
+    experience?: CaptureExperiencePreferences;
+    comparisons?: SavedComparisonSession[];
+    styles?: NamedBeautifyStyle[];
+    smartFilters?: SavedSmartFilter[];
+    colors?: CaptureColorSample[];
+    catalogRevision?: number;
 }
 
 export interface TranslationOptions {
@@ -145,6 +374,16 @@ export interface TranslationConfiguration {
 }
 
 export interface OpenCaptureApi {
+    boards: CaptureBoardApi;
+    cutoutImage(input: CaptureCutoutInput): Promise<CaptureCutoutResult>;
+    onBoardFlushRequested(callback: (requestId: string) => void): () => void;
+    ackBoardFlush(
+        requestId: string,
+        ok: boolean,
+        message?: string,
+    ): Promise<void>;
+    finishBoardClose(): Promise<void>;
+    shelfAction(name: "copy" | "edit" | "pin", id: string): Promise<boolean>;
     action(name: OpenCaptureActionName, payload?: unknown): Promise<unknown>;
     getState(): Promise<OpenCaptureState>;
     translate(options: TranslationOptions): Promise<string[]>;
@@ -169,6 +408,35 @@ export interface OpenCaptureApi {
             percent: number;
         }) => void,
     ): () => void;
+    getPreferences(): Promise<CaptureExperiencePreferences>;
+    configureExperience(
+        patch: Partial<CaptureExperiencePreferences>,
+    ): Promise<CaptureExperiencePreferences>;
+    stageCapture(input: StageCaptureInput): Promise<StageCaptureResult>;
+    getDraft(id: string): Promise<CaptureDraft>;
+    recognizeItem(id: string): Promise<OcrJobResult>;
+    requestComparison(ids: string[]): Promise<void>;
+    onCompareRequested(callback: (ids: string[]) => void): () => void;
+    queryItems(query: CaptureItemsQuery): Promise<CaptureItemsQueryResult>;
+    promoteItems(ids: string[]): Promise<OpenCaptureState>;
+    repairDraft(id: string): Promise<OpenCaptureState>;
+    trashItems(ids: string[]): Promise<OpenCaptureState>;
+    restoreItems(ids: string[]): Promise<OpenCaptureState>;
+    copySourceFiles(ids: string[]): Promise<{ copied: number }>;
+    saveComparison(
+        session: SavedComparisonSession,
+    ): Promise<SavedComparisonSession>;
+    listComparisons(): Promise<SavedComparisonSession[]>;
+    removeComparison(id: string): Promise<void>;
+    saveStyle(style: NamedBeautifyStyle): Promise<NamedBeautifyStyle>;
+    listStyles(): Promise<NamedBeautifyStyle[]>;
+    removeStyle(id: string): Promise<void>;
+    saveSmartFilter(filter: SavedSmartFilter): Promise<SavedSmartFilter>;
+    listSmartFilters(): Promise<SavedSmartFilter[]>;
+    removeSmartFilter(id: string): Promise<void>;
+    addSampledColor(value: string): Promise<CaptureColorSample[]>;
+    getSampledColors(): Promise<CaptureColorSample[]>;
+    cancelJob(jobId: string): Promise<boolean>;
 }
 
 declare global {
