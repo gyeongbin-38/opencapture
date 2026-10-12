@@ -5,6 +5,7 @@ out/
 eSearch
 .VSCodeCounter/
 ocr/ppocr
+build-alt/
 .DS_Store
 build
 preload_config
@@ -22,9 +23,15 @@ script/make_aur/e-search/usr/share/applications/e-search.desktop
 
 .omx/
 assets/runtime/
+!assets/runtime/
+assets/runtime/*
+!assets/runtime/win32-x64/
+assets/runtime/win32-x64/*
+!assets/runtime/win32-x64/clipboard-files.py
 assets/translation-models/
 .evidence/
 release/
 native/bin/
 .tmp-assets/
+web-dist/
 

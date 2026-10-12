@@ -32,6 +32,10 @@ export default defineConfig(({ mode }) => ({
                         __dirname,
                         "src/renderer/dashboard.html",
                     ),
+                    capture_shelf: path.resolve(
+                        __dirname,
+                        "src/renderer/capture_shelf.html",
+                    ),
                     editor: path.resolve(__dirname, "src/renderer/editor.html"),
                     clip: path.resolve(__dirname, "src/renderer/capture.html"),
                     setting: path.resolve(
