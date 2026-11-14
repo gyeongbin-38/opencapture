@@ -25,6 +25,7 @@ script/make_aur/e-search/usr/share/applications/e-search.desktop
 assets/runtime/
 !assets/runtime/
 assets/runtime/*
+!assets/runtime/rar-wasm/
 !assets/runtime/win32-x64/
 assets/runtime/win32-x64/*
 !assets/runtime/win32-x64/clipboard-files.py

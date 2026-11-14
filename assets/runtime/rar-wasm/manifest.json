@@ -1,0 +1,29 @@
+{
+    "schemaVersion": 1,
+    "libarchive": {
+        "tag": "v3.8.10",
+        "commit": "0c48412be2d94afe1859a807ea7896a18d8900bd",
+        "source": "https://github.com/libarchive/libarchive"
+    },
+    "emscripten": {
+        "version": "4.0.21",
+        "commit": "b2436aafa7351ee1b581f15841f1b45ed716a279",
+        "source": "https://github.com/emscripten-core/emsdk"
+    },
+    "limits": {
+        "initialMemoryBytes": 16777216,
+        "maximumMemoryBytes": 402653184,
+        "maximumInputBytes": 104857600,
+        "maximumExpandedBytes": 268435456,
+        "maximumEntries": 5000,
+        "maximumChunkBytes": 1048576,
+        "timeoutMilliseconds": 180000
+    },
+    "artifacts": {
+        "rar-runtime.mjs": "de4a366c38a0c77fd7f938c4474280796f89a17f3b194bed5fbca77313679fbe",
+        "rar-runtime.wasm": "6520deb9577f46c072d1ac25bdfc0d8d81c9e2599fee7234ed34f67306c85b46",
+        "LICENSE.libarchive": "30e556b3959e3985d66efefec5eaac51d4995053caa1d3cffe6eb916f146f229",
+        "LICENSE.emsdk": "99d9a9616fbde3f5ee22a71d8645799a8522d48526130c5ba6dc27ad15ce01f1",
+        "bridge.c": "010df92682d706cd70f9635376e20f07ca3f6343bcfe57c6d79f2f61765d363a"
+    }
+}

@@ -62,6 +62,61 @@ export function validateSourceFiles(paths: string[]) {
     return output;
 }
 
+export async function copyPathsToWindowsClipboard(
+    root: string,
+    owner: BrowserWindow,
+    paths: string[],
+    signal?: AbortSignal,
+) {
+    if (process.platform !== "win32")
+        throw new Error("Windows clipboard is unavailable.");
+    if (!paths.length || paths.length > 100)
+        throw new Error("Choose up to 100 files or folders.");
+    const files = paths.map((path) => {
+        const canonical = realpathSync(resolve(path));
+        const stat = statSync(canonical);
+        if (!stat.isFile() && !stat.isDirectory())
+            throw new Error("Choose regular files or folders.");
+        return canonical;
+    });
+    const runtime = runtimePaths(root);
+    signal?.throwIfAborted();
+    const result = await new Promise<{
+        error: Error | null;
+        stdout: string;
+        stderr: string;
+    }>((done) => {
+        const child = execFile(
+            runtime.python,
+            ["-X", "utf8", runtime.script],
+            {
+                encoding: "utf8",
+                timeout: 10000,
+                windowsHide: true,
+                maxBuffer: 1024 * 1024,
+                signal,
+            },
+            (error, stdout, stderr) => done({ error, stdout, stderr }),
+        );
+        child.stdin?.on("error", () => {});
+        child.stdin?.end(JSON.stringify({ hwnd: nativeHandle(owner), files }));
+    });
+    if (result.error) throw result.error;
+    let response: { ok?: boolean; count?: number; error?: string };
+    try {
+        response = JSON.parse(result.stdout.trim());
+    } catch {
+        throw new Error(
+            result.stderr.trim() || "Clipboard helper returned invalid output.",
+        );
+    }
+    if (!response.ok || response.count !== files.length)
+        throw new Error(
+            response.error || "Windows rejected the file-list clipboard data.",
+        );
+    return { copied: files.length };
+}
+
 export async function copyFilesToWindowsClipboard(
     root: string,
     owner: BrowserWindow,

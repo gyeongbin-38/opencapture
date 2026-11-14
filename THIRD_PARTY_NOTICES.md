@@ -48,6 +48,23 @@ and destination for each file. The build fails if any of those checks do not mat
 - Runtime download URLs and hashes are recorded by scripts/prepare-translation.py and the embedded runtime manifest. Wheel license files remain included.
 - Argos English/Korean 1.1 models are downloaded only after an explicit user action. They are not bundled; their source README/attributions are retained with the installed models. Model redistribution terms are not inferred from the Argos code license.
 
+## Local file tools
+
+- PDF.js (`pdfjs-dist` 6.4.299), Mozilla and contributors: Apache-2.0.
+  Browser assets and the upstream license are retained under
+  `out/renderer/assets/pdfjs/`.
+- pdf-lib 1.17.1, Andrew Dillon and contributors: MIT. Its upstream license is
+  retained as `out/renderer/assets/pdfjs/LICENSE.pdf-lib` because distribution
+  excludes Markdown files from dependency directories.
+- The RAR4/5 WebAssembly decoder is built from libarchive v3.8.10
+  (`0c48412be2d94afe1859a807ea7896a18d8900bd`) using Emscripten 4.0.21.
+  `assets/runtime/rar-wasm/` includes the libarchive and SDK notices, bridge
+  source, artifact hashes and version manifest. Rebuild instructions are in
+  `native/rar-wasm/`. No stock libarchive.js package is bundled.
+- LibreOffice is an optional separately installed converter and is not
+  redistributed with OpenCapture. REA was used only in a disposable research
+  VM; it is not a product dependency.
+
 ## Application provenance
 
 - Fork of https://github.com/xushengfeng/eSearch at commit 68ad11636392f204085efa81caab0b3d19e4dc28 (GPL-3.0).
