@@ -17,7 +17,8 @@
     overflow: hidden;
     color: var(--board-text);
     background: var(--board-bg);
-    font-family: "Segoe UI Variable", "Segoe UI", "Malgun Gothic", sans-serif;
+    font-family: system-ui, "Segoe UI Variable", "Segoe UI", "Malgun Gothic",
+        sans-serif;
 }
 
 .board-header {
@@ -313,6 +314,8 @@
     padding: 26px;
     color: var(--board-muted);
     text-align: center;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
     transform: translate(-50%, -50%);
     pointer-events: none;
 }

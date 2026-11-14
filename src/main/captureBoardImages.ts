@@ -91,47 +91,62 @@ export function beautifyPng(
     return { png: result.toPNG(), width, height };
 }
 
-export function imagePdf(dataURL: string) {
-    const image = nativeImage.createFromDataURL(dataURL);
-    const size = image.getSize();
-    if (
-        image.isEmpty() ||
-        size.width * size.height <= 0 ||
-        size.width * size.height > 16_000_000
-    )
-        throw new Error("PDF export exceeds 16 megapixels.");
-    const jpeg = image.toJPEG(92);
+export function imagesPdf(dataURLs: string[]) {
+    if (!dataURLs.length || dataURLs.length > 100)
+        throw new Error("PDF export needs 1-100 pages.");
     const objects: Buffer[] = [];
     const add = (value: string | Buffer) =>
         objects.push(
             Buffer.isBuffer(value) ? value : Buffer.from(value, "binary"),
         );
     add("<< /Type /Catalog /Pages 2 0 R >>");
-    add("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-    add(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${size.width} ${size.height}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
-    );
-    add(
-        Buffer.concat([
+    const kids: string[] = [];
+    const bodies: Buffer[] = [];
+    dataURLs.forEach((dataURL, index) => {
+        const image = nativeImage.createFromDataURL(dataURL);
+        const size = image.getSize();
+        if (
+            image.isEmpty() ||
+            size.width * size.height <= 0 ||
+            size.width * size.height > 16_000_000
+        )
+            throw new Error("PDF export exceeds 16 megapixels.");
+        const jpeg = image.toJPEG(92);
+        const pageId = 3 + index * 3;
+        kids.push(`${pageId} 0 R`);
+        bodies.push(
             Buffer.from(
-                `<< /Type /XObject /Subtype /Image /Width ${size.width} /Height ${size.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+                `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${size.width} ${size.height}] /Resources << /XObject << /Im${index} ${pageId + 1} 0 R >> >> /Contents ${pageId + 2} 0 R >>`,
                 "binary",
             ),
-            jpeg,
-            Buffer.from("\nendstream", "binary"),
-        ]),
-    );
-    const content = Buffer.from(
-        `q ${size.width} 0 0 ${size.height} 0 0 cm /Im0 Do Q`,
-        "binary",
-    );
+            Buffer.concat([
+                Buffer.from(
+                    `<< /Type /XObject /Subtype /Image /Width ${size.width} /Height ${size.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+                    "binary",
+                ),
+                jpeg,
+                Buffer.from("\nendstream", "binary"),
+            ]),
+        );
+        const content = Buffer.from(
+            `q ${size.width} 0 0 ${size.height} 0 0 cm /Im${index} Do Q`,
+            "binary",
+        );
+        bodies.push(
+            Buffer.concat([
+                Buffer.from(
+                    `<< /Length ${content.length} >>\nstream\n`,
+                    "binary",
+                ),
+                content,
+                Buffer.from("\nendstream", "binary"),
+            ]),
+        );
+    });
     add(
-        Buffer.concat([
-            Buffer.from(`<< /Length ${content.length} >>\nstream\n`, "binary"),
-            content,
-            Buffer.from("\nendstream", "binary"),
-        ]),
+        `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${dataURLs.length} >>`,
     );
+    for (const body of bodies) add(body);
     const parts: Buffer[] = [
         Buffer.from("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n", "binary"),
     ];
@@ -161,4 +176,8 @@ export function imagePdf(dataURL: string) {
         ),
     );
     return Buffer.concat(parts);
+}
+
+export function imagePdf(dataURL: string) {
+    return imagesPdf([dataURL]);
 }

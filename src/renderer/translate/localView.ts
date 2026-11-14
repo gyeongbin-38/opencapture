@@ -2,8 +2,10 @@ import { button, ele, initDKH, p, select, view } from "dkh-ui";
 import type * as Electron from "electron";
 import store from "../../../lib/store/renderStore";
 import { lan, t } from "../../../lib/translate/translate";
+import { labLangFor, setLabLang } from "../lib/labText";
 const { ipcRenderer, clipboard } = require("electron") as typeof Electron;
 lan(store.get("语言.语言"));
+setLabLang(labLangFor(store.get("语言.语言")));
 initDKH({ pureStyle: true });
 document.title = `OpenCapture · ${t("번역")}`;
 document.body.style.cssText =

@@ -38,7 +38,7 @@
 }
 
 .board-editor g.is-selected > :first-child {
-    filter: drop-shadow(0 0 3px color-mix(in srgb, #7c5cff 70%, transparent));
+    filter: drop-shadow(0 0 2px #ffffff66);
 }
 
 .board-editor g.is-temporary {
@@ -60,16 +60,16 @@
     bottom: 14px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--sp-1);
     width: max-content;
     max-width: min(760px, calc(100vw - 32px));
     min-height: 48px;
-    padding: 4px;
+    padding: var(--sp-1);
     color: #f7f7f9;
-    background: color-mix(in srgb, #111319 92%, transparent);
-    border: 1px solid #ffffff18;
+    background: var(--surface-solid, #151518);
+    border: 1px solid var(--line-bright, rgba(255, 255, 255, 0.18));
     border-radius: 11px;
-    box-shadow: 0 12px 30px #0008;
+    box-shadow: 0 4px 16px #0005;
     transform: translateX(-50%);
     pointer-events: auto;
     white-space: nowrap;
@@ -80,12 +80,12 @@
 .board-editor__toolbar summary {
     min-width: 40px;
     min-height: 40px;
-    padding: 0 11px;
+    padding: 0 var(--sp-3);
     color: inherit;
     background: transparent;
     border: 0;
     border-radius: 7px;
-    font: 500 12px / 1 system-ui, sans-serif;
+    font: 500 13px / 1 system-ui, sans-serif;
     white-space: nowrap;
     flex-shrink: 0;
     cursor: pointer;
@@ -100,7 +100,8 @@
 }
 
 .board-editor__primary {
-    background: #7657ff !important;
+    color: #101012 !important;
+    background: #f4f4f5 !important;
 }
 
 .board-editor__drawer {
@@ -112,12 +113,12 @@
     gap: 3px;
     width: min(240px, calc(100vw - 24px));
     max-height: min(360px, 50vh);
-    padding: 7px;
+    padding: var(--sp-2);
     overflow: auto;
     background: #111319f5;
-    border: 1px solid #ffffff18;
+    border: 1px solid var(--line-bright, rgba(255, 255, 255, 0.18));
     border-radius: 11px;
-    box-shadow: 0 14px 34px #0009;
+    box-shadow: 0 4px 16px #0005;
     transform: translateX(-50%);
 }
 
@@ -142,14 +143,14 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: start;
-    gap: 8px;
+    gap: var(--sp-2);
     box-sizing: border-box;
     width: min(420px, calc(100vw - 24px));
     max-height: min(360px, 50vh);
     padding: 10px;
     overflow: auto;
     background: #111319f7;
-    border: 1px solid #ffffff18;
+    border: 1px solid var(--line-bright, rgba(255, 255, 255, 0.18));
     border-radius: 11px;
     box-shadow: 0 14px 34px #0009;
     transform: translateX(-50%);
@@ -161,8 +162,8 @@
     align-content: start;
     gap: 6px;
     min-width: 0;
-    padding: 7px;
-    background: #ffffff08;
+    padding: var(--sp-2);
+    background: var(--surface, rgba(255, 255, 255, 0.045));
     border-radius: 9px;
 }
 
@@ -177,7 +178,7 @@
     display: grid;
     grid-template-columns: auto minmax(48px, 1fr);
     align-items: center;
-    gap: 5px;
+    gap: var(--sp-1);
     min-width: 0;
     color: #ffffffb8;
     font: 500 11px / 1 system-ui, sans-serif;
@@ -193,10 +194,10 @@
     box-sizing: border-box;
     width: 58px;
     height: 40px;
-    padding: 3px 5px;
+    padding: 3px var(--sp-1);
     color: inherit;
     background: #ffffff0c;
-    border: 1px solid #ffffff16;
+    border: 1px solid var(--surface-raised, rgba(255, 255, 255, 0.08));
     border-radius: 7px;
     font: 500 11px / 1 system-ui, sans-serif;
 }
@@ -222,10 +223,10 @@
     bottom: calc(100% + 8px);
     width: min(280px, calc(100vw - 24px));
     max-height: min(380px, 55vh);
-    padding: 5px;
+    padding: var(--sp-1);
     overflow: auto;
     background: #111319f7;
-    border: 1px solid #ffffff18;
+    border: 1px solid var(--line-bright, rgba(255, 255, 255, 0.18));
     border-radius: 11px;
     box-shadow: 0 14px 34px #0009;
     transform: translateX(-50%);
@@ -242,7 +243,7 @@
     .board-editor__toolbar summary {
         min-width: 36px;
         padding-inline: 8px;
-        font-size: 11px;
+        font-size: var(--fs-xs);
     }
 
     .board-editor__context {

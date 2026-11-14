@@ -29,6 +29,7 @@ import { type ImageHoldHandle, createImageHold } from "../lib/imageHold";
 import { requestChoice, requestText } from "../lib/textDialog";
 import { createBoardEditor } from "./boardEditor";
 import "./captureBoard.css";
+import { lt } from "../lib/labText";
 
 const SAVE_DELAY = 500;
 const MAX_UNDO = 50;
@@ -56,7 +57,7 @@ const imageDimensions = (source: string) =>
         image.onload = () =>
             resolve({ width: image.naturalWidth, height: image.naturalHeight });
         image.onerror = () =>
-            reject(new Error("원본 이미지를 불러오지 못했습니다."));
+            reject(new Error(lt("원본 이미지를 불러오지 못했습니다.")));
         image.src = source;
     });
 
@@ -104,43 +105,44 @@ export function createCaptureBoard(
     options: CaptureBoardOptions,
 ): CaptureBoardController {
     const root = element("section", "capture-board");
-    root.setAttribute("aria-label", "캡처 보드");
+    root.setAttribute("aria-label", lt("캡처 보드"));
     root.tabIndex = -1;
     const header = element("header", "board-header");
     const tabScroller = element("div", "board-tabs");
     tabScroller.setAttribute("role", "tablist");
     const headerActions = element("div", "board-header-actions");
-    const addBoardButton = iconButton("새 보드", "create", "+");
-    const renameButton = iconButton("보드 이름 바꾸기", "rename", "Aa");
-    const moreButton = iconButton("보드 도구", "more", "•••");
-    headerActions.append(addBoardButton, renameButton, moreButton);
+    const addBoardButton = iconButton(lt("새 보드"), "create", "+");
+    const renameButton = iconButton(lt("보드 이름 바꾸기"), "rename", "Aa");
+    const fitButton = iconButton(lt("화면에 맞추기"), "fit", "□");
+    const moreButton = iconButton(lt("보드 도구"), "more", "•••");
+    headerActions.append(addBoardButton, renameButton, fitButton, moreButton);
     header.append(tabScroller, headerActions);
 
     const toolDrawer = element("div", "board-tool-drawer");
     toolDrawer.hidden = true;
     const toolCommands: Array<[string, string, string]> = [
-        ["capture", "새 캡처", "⌁"],
-        ["layout-grid", "격자 정렬", "▦"],
-        ["layout-horizontal", "가로 정렬", "↔"],
-        ["layout-vertical", "세로 정렬", "↕"],
-        ["group", "그룹", "⌘"],
-        ["focus", "선택만 보기", "◎"],
-        ["focus-clear", "전체 보기", "○"],
-        ["fit", "화면에 맞추기", "□"],
-        ["auto-add", "새 캡처 자동 추가", "＋"],
-        ["undo", "실행 취소", "↶"],
-        ["redo", "다시 실행", "↷"],
-        ["export-png", "PNG 내보내기", "⇩"],
-        ["export-pdf", "PDF 내보내기", "P"],
-        ["export-portable", "편집 파일 내보내기", "◇"],
-        ["import-portable", "편집 파일 가져오기", "⇧"],
+        ["capture", lt("새 캡처"), "⌁"],
+        ["layout-grid", lt("격자 정렬"), "▦"],
+        ["layout-horizontal", lt("가로 정렬"), "↔"],
+        ["layout-vertical", lt("세로 정렬"), "↕"],
+        ["group", lt("그룹"), "⌘"],
+        ["focus", lt("선택만 보기"), "◎"],
+        ["focus-clear", lt("전체 보기"), "○"],
+        ["fit", lt("화면에 맞추기"), "□"],
+        ["auto-add", lt("새 캡처 자동 추가"), "＋"],
+        ["undo", lt("실행 취소"), "↶"],
+        ["redo", lt("다시 실행"), "↷"],
+        ["export-png", lt("PNG 내보내기"), "⇩"],
+        ["export-pdf", lt("PDF 내보내기"), "P"],
+        ["export-portable", lt("편집 파일 내보내기"), "◇"],
+        ["import-portable", lt("편집 파일 가져오기"), "⇧"],
     ];
     for (const [command, label, glyph] of toolCommands)
         toolDrawer.append(iconButton(label, command, glyph));
 
     const viewport = element("div", "board-viewport");
     viewport.tabIndex = 0;
-    viewport.setAttribute("aria-label", "캡처 배치 영역");
+    viewport.setAttribute("aria-label", lt("캡처 배치 영역"));
     const stage = element("div", "board-stage");
     stage.style.width = `${WORLD_SIZE}px`;
     stage.style.height = `${WORLD_SIZE}px`;
@@ -158,13 +160,17 @@ export function createCaptureBoard(
     contextToolbar.append(selectionLabel);
 
     const empty = element("div", "board-empty");
-    const emptyTitle = element("strong", "", "캡처를 한곳에 모아보세요");
+    const emptyTitle = element("strong", "", lt("캡처를 한곳에 모아보세요"));
     const emptyText = element(
         "span",
         "",
-        "새 캡처가 현재 보드에 자동으로 추가됩니다.",
+        lt("새 캡처가 현재 보드에 자동으로 추가됩니다."),
     );
-    const emptyCapture = element("button", "board-primary-button", "캡처하기");
+    const emptyCapture = element(
+        "button",
+        "board-primary-button",
+        lt("캡처하기"),
+    );
     emptyCapture.type = "button";
     emptyCapture.dataset.boardCommand = "capture";
     empty.append(emptyTitle, emptyText, emptyCapture);
@@ -247,12 +253,12 @@ export function createCaptureBoard(
     };
     const mutate = (
         change: (document: BoardDocument) => void,
-        _label = "보드 편집",
+        _label = lt("보드 편집"),
         recordUndo = true,
     ) => {
         if (!current) return;
         if (transitionInFlight > 0) {
-            options.announce("보드를 전환하는 중입니다.");
+            options.announce(lt("보드를 전환하는 중입니다."));
             return;
         }
         if (recordUndo) pushUndo();
@@ -311,7 +317,7 @@ export function createCaptureBoard(
                     options.announce(
                         error instanceof Error
                             ? error.message
-                            : "보드를 저장하지 못했습니다.",
+                            : lt("보드를 저장하지 못했습니다."),
                         true,
                     );
                     throw error;
@@ -398,12 +404,18 @@ export function createCaptureBoard(
         render();
     }
 
+    let transitionNoticeTimer: ReturnType<typeof setTimeout> | undefined;
     const setTransitioning = (active: boolean) => {
         if (active && transitionInFlight === 0) cancelActiveGesture();
         transitionInFlight += active ? 1 : -1;
         transitionInFlight = Math.max(0, transitionInFlight);
-        if (active && transitionInFlight === 1)
-            options.announce("보드를 전환하는 중입니다.");
+        if (active && transitionInFlight === 1) {
+            transitionNoticeTimer = setTimeout(() => {
+                if (transitionInFlight > 0 && root.getClientRects().length)
+                    options.announce(lt("보드를 전환하는 중입니다."));
+            }, 500);
+        }
+        if (!transitionInFlight) clearTimeout(transitionNoticeTimer);
         root.classList.toggle("is-transitioning", transitionInFlight > 0);
         root.setAttribute("aria-busy", String(transitionInFlight > 0));
         viewport.inert = transitionInFlight > 0;
@@ -680,19 +692,20 @@ export function createCaptureBoard(
                 boardId,
                 derivation,
                 new Map([[nodeId, sourceAssetId]]),
-                "배경 제거",
+                lt("배경 제거"),
             );
             if (application.staleAssetIds.length)
                 await options.api.discardDerived(
                     boardId,
                     application.staleAssetIds,
                 );
-            if (application.applied) options.announce("배경을 제거했습니다.");
+            if (application.applied)
+                options.announce(lt("배경을 제거했습니다."));
         } catch (error) {
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "배경을 제거하지 못했습니다.",
+                    : lt("배경을 제거하지 못했습니다."),
                 true,
             );
         } finally {
@@ -710,7 +723,7 @@ export function createCaptureBoard(
         const holdRef: { current?: ImageHoldHandle } = {};
         const hold = createImageHold(holdTarget, {
             disabled: () => editor?.getTool() !== "select" || node.locked,
-            progressLabel: "길게 눌러 배경 제거",
+            progressLabel: lt("길게 눌러 배경 제거"),
             onHold: () => cutoutNode(node.id, holdRef.current),
             onDragStart: ({ event }) => beginGesture(event, node.id, "move"),
         });
@@ -770,7 +783,7 @@ export function createCaptureBoard(
             const card = element("article", "board-image");
             card.dataset.nodeId = node.id;
             card.tabIndex = 0;
-            card.setAttribute("aria-label", node.name ?? "캡처 이미지");
+            card.setAttribute("aria-label", node.name ?? lt("캡처 이미지"));
             card.classList.toggle("is-selected", selection.has(node.id));
             card.style.left = `${node.x}px`;
             card.style.top = `${node.y}px`;
@@ -821,7 +834,10 @@ export function createCaptureBoard(
                     );
                     handle.type = "button";
                     handle.dataset.noImageHold = "true";
-                    handle.setAttribute("aria-label", `크기 조절 ${direction}`);
+                    handle.setAttribute(
+                        "aria-label",
+                        lt(`크기 조절 ${direction}`, `Resize ${direction}`),
+                    );
                     handle.addEventListener("pointerdown", (event) => {
                         event.stopPropagation();
                         beginGesture(event, node.id, "resize", direction);
@@ -847,13 +863,16 @@ export function createCaptureBoard(
         const nodes = activeNodes();
         contextToolbar.hidden = nodes.length === 0;
         if (!nodes.length) return;
-        selectionLabel.textContent = `${nodes.length}개 선택`;
+        selectionLabel.textContent = lt(
+            `${nodes.length}개 선택`,
+            `${nodes.length} selected`,
+        );
         if (imageNodes(nodes).length === nodes.length) {
             toolbarActions([
-                ["cutout", "배경 제거", "✦"],
-                ["beautify", "같은 스타일 적용", "◇"],
-                ["compare-versions", "버전 비교", "◐"],
-                ["focus", "선택만 보기", "◎"],
+                ["cutout", lt("배경 제거"), "✦"],
+                ["beautify", lt("같은 스타일 적용"), "◇"],
+                ["compare-versions", lt("버전 비교"), "◐"],
+                ["focus", lt("선택만 보기"), "◎"],
             ]);
             if (
                 imageNodes(nodes).some(
@@ -862,11 +881,11 @@ export function createCaptureBoard(
                         node.assetId !== node.originalAssetId,
                 )
             )
-                toolbarActions([["restore-original", "원본 복원", "↺"]]);
+                toolbarActions([["restore-original", lt("원본 복원"), "↺"]]);
         }
         toolbarActions([
-            ["group", "그룹", "⌘"],
-            ["delete", "삭제", "×"],
+            ["group", lt("그룹"), "⌘"],
+            ["delete", lt("삭제"), "×"],
         ]);
     };
 
@@ -907,7 +926,7 @@ export function createCaptureBoard(
         screenToWorld,
         assetData: (assetId, quality) => {
             if (!current)
-                return Promise.reject(new Error("열린 보드가 없습니다."));
+                return Promise.reject(new Error(lt("열린 보드가 없습니다.")));
             return options.api.assetData(current.id, assetId, quality);
         },
         announce: options.announce,
@@ -938,7 +957,7 @@ export function createCaptureBoard(
         try {
             await flushSaves();
             if (!target) {
-                const created = await options.api.create("새 보드");
+                const created = await options.api.create(lt("새 보드"));
                 summaries = await options.api.list();
                 await adopt(created);
                 return;
@@ -958,7 +977,9 @@ export function createCaptureBoard(
         try {
             await flushSaves();
             const number = summaries.length + 1;
-            const created = await options.api.create(`보드 ${number}`);
+            const created = await options.api.create(
+                lt(`보드 ${number}`, `Board ${number}`),
+            );
             summaries = await options.api.list();
             await adopt(created);
         } finally {
@@ -1102,7 +1123,7 @@ export function createCaptureBoard(
                 options.announce(
                     error instanceof Error
                         ? error.message
-                        : "캡처를 보드에 추가하지 못했습니다.",
+                        : lt("캡처를 보드에 추가하지 못했습니다."),
                     true,
                 ),
             );
@@ -1156,17 +1177,17 @@ export function createCaptureBoard(
                 (node) => map.get(node.id) ?? node,
             );
             fitViewport(document, updated);
-        }, "자동 배치");
+        }, lt("자동 배치"));
     };
     const doAlign = (alignment: BoardAlign) => {
         const nodes = activeNodes();
         if (nodes.length < 2) return;
-        replaceNodes(alignNodes(nodes, alignment), "정렬");
+        replaceNodes(alignNodes(nodes, alignment), lt("정렬"));
     };
     const doDistribute = (axis: BoardDistribute) => {
         const nodes = activeNodes();
         if (nodes.length < 3) return;
-        replaceNodes(distributeNodes(nodes, axis), "간격 맞추기");
+        replaceNodes(distributeNodes(nodes, axis), lt("간격 맞추기"));
     };
 
     const beautify = async () => {
@@ -1182,7 +1203,7 @@ export function createCaptureBoard(
             ];
             if (styles.length > 1) {
                 const selected = await requestChoice({
-                    title: "적용할 스타일",
+                    title: lt("적용할 스타일"),
                     value: DEFAULT_STYLE.id,
                     choices: styles.map((item) => ({
                         value: item.id,
@@ -1198,7 +1219,7 @@ export function createCaptureBoard(
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "스타일을 불러오지 못했습니다.",
+                    : lt("스타일을 불러오지 못했습니다."),
                 true,
             );
             return;
@@ -1223,7 +1244,7 @@ export function createCaptureBoard(
                 document.id,
                 result,
                 expected,
-                "일괄 꾸미기",
+                lt("일괄 꾸미기"),
             );
             if (application.staleAssetIds.length)
                 await options.api.discardDerived(
@@ -1231,12 +1252,14 @@ export function createCaptureBoard(
                     application.staleAssetIds,
                 );
             if (application.applied)
-                options.announce("선택한 캡처에 같은 스타일을 적용했습니다.");
+                options.announce(
+                    lt("선택한 캡처에 같은 스타일을 적용했습니다."),
+                );
         } catch (error) {
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "스타일을 적용하지 못했습니다.",
+                    : lt("스타일을 적용하지 못했습니다."),
                 true,
             );
         }
@@ -1244,7 +1267,7 @@ export function createCaptureBoard(
 
     const undo = () => {
         if (transitionInFlight > 0) {
-            options.announce("보드를 전환하는 중입니다.");
+            options.announce(lt("보드를 전환하는 중입니다."));
             return;
         }
         if (!current || !undoStack.length) return;
@@ -1255,7 +1278,7 @@ export function createCaptureBoard(
     };
     const redo = () => {
         if (transitionInFlight > 0) {
-            options.announce("보드를 전환하는 중입니다.");
+            options.announce(lt("보드를 전환하는 중입니다."));
             return;
         }
         if (!current || !redoStack.length) return;
@@ -1278,14 +1301,17 @@ export function createCaptureBoard(
         );
         options.announce(
             result.saved
-                ? `${format.toUpperCase()}로 저장했습니다.`
-                : "내보내기를 취소했습니다.",
+                ? lt(
+                      `${format.toUpperCase()}로 저장했습니다.`,
+                      `Saved as ${format.toUpperCase()}.`,
+                  )
+                : lt("내보내기를 취소했습니다."),
         );
     };
 
     async function command(id: string): Promise<unknown> {
         if (transitionInFlight > 0) {
-            options.announce("보드를 전환하는 중입니다.");
+            options.announce(lt("보드를 전환하는 중입니다."));
             return;
         }
         if (id.startsWith("tool:")) {
@@ -1297,7 +1323,7 @@ export function createCaptureBoard(
             const boardId = current.id;
             const name = (
                 await requestText({
-                    title: "보드 이름",
+                    title: lt("보드 이름"),
                     value: current.name,
                     maxLength: 80,
                 })
@@ -1306,7 +1332,7 @@ export function createCaptureBoard(
             if (name) {
                 mutate((document) => {
                     document.name = name.slice(0, 80);
-                }, "이름 변경");
+                }, lt("이름 변경"));
                 const summary = summaries.find(
                     (item) => item.id === current?.id,
                 );
@@ -1322,7 +1348,7 @@ export function createCaptureBoard(
                 return;
             mutate((document) => {
                 document.settings.preset = preset;
-            }, "작업 프리셋");
+            }, lt("작업 프리셋"));
             editor?.setTool(
                 preset === "bug"
                     ? "arrow"
@@ -1332,10 +1358,10 @@ export function createCaptureBoard(
             );
             options.announce(
                 preset === "bug"
-                    ? "버그 보고 도구를 준비했습니다."
+                    ? lt("버그 보고 도구를 준비했습니다.")
                     : preset === "study"
-                      ? "공부 메모 도구를 준비했습니다."
-                      : "디자인 검토 도구를 준비했습니다.",
+                      ? lt("공부 메모 도구를 준비했습니다.")
+                      : lt("디자인 검토 도구를 준비했습니다."),
             );
             return;
         }
@@ -1359,43 +1385,43 @@ export function createCaptureBoard(
             mutate((document) => {
                 for (const node of document.nodes)
                     if (selection.has(node.id)) node.groupId = groupId;
-            }, "그룹 만들기");
+            }, lt("그룹 만들기"));
             return;
         }
         if (id === "ungroup") {
             mutate((document) => {
                 for (const node of document.nodes)
                     if (selection.has(node.id)) node.groupId = undefined;
-            }, "그룹 해제");
+            }, lt("그룹 해제"));
             return;
         }
         if (id === "focus" && current) {
             mutate((document) => {
                 document.settings.focusIds = [...selection];
-            }, "집중 보기");
+            }, lt("집중 보기"));
             return;
         }
         if (id === "focus-clear" && current) {
             mutate((document) => {
                 document.settings.focusIds = [];
-            }, "전체 보기");
+            }, lt("전체 보기"));
             return;
         }
         if (id === "fit" && current) {
             const nodes = activeNodes().length
                 ? activeNodes()
                 : current.nodes.filter(selectedVisible);
-            mutate((document) => fitViewport(document, nodes), "화면 맞춤");
+            mutate((document) => fitViewport(document, nodes), lt("화면 맞춤"));
             return;
         }
         if (id === "auto-add" && current) {
             mutate((document) => {
                 document.settings.autoAdd = !document.settings.autoAdd;
-            }, "자동 추가 설정");
+            }, lt("자동 추가 설정"));
             options.announce(
                 current.settings.autoAdd
-                    ? "새 캡처를 이 보드에 자동으로 추가합니다."
-                    : "새 캡처 자동 추가를 껐습니다.",
+                    ? lt("새 캡처를 이 보드에 자동으로 추가합니다.")
+                    : lt("새 캡처 자동 추가를 껐습니다."),
             );
             return;
         }
@@ -1452,13 +1478,13 @@ export function createCaptureBoard(
                         node.y = centerY - node.height / 2;
                         node.assetId = restored.originalAssetId;
                     }
-                }, "원본 복원");
-                options.announce("원본 이미지를 복원했습니다.");
+                }, lt("원본 복원"));
+                options.announce(lt("원본 이미지를 복원했습니다."));
             } catch (error) {
                 options.announce(
                     error instanceof Error
                         ? error.message
-                        : "원본 이미지를 복원하지 못했습니다.",
+                        : lt("원본 이미지를 복원하지 못했습니다."),
                     true,
                 );
             }
@@ -1481,7 +1507,7 @@ export function createCaptureBoard(
                     : [],
             );
             if (ids.length >= 2) return options.compareItems?.(ids);
-            options.announce("비교할 버전이 두 개 이상 필요합니다.", true);
+            options.announce(lt("비교할 버전이 두 개 이상 필요합니다."), true);
             return;
         }
         if (id === "delete") {
@@ -1489,7 +1515,7 @@ export function createCaptureBoard(
                 document.nodes = document.nodes.filter(
                     (node) => !selection.has(node.id) || node.locked,
                 );
-            }, "삭제");
+            }, lt("삭제"));
             selection.clear();
             return;
         }

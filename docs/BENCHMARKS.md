@@ -1,5 +1,7 @@
 # OpenCapture convenience and footprint research
 
+Current user-confirmed product targets and 2026-10-29 integration evidence: [Benchmark progress](BENCHMARK_PROGRESS.md). The observations below remain the dated 2026-10-09 baseline.
+
 Checked 2026-10-09 against official product/upstream sources. Package sizes are compressed download observations, not RAM or startup measurements; formats and included system runtimes differ.
 
 | Reference | License / role | Adopted idea |

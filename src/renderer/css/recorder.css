@@ -1,5 +1,22 @@
+:root,
+body {
+    color-scheme: dark;
+    --bar-bg0: #0c0c0e;
+    --bg: #0c0c0e;
+    --emphasis-color: #27272a;
+    --font-color: #f4f4f5;
+    --font-color-emphasis: #fff;
+    --border-color: #3f3f46;
+    --hover-color: #27272a;
+    --icon-color: invert(1);
+}
+
 body {
     margin: 0;
+    background: var(--bg);
+    color: var(--font-color);
+    font-family: var(--main-font);
+    user-select: none;
 }
 
 #m {
@@ -11,6 +28,175 @@ body {
     justify-content: space-between;
     height: 100vh;
     transition: var(--transition);
+}
+
+/* 녹화 컨트롤 스트립 — 한 줄 바 */
+#rec_setting {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 8px);
+    height: 100vh;
+    box-sizing: border-box;
+    padding: 0 var(--sp-2, 8px);
+    background: var(--bg);
+    min-width: 0;
+}
+
+#rec_setting button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    min-width: 26px;
+    padding: 0 4px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--font-color);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+#rec_setting button:hover {
+    background: var(--hover-color);
+}
+
+#rec_setting button:focus-visible,
+#s button:focus-visible,
+#rec_setting summary:focus-visible,
+#s summary:focus-visible,
+#rec_setting select:focus-visible,
+#s input:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+#rec_setting .icon {
+    width: 16px;
+    height: 16px;
+    filter: var(--icon-color);
+}
+
+#rec_setting select {
+    font-size: var(--fs-sm, 12px);
+    max-width: 110px;
+    height: 24px;
+    border: 1px solid var(--hover-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--font-color);
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+#rec_setting span {
+    font-size: var(--fs-sm, 12px);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+#rec_setting label {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#record_status {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--font-color);
+}
+
+body[data-recorder-state="recording"] #record_status,
+body[data-recorder-state="paused"] #record_status,
+body[data-recorder-state="processing"] #record_status {
+    color: #a5b4fc;
+}
+
+body[data-recorder-state="saved"] #record_status {
+    color: #86efac;
+}
+
+body[data-recorder-state="error"] #record_status {
+    color: #fca5a5;
+}
+
+#record_retry {
+    display: none !important;
+    width: auto;
+    padding-inline: 8px !important;
+}
+
+body[data-recorder-state="cancelled"] #record_retry,
+body[data-recorder-state="error"] #record_retry {
+    display: inline-flex !important;
+}
+
+#rec_options {
+    position: relative;
+    flex: 0 1 auto;
+}
+
+#rec_options[open] {
+    position: fixed;
+    z-index: 3;
+    inset: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
+    background: var(--bg);
+}
+
+#rec_options > summary,
+#s summary {
+    cursor: pointer;
+    font-size: var(--fs-sm, 12px);
+    white-space: nowrap;
+}
+
+#rec_options > .rec-options-row {
+    position: static;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 0;
+    gap: 8px;
+    flex-wrap: nowrap;
+    background: var(--bg);
+}
+
+.rec-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e5484d;
+    flex-shrink: 0;
+    animation: rec-pulse 1.6s ease-in-out infinite;
+}
+
+.rec-dot.paused {
+    animation: none;
+    opacity: 0.4;
+}
+
+@keyframes rec-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgb(229 72 77 / 55%);
+        opacity: 1;
+    }
+    50% {
+        box-shadow: 0 0 0 5px transparent;
+        opacity: 0.65;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rec-dot {
+        animation: none;
+    }
 }
 
 #video {
@@ -35,8 +221,52 @@ video {
     height: 0;
 }
 .s_show {
-    padding: 8px;
+    box-sizing: border-box;
+    width: min(100%, 720px);
+    max-height: 42vh;
+    padding: 10px;
     height: auto !important;
+    overflow-y: auto;
+    display: grid;
+    gap: 8px;
+}
+
+#s > #record_status {
+    display: block;
+    min-height: 1.4em;
+    font-size: 13px;
+}
+
+#s > #save {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
+    gap: 6px;
+    width: auto;
+    min-width: 76px;
+    min-height: 34px;
+    padding: 0 12px;
+    white-space: nowrap;
+    border: 1px solid var(--hover-color);
+    border-radius: 7px;
+    background: var(--hover-color);
+}
+
+#s > details {
+    border-top: 1px solid var(--hover-color);
+    padding-top: 7px;
+}
+
+.record-detail-content {
+    padding-top: 8px;
+}
+
+.record-time-row {
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
 }
 
 #jdt {
@@ -112,4 +342,49 @@ select {
 textarea {
     width: 100%;
     min-height: 2lh;
+    border: 1px solid var(--border-color);
+    background: #141416;
+    color: var(--font-color);
+}
+
+@media (max-width: 430px) {
+    #rec_setting {
+        gap: 5px;
+        padding-inline: 6px;
+    }
+
+    #record_status {
+        flex: 1 1 auto;
+    }
+
+    .s_show {
+        max-height: 52vh;
+    }
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+    :root {
+        color-scheme: light dark;
+    }
+
+    body {
+        --bg: Canvas;
+        --font-color: CanvasText;
+        --hover-color: Canvas;
+        --border-color: CanvasText;
+        background: Canvas;
+        color: CanvasText;
+    }
+
+    #rec_setting button,
+    #s button,
+    #rec_setting select,
+    #rec_options > .rec-options-row,
+    #s > details {
+        border: 1px solid CanvasText;
+    }
+
+    .rec-dot {
+        forced-color-adjust: none;
+    }
 }

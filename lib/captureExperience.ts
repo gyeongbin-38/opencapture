@@ -35,6 +35,7 @@ export const DEFAULT_CAPTURE_EXPERIENCE: CaptureExperiencePreferences = {
     },
     defaultPreset: "stage-only",
     shelfEnabled: true,
+    trashRetentionDays: 0,
 };
 
 const TOOL_IDS = new Set<CaptureToolId>([
@@ -101,5 +102,8 @@ export function parseCaptureExperience(
                 ? preset
                 : "stage-only",
         shelfEnabled: input.shelfEnabled !== false,
+        trashRetentionDays: Number.isSafeInteger(input.trashRetentionDays)
+            ? Math.min(365, Math.max(0, input.trashRetentionDays as number))
+            : 0,
     };
 }

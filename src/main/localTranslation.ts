@@ -43,7 +43,12 @@ export type TranslationStatus = {
     };
 };
 
-type ServiceOptions = { root: string; userData: string };
+type ServiceOptions = {
+    root: string;
+    userData: string;
+    platform?: NodeJS.Platform;
+    arch?: string;
+};
 type ConfigureRequest = {
     engine: TranslationEngine;
     apiKey?: string;
@@ -387,10 +392,16 @@ class LocalWorker {
     }
 }
 
-export function createTranslationService({ root, userData }: ServiceOptions) {
+export function createTranslationService({
+    root,
+    userData,
+    platform = process.platform,
+    arch = process.arch,
+}: ServiceOptions) {
     const runtimeDir = join(root, "assets", "runtime", "win32-x64");
     const pythonPath = join(runtimeDir, "python.exe");
     const workerPath = join(runtimeDir, "translation-worker.py");
+    const runtimeSupported = platform === "win32" && arch === "x64";
     const serviceDir = join(userData, "translation");
     const modelsDir = join(serviceDir, "models");
     const configPath = join(serviceDir, "config.json");
@@ -438,7 +449,10 @@ export function createTranslationService({ root, userData }: ServiceOptions) {
             isModelReady(join(modelsDir, pair)),
         );
         const modelsReady = pairs.length === Object.keys(MODEL_ASSETS).length;
-        const runtimeReady = existsSync(pythonPath) && existsSync(workerPath);
+        const runtimeReady =
+            runtimeSupported &&
+            existsSync(pythonPath) &&
+            existsSync(workerPath);
         const size = directorySize(modelsDir);
         return {
             runtimeReady,
@@ -465,6 +479,7 @@ export function createTranslationService({ root, userData }: ServiceOptions) {
     };
 
     const installModels = async (): Promise<TranslationStatus> => {
+        if (!status().runtimeReady) return status();
         if (installing) return installing;
         installing = (async () => {
             mkdirSync(modelsDir, { recursive: true });
@@ -575,7 +590,10 @@ export function createTranslationService({ root, userData }: ServiceOptions) {
             validateRequest(request);
             const engine = request.engine ?? "local";
             if (engine === "local") {
-                if (!status().modelsReady)
+                const localStatus = status();
+                if (!localStatus.runtimeReady)
+                    throw new Error("Local translation runtime is unavailable");
+                if (!localStatus.modelsReady)
                     throw new Error("Translation models are not installed");
                 return worker.translate(request);
             }

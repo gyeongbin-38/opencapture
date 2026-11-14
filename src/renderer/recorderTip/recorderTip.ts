@@ -125,7 +125,7 @@ function initRecord() {
 
         uIOhook.on("mousedown", (e) => {
             const b = e.button as 1 | 2 | 3;
-            m2m[b].el.style.backgroundColor = "#00f";
+            m2m[b].el.style.backgroundColor = "var(--font-color)";
             const ripple = document.createElement("div");
             ripple.className = "click_ripple";
             ripple.style.left = recorderMouseEl.style.left;

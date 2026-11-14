@@ -2,26 +2,27 @@ import type {
     CaptureExperiencePreferences,
     CaptureToolId,
 } from "../../../lib/openCaptureTypes";
+import { lt } from "../lib/labText";
 
 const toolLabels: Record<CaptureToolId, string> = {
-    copy: "복사",
-    save: "저장",
-    stage: "임시 저장",
-    annotate: "주석",
-    pin: "고정",
-    color: "색상",
-    scroll: "스크롤 캡처",
-    record: "녹화",
-    search: "이미지 검색",
+    copy: lt("복사"),
+    save: lt("저장"),
+    stage: lt("임시 저장"),
+    annotate: lt("주석"),
+    pin: lt("고정"),
+    color: lt("색상"),
+    scroll: lt("스크롤 캡처"),
+    record: lt("녹화"),
+    search: lt("이미지 검색"),
     qr: "QR",
-    open: "편집기",
-    screens: "화면 선택",
-    ocr: "텍스트",
-    redact: "가리기",
-    compare: "비교",
-    promote: "보관",
-    trash: "휴지통",
-    more: "더보기",
+    open: lt("편집기"),
+    screens: lt("화면 선택"),
+    ocr: lt("텍스트"),
+    redact: lt("가리기"),
+    compare: lt("비교"),
+    promote: lt("보관"),
+    trash: lt("휴지통"),
+    more: lt("더보기"),
 };
 
 const allTools = Object.keys(toolLabels) as CaptureToolId[];
@@ -45,8 +46,9 @@ export function createCaptureExperiencePanel(options: {
     const root = document.createElement("details");
     root.className = "settings-card experience-settings";
     const summary = document.createElement("summary");
-    summary.innerHTML =
-        "<strong>캡처 도구</strong><small>순서 · 동작 · 피드백</small>";
+    summary.innerHTML = lt(
+        "<strong>캡처 도구</strong><small>순서 · 동작 · 피드백</small>",
+    );
     root.append(summary);
     const body = document.createElement("div");
     body.className = "experience-settings-body";
@@ -62,7 +64,7 @@ export function createCaptureExperiencePanel(options: {
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "설정을 저장하지 못했습니다.",
+                    : lt("설정을 저장하지 못했습니다."),
                 true,
             );
         }
@@ -78,7 +80,10 @@ export function createCaptureExperiencePanel(options: {
         section.className = "experience-tool-section";
         const heading = document.createElement("div");
         heading.className = "experience-tool-heading";
-        heading.innerHTML = `<strong>${title}</strong><small>최대 ${max}개</small>`;
+        heading.innerHTML = lt(
+            `<strong>${title}</strong><small>최대 ${max}개</small>`,
+            `<strong>${title}</strong><small>Up to ${max}</small>`,
+        );
         section.append(heading);
         const list = document.createElement("div");
         list.className = "experience-tool-list";
@@ -102,7 +107,7 @@ export function createCaptureExperiencePanel(options: {
             const controls = document.createElement("div");
             controls.className = "experience-order-controls";
             controls.append(
-                controlButton("↑", "앞으로", () => {
+                controlButton("↑", lt("앞으로"), () => {
                     if (index <= 0) return;
                     [order[index - 1], order[index]] = [
                         order[index],
@@ -110,7 +115,7 @@ export function createCaptureExperiencePanel(options: {
                     ];
                     void commit({ [key]: order });
                 }),
-                controlButton("↓", "뒤로", () => {
+                controlButton("↓", lt("뒤로"), () => {
                     if (index < 0 || index >= order.length - 1) return;
                     [order[index], order[index + 1]] = [
                         order[index + 1],
@@ -142,8 +147,8 @@ export function createCaptureExperiencePanel(options: {
         const tools = document.createElement("div");
         tools.className = "experience-tool-columns";
         tools.append(
-            renderOrder("하단 툴바", "toolbarOrder", 6),
-            renderOrder("우클릭 원형 메뉴", "radialOrder", 8),
+            renderOrder(lt("하단 툴바"), "toolbarOrder", 6),
+            renderOrder(lt("우클릭 원형 메뉴"), "radialOrder", 8),
         );
         body.append(tools);
 
@@ -151,10 +156,10 @@ export function createCaptureExperiencePanel(options: {
         optionsGrid.className = "experience-options-grid";
         const preset = document.createElement("select");
         for (const [value, text] of [
-            ["copy-close", "복사 후 닫기"],
-            ["stage-only", "임시 저장"],
-            ["stage-pin", "저장 후 고정"],
-            ["annotate", "주석 열기"],
+            ["copy-close", lt("복사 후 닫기")],
+            ["stage-only", lt("임시 저장")],
+            ["stage-pin", lt("저장 후 고정")],
+            ["annotate", lt("주석 열기")],
         ])
             preset.add(new Option(text, value));
         preset.value = current.defaultPreset;
@@ -166,13 +171,13 @@ export function createCaptureExperiencePanel(options: {
                         preset.value as CaptureExperiencePreferences["defaultPreset"],
                 }),
         );
-        optionsGrid.append(settingRow("기본 동작", preset));
+        optionsGrid.append(settingRow(lt("기본 동작"), preset));
 
         const motion = document.createElement("select");
         for (const [value, text] of [
-            ["system", "시스템 설정"],
-            ["full", "전체 모션"],
-            ["reduced", "모션 줄이기"],
+            ["system", lt("시스템 설정")],
+            ["full", lt("전체 모션")],
+            ["reduced", lt("모션 줄이기")],
         ])
             motion.add(new Option(text, value));
         motion.value = current.feedback.motion;
@@ -186,12 +191,28 @@ export function createCaptureExperiencePanel(options: {
                     } as CaptureExperiencePreferences["feedback"],
                 }),
         );
-        optionsGrid.append(settingRow("모션", motion));
+        optionsGrid.append(settingRow(lt("모션"), motion));
+
+        const trashDays = document.createElement("select");
+        for (const [value, text] of [
+            ["0", lt("자동 비우지 않음")],
+            ["7", lt("7일 후 비우기")],
+            ["14", lt("14일 후 비우기")],
+            ["30", lt("30일 후 비우기")],
+            ["90", lt("90일 후 비우기")],
+        ])
+            trashDays.add(new Option(text, value));
+        trashDays.value = String(current.trashRetentionDays);
+        trashDays.addEventListener(
+            "change",
+            () => void commit({ trashRetentionDays: Number(trashDays.value) }),
+        );
+        optionsGrid.append(settingRow(lt("휴지통 자동 비우기"), trashDays));
 
         for (const [key, text] of [
-            ["visual", "시각 피드백"],
-            ["sound", "소리 (기본 꺼짐)"],
-            ["shelfEnabled", "캡처 선반"],
+            ["visual", lt("시각 피드백")],
+            ["sound", lt("소리 (기본 꺼짐)")],
+            ["shelfEnabled", lt("캡처 선반")],
         ] as const) {
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";

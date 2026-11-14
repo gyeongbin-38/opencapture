@@ -15,6 +15,7 @@ import {
     toSavedComparisonSession,
 } from "../../../lib/referenceComparison";
 import "./referenceComparison.css";
+import { lt } from "../lib/labText";
 
 export type ReferenceComparisonItem = {
     id: string;
@@ -115,11 +116,11 @@ export function createReferenceComparison(
     const dialog = element("dialog", "rc-dialog compare-dialog");
     const shell = element("div", "rc-shell");
     const header = element("header", "rc-header");
-    const title = element("h2", "rc-title", t("레퍼런스 비교"));
-    const status = element("span", "rc-status", t("이미지를 선택하세요"));
+    const title = element("h2", "rc-title", t(lt("레퍼런스 비교")));
+    const status = element("span", "rc-status", t(lt("이미지를 선택하세요")));
     const closeButton = element("button", "rc-icon-button", "×");
     closeButton.type = "button";
-    closeButton.title = t("닫기");
+    closeButton.title = t(lt("닫기"));
     header.append(title, status, closeButton);
 
     const toolbar = element("div", "rc-toolbar");
@@ -129,10 +130,10 @@ export function createReferenceComparison(
     selectB.setAttribute("aria-label", "B");
     const modeGroup = element("div", "rc-segmented");
     const modeLabels: Array<[ReferenceCompareMode, string]> = [
-        ["side", t("나란히")],
-        ["opacity", t("겹치기")],
-        ["wipe", t("슬라이더")],
-        ["diff", t("차이")],
+        ["side", t(lt("나란히"))],
+        ["opacity", t(lt("겹치기"))],
+        ["wipe", t(lt("슬라이더"))],
+        ["diff", t(lt("차이"))],
     ];
     const modeButtons = new Map<ReferenceCompareMode, HTMLButtonElement>();
     for (const [mode, label] of modeLabels) {
@@ -147,7 +148,7 @@ export function createReferenceComparison(
         modeGroup.append(button);
     }
     const zoomModeGroup = element("div", "rc-segmented rc-zoom-mode");
-    const fitButton = element("button", "rc-segment", t("맞춤"));
+    const fitButton = element("button", "rc-segment", t(lt("맞춤")));
     const actualButton = element("button", "rc-segment", "1:1");
     fitButton.type = actualButton.type = "button";
     zoomModeGroup.append(fitButton, actualButton);
@@ -172,16 +173,26 @@ export function createReferenceComparison(
     const stageEmpty = element(
         "div",
         "rc-empty",
-        t("비교 이미지를 불러오는 중…"),
+        t(lt("비교 이미지를 불러오는 중…")),
     );
     stageWrap.append(canvas, stageEmpty);
-    const inspector = element("aside", "rc-inspector");
+    const inspector = element("details", "rc-inspector");
+    const inspectorSummary = element(
+        "summary",
+        "rc-inspector-summary",
+        t(lt("비교 옵션")),
+    );
+    const inspectorBody = element("div", "rc-inspector-body");
 
     const alignSection = element("section", "rc-panel");
-    const alignTitle = element("h3", "rc-panel-title", t("정렬"));
-    const alignButton = element("button", "rc-primary", t("자동 정렬"));
+    const alignTitle = element("h3", "rc-panel-title", t(lt("정렬")));
+    const alignButton = element("button", "rc-primary", t(lt("자동 정렬")));
     alignButton.type = "button";
-    const alignFeedback = element("small", "rc-help", t("B를 A에 맞춥니다"));
+    const alignFeedback = element(
+        "small",
+        "rc-help",
+        t(lt("B를 A에 맞춥니다")),
+    );
     const fields = element("div", "rc-field-grid");
     const offsetX = element("input", "rc-number");
     const offsetY = element("input", "rc-number");
@@ -197,7 +208,7 @@ export function createReferenceComparison(
     fields.append(
         field("X", offsetX),
         field("Y", offsetY),
-        field(t("배율"), scaleB),
+        field(t(lt("배율")), scaleB),
     );
     alignSection.append(alignTitle, alignButton, alignFeedback, fields);
 
@@ -219,52 +230,62 @@ export function createReferenceComparison(
         return label;
     };
     viewSection.append(
-        element("h3", "rc-panel-title", t("보기")),
-        range(t("불투명도"), opacity),
-        range(t("경계"), wipe),
-        range(t("차이 민감도"), threshold),
+        element("h3", "rc-panel-title", t(lt("보기"))),
+        range(t(lt("불투명도")), opacity),
+        range(t(lt("경계")), wipe),
+        range(t(lt("차이 민감도")), threshold),
     );
 
     const notesSection = element("section", "rc-panel rc-notes-panel");
     const notesHeader = element("div", "rc-panel-row");
     notesHeader.append(
-        element("h3", "rc-panel-title", t("메모")),
-        element("small", "rc-help", t("이미지를 클릭해 추가")),
+        element("h3", "rc-panel-title", t(lt("메모"))),
+        element("small", "rc-help", t(lt("이미지를 클릭해 추가"))),
     );
-    const noteToggle = element("button", "rc-secondary", t("메모 찍기"));
+    const noteToggle = element("button", "rc-secondary", t(lt("메모 찍기")));
     noteToggle.type = "button";
     const noteList = element("div", "rc-note-list");
     notesSection.append(notesHeader, noteToggle, noteList);
 
     const sessionsSection = element("section", "rc-panel");
     const sessionName = element("input", "rc-text-input");
-    sessionName.placeholder = t("세션 이름");
-    const saveSession = element("button", "rc-secondary", t("세션 저장"));
+    sessionName.placeholder = t(lt("세션 이름"));
+    const saveSession = element("button", "rc-secondary", t(lt("세션 저장")));
     saveSession.type = "button";
-    const removeSession = element("button", "rc-secondary", t("세션 삭제"));
+    const removeSession = element("button", "rc-secondary", t(lt("세션 삭제")));
     removeSession.type = "button";
     if (!options.removeSession) removeSession.hidden = true;
     if (!options.saveSession) saveSession.hidden = true;
     const sessionSelect = element("select", "rc-select rc-session-select");
     sessionsSection.append(
-        element("h3", "rc-panel-title", t("저장된 비교")),
+        element("h3", "rc-panel-title", t(lt("저장된 비교"))),
         sessionName,
         saveSession,
         removeSession,
         sessionSelect,
     );
 
-    inspector.append(alignSection, viewSection, notesSection, sessionsSection);
+    inspectorBody.append(
+        alignSection,
+        viewSection,
+        notesSection,
+        sessionsSection,
+    );
+    inspector.append(inspectorSummary, inspectorBody);
     main.append(stageWrap, inspector);
 
     const footer = element("footer", "rc-footer");
     const hint = element(
         "small",
         "rc-help",
-        t("드래그 이동 · 휠 확대 · 방향키로 B 미세 이동"),
+        t(lt("드래그 이동 · 휠 확대 · 방향키로 B 미세 이동")),
     );
-    const copyButton = element("button", "rc-secondary", t("비교 이미지 복사"));
-    const exportButton = element("button", "rc-primary", t("PNG 저장"));
+    const copyButton = element(
+        "button",
+        "rc-secondary",
+        t(lt("비교 이미지 복사")),
+    );
+    const exportButton = element("button", "rc-primary", t(lt("PNG 저장")));
     copyButton.type = exportButton.type = "button";
     if (!options.copyExport) copyButton.hidden = true;
     if (!options.saveExport) exportButton.hidden = true;
@@ -506,7 +527,7 @@ export function createReferenceComparison(
         activeA = activeB = null;
         stageEmpty.hidden = false;
         canvas.hidden = true;
-        setStatus(t("이미지 불러오는 중…"), "busy");
+        setStatus(t(lt("이미지 불러오는 중…")), "busy");
         try {
             const aItem = pool.find((item) => item.id === aId);
             const bItem = pool.find((item) => item.id === bId);
@@ -538,14 +559,14 @@ export function createReferenceComparison(
         } catch {
             if (generation !== loadGeneration) return;
             activeA = activeB = null;
-            stageEmpty.textContent = t("이미지를 불러오지 못했습니다");
-            setStatus(t("불러오기 실패"), "error");
+            stageEmpty.textContent = t(lt("이미지를 불러오지 못했습니다"));
+            setStatus(t(lt("불러오기 실패")), "error");
         }
     };
 
     const currentSession = (): ReferenceComparisonSession => ({
         id: activeSessionId || uid(),
-        name: sessionName.value.trim() || t("이름 없는 비교"),
+        name: sessionName.value.trim() || t(lt("이름 없는 비교")),
         aId: selectA.value,
         bId: selectB.value,
         mode,
@@ -602,7 +623,7 @@ export function createReferenceComparison(
             const parsed = fromSavedComparisonSession(session);
             return parsed ? [parsed] : [];
         });
-        sessionSelect.replaceChildren(new Option(t("세션 열기"), ""));
+        sessionSelect.replaceChildren(new Option(t(lt("세션 열기")), ""));
         for (const session of sessions.slice(0, 50)) {
             sessionSelect.append(new Option(session.name, session.id));
         }
@@ -772,7 +793,7 @@ export function createReferenceComparison(
         if (!activeA || !activeB) return;
         const generation = loadGeneration;
         alignButton.disabled = true;
-        alignFeedback.textContent = t("픽셀을 분석하는 중…");
+        alignFeedback.textContent = t(lt("픽셀을 분석하는 중…"));
         await new Promise(requestAnimationFrame);
         if (generation !== loadGeneration || !activeA || !activeB) {
             alignButton.disabled = false;
@@ -785,7 +806,7 @@ export function createReferenceComparison(
         }
         alignButton.disabled = false;
         if (!result.ok) {
-            alignFeedback.textContent = t("공통 영역을 찾지 못했습니다");
+            alignFeedback.textContent = t(lt("공통 영역을 찾지 못했습니다"));
             alignFeedback.dataset.kind = "error";
             return;
         }
@@ -801,7 +822,10 @@ export function createReferenceComparison(
             (result.scale *
                 (activeA.image.naturalWidth / activeA.pixels.width)) /
             (activeB.image.naturalWidth / activeB.pixels.width);
-        alignFeedback.textContent = `${t("정렬됨")} · ${Math.round(result.score * 100)}%`;
+        alignFeedback.textContent = lt(
+            `${t("정렬됨")} · ${Math.round(result.score * 100)}%`,
+            `Aligned · ${Math.round(result.score * 100)}%`,
+        );
         alignFeedback.dataset.kind = "normal";
         render();
     });
@@ -814,7 +838,7 @@ export function createReferenceComparison(
         if (placingNote && activeA) {
             if (notes.length >= REFERENCE_MAX_NOTES) {
                 options.showToast(
-                    t("메모는 최대 50개까지 추가할 수 있습니다"),
+                    t(lt("메모는 최대 50개까지 추가할 수 있습니다")),
                     true,
                 );
                 return;
@@ -830,12 +854,12 @@ export function createReferenceComparison(
                 localX > map.x + map.width ||
                 localY > map.y + map.height
             ) {
-                options.showToast(t("A 이미지 안을 클릭해 주세요"), true);
+                options.showToast(t(lt("A 이미지 안을 클릭해 주세요")), true);
                 return;
             }
             const x = clamp((localX - map.x) / map.width, 0, 1);
             const y = clamp((localY - map.y) / map.height, 0, 1);
-            notes.push({ id: uid(), x, y, text: t("메모") });
+            notes.push({ id: uid(), x, y, text: t(lt("메모")) });
             renderNotes();
             render();
             return;
@@ -889,9 +913,9 @@ export function createReferenceComparison(
             activeSessionId = session.id;
             await refreshSessions();
             sessionSelect.value = session.id;
-            options.showToast(t("비교 세션을 저장했습니다"));
+            options.showToast(t(lt("비교 세션을 저장했습니다")));
         } catch {
-            options.showToast(t("비교 세션을 저장하지 못했습니다"), true);
+            options.showToast(t(lt("비교 세션을 저장하지 못했습니다")), true);
         }
     });
     sessionSelect.addEventListener("change", () => {
@@ -906,18 +930,18 @@ export function createReferenceComparison(
             await options.removeSession(sessionSelect.value);
             if (activeSessionId === sessionSelect.value) activeSessionId = "";
             await refreshSessions();
-            options.showToast(t("비교 세션을 삭제했습니다"));
+            options.showToast(t(lt("비교 세션을 삭제했습니다")));
         } catch {
-            options.showToast(t("비교 세션을 삭제하지 못했습니다"), true);
+            options.showToast(t(lt("비교 세션을 삭제하지 못했습니다")), true);
         }
     });
     copyButton.addEventListener("click", async () => {
         if (!options.copyExport) return;
         try {
             await options.copyExport(exportCanvas().toDataURL("image/png"));
-            options.showToast(t("비교 이미지를 복사했습니다"));
+            options.showToast(t(lt("비교 이미지를 복사했습니다")));
         } catch {
-            options.showToast(t("비교 이미지를 복사하지 못했습니다"), true);
+            options.showToast(t(lt("비교 이미지를 복사하지 못했습니다")), true);
         }
     });
     exportButton.addEventListener("click", async () => {
@@ -927,9 +951,9 @@ export function createReferenceComparison(
                 exportCanvas().toDataURL("image/png"),
                 "Compare",
             );
-            options.showToast(t("비교 이미지를 저장했습니다"));
+            options.showToast(t(lt("비교 이미지를 저장했습니다")));
         } catch {
-            options.showToast(t("비교 이미지를 저장하지 못했습니다"), true);
+            options.showToast(t(lt("비교 이미지를 저장하지 못했습니다")), true);
         }
     });
     const resizeObserver = new ResizeObserver(render);
@@ -941,7 +965,7 @@ export function createReferenceComparison(
             pool = items.slice(0, REFERENCE_MAX_ITEMS);
             if (pool.length < 2) {
                 options.showToast(
-                    t("비교할 이미지를 두 장 이상 선택해 주세요"),
+                    t(lt("비교할 이미지를 두 장 이상 선택해 주세요")),
                     true,
                 );
                 return;

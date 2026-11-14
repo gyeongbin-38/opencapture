@@ -1,6 +1,10 @@
 import { addClass, addStyle, initDKH, view } from "dkh-ui";
-import { lan, t } from "../../../lib/translate/translate";
+import { matchFitLan } from "xtranslator";
+import { renderSendSync } from "../../../lib/ipc";
+import { getLans, lan, t } from "../../../lib/translate/translate";
 import type { RawIconType } from "../../iconTypes";
+import { labLangFor, setLabDict, setLabLang } from "../lib/labText";
+import { en as labEn } from "../lib/labText.en";
 
 function initStyle(
     store: typeof import("../../../lib/store/renderStore")["default"],
@@ -43,7 +47,13 @@ function initStyle(
     setCSSVar("--main-font", 字体.主要字体);
     setCSSVar("--monospace", 字体.等宽字体 || monoFont.join(","));
 
-    lan(store.get("语言.语言"));
+    const activeLanguage = renderSendSync("active_language", []);
+    lan(activeLanguage);
+    const resolvedLan = matchFitLan(activeLanguage, getLans()) ?? "zh-HANS";
+    document.documentElement.lang = resolvedLan;
+    document.documentElement.dir = resolvedLan === "ar" ? "rtl" : "ltr";
+    setLabDict("en", labEn);
+    setLabLang(labLangFor(activeLanguage));
 
     initDKH({
         pureStyle: true,
@@ -61,30 +71,43 @@ function initStyle(
         .style({
             position: "fixed",
             pointerEvents: "none",
-            padding: "2px",
-            borderRadius: "4px",
+            padding: "4px 9px",
+            borderRadius: "8px",
             width: "auto",
             height: "auto",
+            maxWidth: "min(320px, calc(100vw - 24px))",
+            fontSize: "12px",
+            lineHeight: "1.5",
+            letterSpacing: "0.01em",
+            fontFamily: "var(--main-font)",
             zIndex: 9999,
-            transition: "var(--transition) opacity",
+            transition: "opacity .15s ease",
             whiteSpace: "pre",
+            boxShadow: "0 4px 16px rgba(0,0,0,.35)",
         })
         .addInto()
         .bindSet((v: string, el) => {
-            el.innerText = v;
+            const parts = v.split(" · ");
+            el.replaceChildren(document.createTextNode(parts[0]));
+            for (const part of parts.slice(1)) {
+                const key = document.createElement("span");
+                key.textContent = part;
+                key.style.cssText = "margin-left:8px;opacity:.6";
+                el.append(key);
+            }
         });
 
+    let tipTimer = 0;
     window.addEventListener("pointerover", (e) => {
         const el = e.target as HTMLElement;
         const tEl = el.closest("[data-title]");
-        if (!tEl) {
+        window.clearTimeout(tipTimer);
+        const title = tEl?.getAttribute("data-title");
+        if (!tEl || !title?.trim()) {
             topTip.style({ opacity: 0 });
-        } else {
-            const title = tEl.getAttribute("data-title");
-            if (!title?.trim()) {
-                topTip.style({ opacity: 0 });
-                return;
-            }
+            return;
+        }
+        tipTimer = window.setTimeout(() => {
             const rect = tEl.getBoundingClientRect();
             topTip.sv(title);
             const tw = topTip.el.offsetWidth;
@@ -95,16 +118,16 @@ function initStyle(
                 0,
                 Math.min(rect.left + rect.width / 2 - tw / 2, ow - tw),
             );
-            let top = rect.bottom + 4;
+            let top = rect.bottom + 6;
             if (top > oh - th) {
-                top = rect.top - th - 4;
+                top = rect.top - th - 6;
             }
             topTip.style({
                 opacity: 1,
                 left: `${left}px`,
                 top: `${Math.max(Math.min(top, oh - th), 0)}px`,
             });
-        }
+        }, 320);
     });
 }
 

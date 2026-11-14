@@ -17,6 +17,7 @@ import type {
 } from "../../../lib/boardPorts";
 import { BOARD_LIMITS, type BoardNode } from "../../../lib/captureBoard";
 import "../css/boardEditor.css";
+import { lt } from "../lib/labText";
 import { requestText } from "../lib/textDialog";
 
 const svgNamespace = "http://www.w3.org/2000/svg";
@@ -34,17 +35,17 @@ const shapeTools: BoardTool[] = [
 ];
 
 const labels: Record<BoardTool, string> = {
-    select: "선택",
-    rect: "사각형",
-    ellipse: "원",
-    line: "선",
-    arrow: "화살표",
-    polygon: "다각형",
-    text: "텍스트",
-    note: "메모",
-    callout: "말풍선",
-    step: "단계",
-    magnify: "부분 확대",
+    select: lt("선택"),
+    rect: lt("사각형"),
+    ellipse: lt("원"),
+    line: lt("선"),
+    arrow: lt("화살표"),
+    polygon: lt("다각형"),
+    text: lt("텍스트"),
+    note: lt("메모"),
+    callout: lt("말풍선"),
+    step: lt("단계"),
+    magnify: lt("부분 확대"),
 };
 
 const create = <K extends keyof HTMLElementTagNameMap>(
@@ -116,7 +117,7 @@ const loadImage = (source: string) =>
         const image = new Image();
         image.onload = () => resolve(image);
         image.onerror = () =>
-            reject(new Error("이미지를 불러오지 못했습니다."));
+            reject(new Error(lt("이미지를 불러오지 못했습니다.")));
         image.src = source;
     });
 
@@ -164,7 +165,7 @@ export const createBoardEditor = (
     root.dataset.boardEditor = "";
     const overlay = svg("svg");
     overlay.classList.add("board-editor__overlay");
-    overlay.setAttribute("aria-label", "보드 주석");
+    overlay.setAttribute("aria-label", lt("보드 주석"));
     const definitions = svg("defs");
     const marker = svg("marker");
     setAttributes(marker, {
@@ -187,24 +188,24 @@ export const createBoardEditor = (
     const toolbar = create("div", "board-editor__toolbar");
     const shapeButton = create("button", "board-editor__primary");
     shapeButton.type = "button";
-    shapeButton.textContent = "도형";
+    shapeButton.textContent = lt("도형");
     shapeButton.dataset.boardCommand = "shape-drawer";
     shapeButton.setAttribute("aria-expanded", "false");
     const drawer = create("div", "board-editor__drawer");
     drawer.hidden = true;
     const selectButton = create("button");
     selectButton.type = "button";
-    selectButton.textContent = "선택";
+    selectButton.textContent = lt("선택");
     selectButton.dataset.boardCommand = "tool:select";
     const propertyPanel = create("details", "board-editor__properties");
     const propertySummary = create("summary");
-    propertySummary.textContent = "속성";
+    propertySummary.textContent = lt("속성");
     const contextBar = create("div", "board-editor__context");
     propertyPanel.append(propertySummary, contextBar);
     const layerPanel = create("details", "board-editor__layers");
     layerPanel.dataset.boardLayers = "";
     const layerSummary = create("summary");
-    layerSummary.textContent = "레이어";
+    layerSummary.textContent = lt("레이어");
     const layerList = create("div", "board-editor__layer-list");
     layerPanel.append(layerSummary, layerList);
     toolbar.append(
@@ -294,7 +295,7 @@ export const createBoardEditor = (
                         candidate.y += dy;
                     }
                 }
-            }, "주석 이동");
+            }, lt("주석 이동"));
         } else {
             mutate((document) => {
                 const target = document.nodes.find(
@@ -306,7 +307,7 @@ export const createBoardEditor = (
                         session.vertexIndex,
                         session.current,
                     );
-            }, "꼭짓점 이동");
+            }, lt("꼭짓점 이동"));
         }
     };
 
@@ -390,7 +391,7 @@ export const createBoardEditor = (
         );
         if (!node) return;
         const value = await requestText({
-            title: "레이어 이름",
+            title: lt("레이어 이름"),
             value: node.name ?? labels[node.kind as BoardTool],
             maxLength: 80,
         });
@@ -407,7 +408,7 @@ export const createBoardEditor = (
                 (candidate) => candidate.id === nodeId,
             );
             if (target) target.name = value.slice(0, 80);
-        }, "레이어 이름 변경");
+        }, lt("레이어 이름 변경"));
     };
 
     const editAnnotationText = async (nodeId: string) => {
@@ -423,7 +424,7 @@ export const createBoardEditor = (
         )
             return;
         const value = await requestText({
-            title: "내용 편집",
+            title: lt("내용 편집"),
             value: node.text ?? "",
             multiline: true,
             maxLength: BOARD_LIMITS.text,
@@ -444,7 +445,7 @@ export const createBoardEditor = (
             );
             if (target && !target.locked)
                 target.text = value.slice(0, BOARD_LIMITS.text);
-        }, "주석 내용 변경");
+        }, lt("주석 내용 변경"));
     };
 
     const selectedAnnotations = () => {
@@ -484,7 +485,7 @@ export const createBoardEditor = (
         button.onclick = () =>
             mutate(
                 (document) => applyBoardStyle(document, selection, change),
-                "주석 스타일 변경",
+                lt("주석 스타일 변경"),
             );
         return button;
     };
@@ -504,9 +505,9 @@ export const createBoardEditor = (
                 group.append(heading);
                 return group;
             };
-            const sizeGroup = controlGroup("크기");
-            const appearanceGroup = controlGroup("모양");
-            const actionGroup = controlGroup("작업");
+            const sizeGroup = controlGroup(lt("크기"));
+            const appearanceGroup = controlGroup(lt("모양"));
+            const actionGroup = controlGroup(lt("작업"));
             contextBar.append(sizeGroup, appearanceGroup, actionGroup);
             const numberControl = (
                 title: string,
@@ -528,12 +529,15 @@ export const createBoardEditor = (
                         Math.min(maximum, Number(field.value)),
                     );
                     if (!Number.isFinite(next)) return;
-                    mutate((document) => {
-                        const target = document.nodes.find(
-                            (candidate) => candidate.id === annotation.id,
-                        );
-                        if (target && !target.locked) apply(target, next);
-                    }, `${title} 변경`);
+                    mutate(
+                        (document) => {
+                            const target = document.nodes.find(
+                                (candidate) => candidate.id === annotation.id,
+                            );
+                            if (target && !target.locked) apply(target, next);
+                        },
+                        lt(`${title} 변경`, `Change ${title}`),
+                    );
                 };
                 const wrapper = create("label", "board-editor__field");
                 const caption = create("span");
@@ -543,8 +547,8 @@ export const createBoardEditor = (
             };
             const stroke = create("input", "board-editor__color");
             stroke.type = "color";
-            stroke.title = "선 색상";
-            stroke.setAttribute("aria-label", "선 색상");
+            stroke.title = lt("선 색상");
+            stroke.setAttribute("aria-label", lt("선 색상"));
             stroke.value = /^#[0-9a-f]{6}$/i.test(annotation.style.stroke)
                 ? annotation.style.stroke
                 : "#7c5cff";
@@ -554,11 +558,11 @@ export const createBoardEditor = (
                         applyBoardStyle(document, selection, {
                             stroke: stroke.value,
                         }),
-                    "선 색상 변경",
+                    lt("선 색상 변경"),
                 );
             const strokeWrapper = create("label", "board-editor__field");
             const strokeCaption = create("span");
-            strokeCaption.textContent = "색";
+            strokeCaption.textContent = lt("색");
             strokeWrapper.append(strokeCaption, stroke);
             sizeGroup.append(
                 numberControl(
@@ -580,7 +584,7 @@ export const createBoardEditor = (
                     },
                 ),
                 numberControl(
-                    "너비",
+                    lt("너비"),
                     annotation.width,
                     1,
                     10_000,
@@ -591,7 +595,7 @@ export const createBoardEditor = (
                     },
                 ),
                 numberControl(
-                    "높이",
+                    lt("높이"),
                     annotation.height,
                     1,
                     10_000,
@@ -605,7 +609,7 @@ export const createBoardEditor = (
             appearanceGroup.append(
                 strokeWrapper,
                 numberControl(
-                    "선 두께",
+                    lt("선 두께"),
                     annotation.style.strokeWidth,
                     1,
                     64,
@@ -614,7 +618,7 @@ export const createBoardEditor = (
                     },
                 ),
                 numberControl(
-                    "글자 크기",
+                    lt("글자 크기"),
                     annotation.style.fontSize,
                     8,
                     160,
@@ -629,20 +633,20 @@ export const createBoardEditor = (
             ) {
                 const editText = create("button");
                 editText.type = "button";
-                editText.textContent = "내용 편집";
+                editText.textContent = lt("내용 편집");
                 editText.dataset.boardEditText = "";
                 editText.onclick = () => editAnnotationText(annotation.id);
                 actionGroup.append(editText);
             }
             appearanceGroup.append(
-                styleButton("보라", { stroke: "#7c5cff" }),
-                styleButton("빨강", { stroke: "#ff5c73" }),
-                styleButton("얇게", { strokeWidth: 2 }),
-                styleButton("굵게", { strokeWidth: 5 }),
+                styleButton(lt("보라"), { stroke: "#7c5cff" }),
+                styleButton(lt("빨강"), { stroke: "#ff5c73" }),
+                styleButton(lt("얇게"), { strokeWidth: 2 }),
+                styleButton(lt("굵게"), { strokeWidth: 5 }),
             );
             const saveStyle = create("button");
             saveStyle.type = "button";
-            saveStyle.textContent = "스타일 저장";
+            saveStyle.textContent = lt("스타일 저장");
             saveStyle.dataset.boardCommand = "style:save";
             saveStyle.onclick = async () => {
                 const node = selectedAnnotations()[0];
@@ -650,8 +654,8 @@ export const createBoardEditor = (
                 const name =
                     node &&
                     (await requestText({
-                        title: "스타일 이름",
-                        value: "내 주석",
+                        title: lt("스타일 이름"),
+                        value: lt("내 주석"),
                         maxLength: 60,
                     }));
                 if (options.getDocument()?.id !== boardId) return;
@@ -662,7 +666,7 @@ export const createBoardEditor = (
                         name: name.slice(0, 60),
                         style: { ...node.style },
                     });
-                }, "주석 스타일 저장");
+                }, lt("주석 스타일 저장"));
             };
             actionGroup.append(saveStyle);
             for (const named of options.getDocument()?.styles.slice(-4) ?? []) {
@@ -676,10 +680,10 @@ export const createBoardEditor = (
         }
         if (selection.length >= 2) {
             for (const [title, action] of [
-                ["왼쪽 맞춤", "align:left"],
-                ["위 맞춤", "align:top"],
-                ["가로 간격", "distribute:horizontal"],
-                ["세로 간격", "distribute:vertical"],
+                [lt("왼쪽 맞춤"), "align:left"],
+                [lt("위 맞춤"), "align:top"],
+                [lt("가로 간격"), "distribute:horizontal"],
+                [lt("세로 간격"), "distribute:vertical"],
             ] as const) {
                 const actionButton = create("button");
                 actionButton.type = "button";
@@ -735,30 +739,30 @@ export const createBoardEditor = (
             choose.textContent =
                 node.name ??
                 (node.kind === "image"
-                    ? "이미지"
+                    ? lt("이미지")
                     : labels[node.kind as BoardTool]);
             choose.onclick = () => options.select([node.id]);
             choose.ondblclick = () => renameNode(node.id);
             const visible = create("button");
             visible.type = "button";
-            visible.textContent = node.visible ? "표시" : "숨김";
+            visible.textContent = node.visible ? lt("표시") : lt("숨김");
             visible.onclick = () =>
                 mutate((current) => {
                     const target = current.nodes.find(
                         (candidate) => candidate.id === node.id,
                     );
                     if (target) target.visible = !target.visible;
-                }, "레이어 표시 전환");
+                }, lt("레이어 표시 전환"));
             const lock = create("button");
             lock.type = "button";
-            lock.textContent = node.locked ? "잠금" : "열림";
+            lock.textContent = node.locked ? lt("잠금") : lt("열림");
             lock.onclick = () =>
                 mutate((current) => {
                     const target = current.nodes.find(
                         (candidate) => candidate.id === node.id,
                     );
                     if (target) target.locked = !target.locked;
-                }, "레이어 잠금 전환");
+                }, lt("레이어 잠금 전환"));
             row.draggable = true;
             row.ondragstart = (event) =>
                 event.dataTransfer?.setData("text/plain", node.id);
@@ -777,7 +781,7 @@ export const createBoardEditor = (
                     if (sourceIndex < 0 || targetIndex < 0) return;
                     const [source] = current.nodes.splice(sourceIndex, 1);
                     current.nodes.splice(targetIndex, 0, source);
-                }, "레이어 순서 변경");
+                }, lt("레이어 순서 변경"));
             };
             row.append(choose, visible, lock);
             layerList.append(row);
@@ -927,7 +931,7 @@ export const createBoardEditor = (
                                     target.text ?? "",
                                     index,
                                 );
-                        }, "체크리스트 전환");
+                        }, lt("체크리스트 전환"));
                     };
                     box.onpointerdown = (event) => event.stopPropagation();
                     group.append(box);
@@ -1139,7 +1143,7 @@ export const createBoardEditor = (
             const boardId = options.getDocument()?.id;
             const value = await requestText({
                 title: labels[node.kind as BoardTool],
-                value: node.kind === "note" ? "[ ] 할 일" : "설명",
+                value: node.kind === "note" ? lt("[ ] 할 일") : lt("설명"),
                 multiline: node.kind === "note",
                 maxLength: BOARD_LIMITS.text,
             });
@@ -1176,7 +1180,10 @@ export const createBoardEditor = (
         }
         mutate(
             (document) => document.nodes.push(node),
-            `${labels[node.kind as BoardTool]} 추가`,
+            lt(
+                `${labels[node.kind as BoardTool]} 추가`,
+                `Add ${labels[node.kind as BoardTool]}`,
+            ),
         );
         options.select([node.id]);
         setTool("select");
@@ -1194,7 +1201,7 @@ export const createBoardEditor = (
             document.nodes = document.nodes.filter(
                 (node) => !ids.has(node.id) || node.locked,
             );
-        }, "주석 삭제");
+        }, lt("주석 삭제"));
         options.select([]);
     };
 
@@ -1212,7 +1219,7 @@ export const createBoardEditor = (
                             typeof alignBoardNodes
                         >[2],
                     ),
-                "주석 정렬",
+                lt("주석 정렬"),
             );
         }
         if (
@@ -1228,7 +1235,7 @@ export const createBoardEditor = (
                             ? "horizontal"
                             : "vertical",
                     ),
-                "주석 간격 맞춤",
+                lt("주석 간격 맞춤"),
             );
         }
         if (commandId.startsWith("style:")) {
@@ -1238,7 +1245,7 @@ export const createBoardEditor = (
                     (candidate) => candidate.id === styleId,
                 );
                 if (style) applyBoardStyle(document, selection, style.style);
-            }, "저장 스타일 적용");
+            }, lt("저장 스타일 적용"));
         }
     };
 
@@ -1337,7 +1344,7 @@ export const createBoardEditor = (
         exportOptions = {},
     ) => {
         const boardDocument = options.getDocument();
-        if (!boardDocument) throw new Error("열린 보드가 없습니다.");
+        if (!boardDocument) throw new Error(lt("열린 보드가 없습니다."));
         const selectedIds = new Set(selection);
         const focusIds = new Set(boardDocument.settings.focusIds);
         const visible = boardDocument.nodes.filter((node) => {
@@ -1351,7 +1358,8 @@ export const createBoardEditor = (
         canvas.width = plan.width;
         canvas.height = plan.height;
         const context = canvas.getContext("2d");
-        if (!context) throw new Error("내보내기 캔버스를 만들지 못했습니다.");
+        if (!context)
+            throw new Error(lt("내보내기 캔버스를 만들지 못했습니다."));
         context.scale(scale, scale);
         if (exportOptions.background) {
             context.fillStyle = exportOptions.background;

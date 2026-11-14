@@ -39,7 +39,20 @@ export function errorMessage(error: unknown) {
 export function formatDate(value: string) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return t("날짜 정보 없음");
-    return new Intl.DateTimeFormat("ko-KR", {
+    const now = new Date();
+    const dayStart = (d: Date) =>
+        new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const dayDiff = Math.round((dayStart(now) - dayStart(date)) / 86_400_000);
+    const locale = window.openCapture.lang || "ko";
+    const time = new Intl.DateTimeFormat(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(date);
+    if (dayDiff === 0) return `${t("오늘")} ${time}`;
+    if (dayDiff === 1) return `${t("어제")} ${time}`;
+    if (dayDiff < 7)
+        return `${new Intl.DateTimeFormat(locale, { weekday: "short" }).format(date)} ${time}`;
+    return new Intl.DateTimeFormat(locale, {
         month: "short",
         day: "numeric",
         hour: "2-digit",

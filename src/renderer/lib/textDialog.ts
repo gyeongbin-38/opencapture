@@ -1,4 +1,5 @@
 import "./textDialog.css";
+import { lt } from "./labText";
 
 type TextRequest = {
     title: string;
@@ -27,10 +28,10 @@ function requestValue(
         actions.className = "workspace-text-dialog-actions";
         const cancel = document.createElement("button");
         cancel.type = "button";
-        cancel.textContent = "취소";
+        cancel.textContent = lt("취소");
         const save = document.createElement("button");
         save.type = "submit";
-        save.textContent = "확인";
+        save.textContent = lt("확인");
         save.className = "workspace-text-dialog-confirm";
         actions.append(cancel, save);
         form.append(heading, field, actions);

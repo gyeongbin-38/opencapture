@@ -21,7 +21,12 @@ import { PinBlinkController, PinFocusState } from "../../../lib/pinState";
 import store from "../../../lib/store/renderStore";
 import { Class, cssVar, getImgUrl, initStyle, setTitle } from "../root/root";
 
-import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
+import {
+    type CardPinMetadata,
+    renderOn,
+    renderSend,
+    renderSendSync,
+} from "../../../lib/ipc";
 import { t } from "../../../lib/translate/translate";
 import type { DingStart, Dire } from "../../ShareTypes";
 import type { IconType } from "../../iconTypes";
@@ -101,6 +106,33 @@ renderOn("dingShare", ([data]) => {
     }
 });
 
+renderOn("dingQuery", () => {
+    renderSend("dingQueryResult", [
+        Array.from(dingData.entries(), ([id, data]) => {
+            const el = elFromId(id)?.el;
+            const img = el?.querySelector<HTMLImageElement>(".img > img");
+            return {
+                id,
+                x: el?.offsetLeft ?? data.rect[0],
+                y: el?.offsetTop ?? data.rect[1],
+                w: el?.offsetWidth ?? data.rect[2],
+                h: el
+                    ? (collapsedPins.get(id) ?? el.offsetHeight)
+                    : data.rect[3],
+                src: data.url,
+                opacity: Number(img?.style.opacity || 1),
+                visible: el?.style.visibility !== "hidden",
+                ignored: ignoredPins.has(id),
+                ox: window.screenX,
+                oy: window.screenY,
+                collapsed: collapsedPins.has(id) || undefined,
+                urls: data.urls,
+                card: data.card,
+            };
+        }),
+    ]);
+});
+
 const { ipcRenderer } = require("electron") as typeof import("electron");
 void ipcRenderer
     .invoke("oc:preferences:get")
@@ -134,6 +166,13 @@ ipcRenderer.on("oc:pins-control", (_event, command) => {
 });
 
 const dives: ElType<HTMLElement>[] = [];
+let lastActivePinId: string | null = null;
+document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
+    const id = lastActivePinId ?? dives.at(-1)?.el.id;
+    if (id) close(id);
+});
 
 type SavedDingPin = {
     x: number;
@@ -143,7 +182,28 @@ type SavedDingPin = {
     src: string;
     opacity: number;
     z: number;
+    collapsed?: boolean;
+    stack?: string[];
+    label?: string;
+    card?: CardPinMetadata;
 };
+
+const collapsedPins = new Map<string, number>();
+function togglePinCollapse(id: string) {
+    const el = elFromId(id)?.el;
+    if (!el) return;
+    const previous = collapsedPins.get(id);
+    if (previous === undefined) {
+        collapsedPins.set(id, el.offsetHeight);
+        el.style.height = "8px";
+        el.classList.add("pin-collapsed");
+    } else {
+        collapsedPins.delete(id);
+        el.style.height = `${previous}px`;
+        el.classList.remove("pin-collapsed");
+    }
+    markSessionDirty();
+}
 let sessionDirty = true;
 function markSessionDirty() {
     sessionDirty = true;
@@ -157,6 +217,9 @@ const dingData: Map<
         url: string;
         translation: string;
         isTranslate: boolean;
+        urls?: string[];
+        label?: string;
+        card?: CardPinMetadata;
     }
 > = new Map();
 let elMap: ReturnType<typeof setNewDing>[] = [];
@@ -168,6 +231,9 @@ const setNewDing = (
     h: number,
     url: string,
     type: "translate" | "ding",
+    stack?: string[],
+    label?: string,
+    card?: CardPinMetadata,
 ) => {
     const previousDisposers = pinDisposers.get(wid);
     if (previousDisposers) for (const dispose of previousDisposers) dispose();
@@ -178,12 +244,16 @@ const setNewDing = (
         url,
         translation: "",
         isTranslate: false,
+        ...(stack && stack.length > 1 ? { urls: stack } : {}),
+        label,
+        card,
     });
     markSessionDirty();
     const div = view()
         .attr({ id: wid, tabIndex: 0 })
         .style({ position: "fixed", overflow: "visible" })
-        .class(dingPhotoClass);
+        .class(dingPhotoClass)
+        .class("pin-settle");
     dives.push(div);
     if (store.get("贴图.窗口.提示")) div.class(dingPhotoHightClass);
     div.style({
@@ -192,13 +262,45 @@ const setNewDing = (
         width: `${w}px`,
         height: `${h}px`,
     });
+    const runCutoutRef: { current: (() => void) | null } = { current: null };
     const img = image(url, "").attr({ draggable: false });
     const imageP = view()
         .class("img")
         .add(img)
         .class(imageClass)
         .style({ overflow: "hidden" })
-        .class(Class.transition);
+        .class(Class.transition)
+        .attr({
+            title: t(
+                "Alt\uB85C \uB4DC\uB798\uADF8\uD558\uBA74 \uD30C\uC77C\uB85C \uB0B4\uBCF4\uB0B4\uAE30 \u00B7 \uAE38\uAC8C \uB204\uB974\uAC70\uB098 Ctrl+Shift+\uD074\uB9AD\uC73C\uB85C \uBC30\uACBD \uC81C\uAC70",
+            ),
+        });
+    imageP.el.addEventListener("pointerdown", (e) => {
+        img.el.draggable = e.altKey;
+    });
+    imageP.el.addEventListener(
+        "pointerdown",
+        (e) => {
+            if (e.button === 0 && e.ctrlKey && e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                runCutoutRef.current?.();
+            }
+        },
+        true,
+    );
+    imageP.el.addEventListener("dragstart", (e) => {
+        const ok = ipcRenderer.sendSync(
+            "oc:ding-drag",
+            getUrl(wid),
+            `pin-${wid}.png`,
+        );
+        img.el.draggable = false;
+        if (!ok) e.preventDefault();
+    });
+    imageP.el.addEventListener("dragend", () => {
+        img.el.draggable = false;
+    });
     const toolBar = view().class("pin-toolbar-host").style({
         overflow: "visible",
         position: "fixed",
@@ -224,13 +326,28 @@ const setNewDing = (
         .sv({ show: false })
         .class(Class.transition);
     toolBar.add(toolBarC);
-    // 顶栏
-    div.el.onmouseenter = () => {
+    // 顶栏 — 핀과 툴바 어디든 호버 중이면 표시 유지(툴바까지 도달 가능하게)
+    let toolbarHoverTimer = 0;
+    const toolbarHovered = () =>
+        div.el.matches(":hover") || toolBarC.el.matches(":hover");
+    const scheduleToolbarHide = () => {
+        clearTimeout(toolbarHoverTimer);
+        toolbarHoverTimer = window.setTimeout(() => {
+            toolBarC.sv({ show: toolbarHovered() });
+        }, 220);
+    };
+    const showToolbarNow = () => {
+        clearTimeout(toolbarHoverTimer);
         toolBarC.sv({ show: true });
     };
-    div.el.onmouseleave = () => {
-        toolBarC.sv({ show: false });
+    div.el.onmouseenter = () => {
+        lastActivePinId = wid;
+        showToolbarNow();
     };
+    div.el.onmouseleave = scheduleToolbarHide;
+    toolBarC.el.addEventListener("mouseenter", showToolbarNow);
+    toolBarC.el.addEventListener("mouseleave", scheduleToolbarHide);
+    disposers.add(() => clearTimeout(toolbarHoverTimer));
 
     const concorlClass = addClass(
         {
@@ -256,7 +373,7 @@ const setNewDing = (
         .sv("100");
     const opacityElP = view("x")
         .class(concorlClass)
-        .attr({ title: "不透明度" })
+        .attr({ title: t("不透明度") })
         .add([iconEl("opacity"), opacityEl]);
 
     trackPoint(opacityElP, {
@@ -299,7 +416,7 @@ const setNewDing = (
         });
     const sizeEl = view("x")
         .class(concorlClass)
-        .attr({ title: "大小" })
+        .attr({ title: t("大小") })
         .add([iconEl("size"), sizeRange, sizeInput]);
 
     trackPoint(sizeEl, {
@@ -346,9 +463,148 @@ const setNewDing = (
         sizeRange.sv(String(next));
         sizeChange();
     };
-    sizeEl.el.title = `${sizeEl.el.title} (우클릭: ${sizePresets.join("/")})`;
+    sizeEl.el.ondblclick = (e) => {
+        if ((e.target as HTMLElement).closest('input[type="range"]')) return;
+        sizeInput.sv("100");
+        sizeRange.sv("100");
+        sizeChange();
+    };
+    sizeEl.el.title = `${sizeEl.el.title} (우클릭: ${sizePresets.join("/")}, 더블클릭: 100%)`;
 
-    const pinFx = { rot: 0, flip: false };
+    const pinGrayEl = view("x")
+        .class(concorlClass)
+        .style({ cursor: "pointer" })
+        .attr({
+            title: t("그레이스케일"),
+            ariaPressed: "false",
+        })
+        .add([iconEl("contrast")]);
+    controlsPanel.add(pinGrayEl);
+
+    if (card) {
+        const cardActions = view("x").class("pin-card-actions");
+        const viewTextButton = button(txt(t("전체 텍스트 보기")))
+            .attr({ title: t("전체 텍스트 보기") })
+            .on("click", () => {
+                const current = dingData.get(wid)?.card;
+                if (current) showCardText(current, viewTextButton.el);
+            });
+        const copyTextButton = button(txt(t("텍스트 복사")))
+            .attr({ title: t("텍스트 복사") })
+            .on("click", async () => {
+                const current = dingData.get(wid)?.card;
+                if (!current) return;
+                try {
+                    await writeText(current.text);
+                    ocrTransStateBar.el.classList.remove(Class.hide);
+                    ocrTransStateBar.sv(t("텍스트를 복사했습니다"));
+                } catch {
+                    ocrTransStateBar.el.classList.remove(Class.hide);
+                    ocrTransStateBar.sv(t("텍스트를 복사하지 못했습니다"));
+                }
+            });
+        cardActions.add([viewTextButton, copyTextButton]);
+        if (card.kind === "qrcode" && card.qrError) {
+            const retryQrButton = button(txt(t("QR 다시 만들기")))
+                .attr({ title: t("QR 다시 만들기") })
+                .on("click", async () => {
+                    const data = dingData.get(wid);
+                    if (!data?.card || data.card.kind !== "qrcode") return;
+                    retryQrButton.el.disabled = true;
+                    const result = await qrCardImage(data.card.text);
+                    retryQrButton.el.disabled = false;
+                    data.url = result.card.url;
+                    img.el.src = result.card.url;
+                    if (result.ok) {
+                        data.card.qrError = undefined;
+                        retryQrButton.el.hidden = true;
+                        ocrTransStateBar.sv(t("QR 코드를 만들었습니다"));
+                    } else {
+                        data.card.qrError = result.error;
+                        ocrTransStateBar.sv(
+                            `${t("QR 코드를 만들지 못했습니다")}: ${result.error}`,
+                        );
+                    }
+                    ocrTransStateBar.el.classList.remove(Class.hide);
+                    markSessionDirty();
+                });
+            cardActions.add(retryQrButton);
+        }
+        controlsPanel.add(cardActions);
+    }
+
+    const pinFx = { rot: 0, flip: false, gray: false };
+    pinGrayEl.el.onclick = () => {
+        pinFx.gray = !pinFx.gray;
+        applyPinFx();
+        pinGrayEl.el.classList.toggle("pin-toggle-on", pinFx.gray);
+        pinGrayEl.el.setAttribute("aria-pressed", String(pinFx.gray));
+    };
+
+    const stackUrls = dingData.get(wid)?.urls;
+    if (stackUrls && stackUrls.length > 1) {
+        let stackIdx = 0;
+        let stackTimer = 0;
+        const stackLabel = txt().sv(`1/${stackUrls.length}`);
+        const stepStack = (d: number) => {
+            stackIdx = (stackIdx + d + stackUrls.length) % stackUrls.length;
+            img.el.src = stackUrls[stackIdx];
+            stackLabel.sv(`${stackIdx + 1}/${stackUrls.length}`);
+            const data = dingData.get(wid);
+            if (data) data.url = stackUrls[stackIdx];
+            markSessionDirty();
+        };
+        const stackPreview = ele("img")
+            .class("stack-preview")
+            .attr({ alt: "", ariaHidden: "true" })
+            .style({ display: "none" });
+        stackPreview.addInto(toolBarC);
+        const peekStack = (d: 1 | -1) =>
+            stackUrls[(stackIdx + d + stackUrls.length) % stackUrls.length];
+        const stackBtn = (icon: IconType, label: string, fn: () => void) =>
+            view("x")
+                .class(concorlClass)
+                .style({ cursor: "pointer" })
+                .attr({ title: label, ariaLabel: label })
+                .add([iconEl(icon)])
+                .on("click", fn);
+        const stackPlay = view("x")
+            .class(concorlClass)
+            .style({ cursor: "pointer" })
+            .attr({ title: t("슬라이드쇼"), ariaPressed: "false" })
+            .add([iconEl("next")])
+            .on("click", (_e, el) => {
+                if (stackTimer) {
+                    clearInterval(stackTimer);
+                    stackTimer = 0;
+                } else {
+                    stackTimer = window.setInterval(() => stepStack(1), 2500);
+                }
+                const playing = stackTimer !== 0;
+                el.el.classList.toggle("pin-toggle-on", playing);
+                el.el.setAttribute("aria-pressed", String(playing));
+            });
+        disposers.add(() => clearInterval(stackTimer));
+        const prevBtn = stackBtn("left", t("이전 이미지"), () => stepStack(-1));
+        const nextBtn = stackBtn("right", t("다음 이미지"), () => stepStack(1));
+        for (const [b, d] of [
+            [prevBtn, -1],
+            [nextBtn, 1],
+        ] as const) {
+            b.on("mouseenter", () => {
+                stackPreview.attr({ src: peekStack(d) });
+                stackPreview.el.style.display = "";
+            }).on("mouseleave", () => {
+                stackPreview.el.style.display = "none";
+            });
+        }
+        controlsPanel.add([
+            prevBtn,
+            view("x").class(concorlClass).add([stackLabel]),
+            nextBtn,
+            stackPlay,
+        ]);
+    }
     let disposed = false;
     let cutoutGeneration = 0;
     let cutoutBusy = false;
@@ -364,6 +620,7 @@ const setNewDing = (
         const transform = `rotate(${pinFx.rot}deg) scaleX(${pinFx.flip ? -1 : 1}) scale(${fit})`;
         img.el.style.transformOrigin = "center";
         img.el.style.transform = transform;
+        img.el.style.filter = pinFx.gray ? "grayscale(1)" : "";
         drawCanvas.style.transformOrigin = "center";
         drawCanvas.style.transform = transform;
     };
@@ -646,6 +903,7 @@ const setNewDing = (
             }
         }
     };
+    runCutoutRef.current = runCutout;
     const undoCutout = () => {
         if (!cutoutUndo || disposed) return;
         ++cutoutGeneration;
@@ -685,6 +943,7 @@ const setNewDing = (
         linkTimer = null;
     });
     const focusedApp = () => {
+        if (process.mas) return null;
         try {
             NodeScreenshots ??= require("node-screenshots");
             const w = NodeScreenshots?.Window.all().find((w) => w.isFocused());
@@ -699,6 +958,7 @@ const setNewDing = (
             ariaPressed: "false",
         })
         .on("click", () => {
+            if (process.mas) return;
             if (linkTimer) {
                 clearInterval(linkTimer);
                 linkTimer = null;
@@ -751,7 +1011,7 @@ const setNewDing = (
     }
 
     const transB = button(iconEl("translate"))
-        .attr({ title: "翻译" })
+        .attr({ title: t("翻译") })
         .on("click", async () => {
             const d = dingData.get(wid);
             if (d) {
@@ -947,12 +1207,16 @@ const setNewDing = (
             icon: "mirror" as IconType,
             run: () => mirrorButton.el.click(),
         },
-        {
-            label: "앱에 연결",
-            icon: "link",
-            run: () => linkButton.el.click(),
-            active: () => linkTimer !== null,
-        },
+        ...(!process.mas
+            ? [
+                  {
+                      label: "앱에 연결",
+                      icon: "link" as IconType,
+                      run: () => linkButton.el.click(),
+                      active: () => linkTimer !== null,
+                  },
+              ]
+            : []),
         {
             label: "저장",
             icon: "save" as IconType,
@@ -967,6 +1231,11 @@ const setNewDing = (
             label: "원위치",
             icon: "back" as IconType,
             run: () => backButton.el.click(),
+        },
+        {
+            label: t("이름 붙이기"),
+            icon: "text" as IconType,
+            run: () => openRename(),
         },
     ];
     const radialButtons = radialActions.map((action, index) =>
@@ -1074,7 +1343,7 @@ const setNewDing = (
             cutoutRetryButton,
             cutoutUndoButton,
             button(iconEl("close"))
-                .attr({ title: "关闭" })
+                .attr({ title: t("关闭") })
                 .on("click", () => {
                     ocrTransStateBar.class(Class.hide);
                 }),
@@ -1087,6 +1356,12 @@ const setNewDing = (
         if (store.get("贴图.窗口.双击") === "归位") back(wid);
         else close(wid);
     };
+    div.el.onauxclick = (e) => {
+        if (e.button === 1) {
+            e.preventDefault();
+            togglePinCollapse(wid);
+        }
+    };
     // 放到前面
     div.el.onclick = () => {
         div.el.style.zIndex = String(toppest + 1);
@@ -1098,6 +1373,7 @@ const setNewDing = (
     div.on("keydown", (e) => {
         if ((e.target as HTMLElement).tagName === "INPUT") return;
         if (e.key === "Escape") {
+            e.preventDefault();
             if (radialOpen) {
                 closeRadial();
             } else if (controlsPanel.el.classList.contains("is-open")) {
@@ -1156,6 +1432,61 @@ const setNewDing = (
             transform(wid, Number(e.key) - 1);
         }
     });
+    const labelBadge = view()
+        .class(Class.glassBar)
+        .style({
+            position: "absolute",
+            top: "4px",
+            left: "4px",
+            padding: "1px 6px",
+            borderRadius: "4px",
+            fontSize: "11px",
+            zIndex: "3",
+            pointerEvents: "none",
+            maxWidth: "70%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+        })
+        .addInto(div);
+    const setPinLabel = (v?: string) => {
+        const data = dingData.get(wid);
+        if (data) data.label = v;
+        labelBadge.el.textContent = v ?? "";
+        labelBadge.el.style.display = v ? "" : "none";
+        markSessionDirty();
+    };
+    labelBadge.el.style.display = "none";
+    const openRename = () => {
+        closeRadial();
+        const inputEl = input()
+            .style({
+                position: "absolute",
+                top: "4px",
+                left: "4px",
+                zIndex: "5",
+                fontSize: "12px",
+                padding: "2px 6px",
+                width: "140px",
+            })
+            .sv(dingData.get(wid)?.label ?? "")
+            .addInto(div);
+        const commit = () => {
+            setPinLabel(inputEl.el.value.trim() || undefined);
+            inputEl.remove();
+        };
+        inputEl.el.focus();
+        inputEl.el.select();
+        inputEl.el.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") inputEl.remove();
+        });
+        inputEl.el.addEventListener("blur", commit);
+        inputEl.el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    };
+    if (dingData.get(wid)?.label) setPinLabel(dingData.get(wid)?.label);
+
     div.add(toolBar).add(imageP).add(ocrTransStateBar);
     holdHandle = createImageHold(img.el, {
         durationMs: 650,
@@ -1182,6 +1513,13 @@ const setNewDing = (
             ]);
         },
     });
+    if (!localStorage.getItem("oc:hint:pin-gesture")) {
+        localStorage.setItem("oc:hint:pin-gesture", "1");
+        ocrTransStateBar.el.classList.remove(Class.hide);
+        ocrTransStateBar.sv(
+            "이미지를 길게 누르거나 Ctrl+Shift+클릭하면 배경을 즉시 제거합니다",
+        );
+    }
     disposers.add(() => {
         disposed = true;
         ++cutoutGeneration;
@@ -1401,6 +1739,7 @@ function close2(id: string) {
     blinkButtons.delete(id);
     ignoreButtons.delete(id);
     ignoredPins.delete(id);
+    collapsedPins.delete(id);
     elFromId(id)?.remove();
     dingData.delete(id);
     elMap = elMap.filter((e) => e.id !== id);
@@ -1772,8 +2111,21 @@ function move(el: ElType<HTMLElement>, e: { x: number; y: number }) {
                 pS = [ox, oy, ow * r, oh + dy];
                 break;
             }
-            case "move":
-                pS = [ox + dx, oy + dy, ow, oh];
+            case "move": {
+                let nx = ox + dx;
+                let ny = oy + dy;
+                const snap = 12;
+                const sw = window.innerWidth;
+                const sh = window.innerHeight;
+                if (Math.abs(nx) < snap) nx = 0;
+                else if (Math.abs(nx + ow - sw) < snap) nx = sw - ow;
+                else if (Math.abs(nx + ow / 2 - sw / 2) < snap)
+                    nx = Math.round(sw / 2 - ow / 2);
+                if (Math.abs(ny) < snap) ny = 0;
+                else if (Math.abs(ny + oh - sh) < snap) ny = sh - oh;
+                else if (Math.abs(ny + oh / 2 - sh / 2) < snap)
+                    ny = Math.round(sh / 2 - oh / 2);
+                pS = [nx, ny, ow, oh];
                 el.style({
                     left: `${pS[0]}px`,
                     top: `${pS[1]}px`,
@@ -1782,6 +2134,7 @@ function move(el: ElType<HTMLElement>, e: { x: number; y: number }) {
                 });
                 pinToolbarPositioners.get(el.el.id)?.();
                 return;
+            }
         }
         // @ts-ignore
         resize(el.el.id, pS[2] / dingData.get(el.el.id).rect[2], zp.x, zp.y);
@@ -2053,20 +2406,20 @@ function dockI() {
             });
         const iClose = view()
             .add(iconEl("close"))
-            .attr({ title: "关闭" })
+            .attr({ title: t("关闭") })
             .on("click", () => {
                 close(i);
             });
         const iIgnore = view()
             .add(iconEl("ignore"))
-            .attr({ title: "鼠标穿透" })
+            .attr({ title: t("鼠标穿透") })
             .on("click", () => {
                 iIgnore_v = !iIgnore_v;
                 ignore(i, iIgnore_v);
             });
         const iTran = view()
             .add(iconEl("replace"))
-            .attr({ title: "窗口变换" })
+            .attr({ title: t("窗口变换") })
             .on("click", () => {
                 iTran_v = iTran_v === -1 ? 0 : -1;
                 transform(i, iTran_v);
@@ -2087,13 +2440,270 @@ function dockI() {
             .addInto(dockView);
     }
 }
-renderOn("addDing", ([wid, x, y, w, h, url, type]) => {
-    elMap.push(setNewDing(String(wid), x, y, w, h, url, type));
-    markSessionDirty();
+const cardCanvas = document.createElement("canvas");
+const cardColor = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() ||
+    fallback;
+
+type CardImage = { url: string; w: number; h: number };
+type QrCardResult =
+    | { ok: true; card: CardImage }
+    | { ok: false; card: CardImage; error: string };
+
+function showCardText(card: CardPinMetadata, returnFocus: HTMLElement) {
+    document.querySelector<HTMLDialogElement>(".pin-card-dialog")?.close();
+    const dialog = document.createElement("dialog");
+    dialog.className = "pin-card-dialog";
+    dialog.setAttribute("aria-label", t("전체 텍스트 보기"));
+    const heading = document.createElement("h2");
+    heading.textContent =
+        card.kind === "qrcode" ? t("QR 원문") : t("전체 텍스트");
+    const note = document.createElement("p");
+    note.className = "pin-card-dialog-note";
+    if (card.truncated) {
+        note.textContent = t("원문 {total}자 중 {retained}자를 보관했습니다")
+            .replace("{total}", card.sourceLength.toLocaleString())
+            .replace("{retained}", card.retainedLength.toLocaleString());
+    } else if (card.qrError) {
+        note.textContent = `${t("QR 코드를 만들지 못했습니다")}: ${card.qrError}`;
+    } else {
+        note.textContent = `${card.retainedLength.toLocaleString()} ${t("자")}`;
+    }
+    const textArea = document.createElement("textarea");
+    textArea.readOnly = true;
+    textArea.spellcheck = false;
+    textArea.value = card.text;
+    textArea.setAttribute("aria-label", t("보관된 전체 텍스트"));
+    const status = document.createElement("span");
+    status.className = "pin-card-dialog-status";
+    status.setAttribute("role", "status");
+    const actions = document.createElement("div");
+    actions.className = "pin-card-dialog-actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = t("텍스트 복사");
+    copy.addEventListener("click", async () => {
+        try {
+            await writeText(card.text);
+            status.textContent = t("텍스트를 복사했습니다");
+        } catch {
+            status.textContent = t("텍스트를 복사하지 못했습니다");
+        }
+    });
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = t("닫기");
+    closeButton.addEventListener("click", () => dialog.close());
+    actions.append(status, copy, closeButton);
+    dialog.append(heading, note, textArea, actions);
+    dialog.addEventListener("close", () => {
+        dialog.remove();
+        returnFocus.focus();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    textArea.focus();
+}
+
+function textCardImage(card: CardPinMetadata): CardImage | null {
+    const ctx = cardCanvas.getContext("2d");
+    if (!ctx) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const maxW = 440;
+    const pad = 14;
+    const lineH = 22;
+    const maxBodyLines = 21;
+    ctx.font = "14px system-ui, sans-serif";
+    const lines: string[] = [];
+    let previewOverflow = false;
+    previewLines: for (const raw of card.text.split(/\r?\n/)) {
+        let line = "";
+        for (const ch of raw) {
+            if (ctx.measureText(line + ch).width > maxW - pad * 2) {
+                lines.push(line);
+                if (lines.length > maxBodyLines) {
+                    previewOverflow = true;
+                    break previewLines;
+                }
+                line = ch;
+            } else line += ch;
+        }
+        lines.push(line || " ");
+        if (lines.length > maxBodyLines) {
+            previewOverflow = true;
+            break;
+        }
+    }
+    const previewTruncated = previewOverflow || card.truncated;
+    const shown = lines.slice(0, maxBodyLines);
+    if (lines.length > maxBodyLines)
+        shown[shown.length - 1] = `${shown[shown.length - 1].slice(0, -2)}…`;
+    const footer = previewTruncated ? t("더 많은 내용 · 전체 텍스트 보기") : "";
+    const width = Math.min(
+        maxW,
+        Math.ceil(
+            Math.max(
+                ...shown.map((line) => ctx.measureText(line).width),
+                footer ? ctx.measureText(footer).width : 0,
+                40,
+            ) +
+                pad * 2,
+        ),
+    );
+    const height = (shown.length + (footer ? 1 : 0)) * lineH + pad * 2;
+    cardCanvas.width = width * dpr;
+    cardCanvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillStyle = cardColor("--bg", "#ffffff");
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = cardColor("--font-color", "#000000");
+    ctx.textBaseline = "top";
+    for (const [i, l] of shown.entries()) ctx.fillText(l, pad, pad + i * lineH);
+    if (footer) {
+        ctx.fillStyle = cardColor("--muted", "#666666");
+        ctx.font = "600 12px system-ui, sans-serif";
+        ctx.fillText(footer, pad, pad + shown.length * lineH + 2);
+    }
+    return { url: cardCanvas.toDataURL(), w: width, h: height };
+}
+
+function cardErrorText(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return Array.from(message || t("알 수 없는 오류"))
+        .slice(0, 240)
+        .join("");
+}
+
+function qrErrorCardImage(): CardImage {
+    const canvas = document.createElement("canvas");
+    const dpr = window.devicePixelRatio || 1;
+    const size = 220;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = cardColor("--bg", "#ffffff");
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = cardColor("--line-bright", "#888888");
+    ctx.lineWidth = 1;
+    ctx.strokeRect(14.5, 14.5, size - 29, size - 29);
+    ctx.fillStyle = cardColor("--font-color", "#000000");
+    ctx.textAlign = "center";
+    ctx.font = "600 15px system-ui, sans-serif";
+    ctx.fillText(t("QR 코드를 만들지 못했습니다"), size / 2, 92);
+    ctx.fillStyle = cardColor("--muted", "#666666");
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText(t("원문 보기 · 복사 · 다시 만들기"), size / 2, 120);
+    return { url: canvas.toDataURL(), w: size, h: size };
+}
+
+async function qrCardImage(text: string): Promise<QrCardResult> {
+    try {
+        const QRCode = await import("qrcode");
+        const canvas = document.createElement("canvas");
+        await QRCode.toCanvas(canvas, text, {
+            margin: 2,
+            width: 220,
+            color: {
+                dark: "#000000",
+                light: "#ffffff",
+            },
+        });
+        return {
+            ok: true,
+            card: { url: canvas.toDataURL(), w: 220, h: 220 },
+        };
+    } catch (error) {
+        console.error("QR generation failed:", error);
+        return {
+            ok: false,
+            card: qrErrorCardImage(),
+            error: cardErrorText(error),
+        };
+    }
+}
+
+renderOn("addDing", ([wid, x, y, w, h, url, type, opts]) => {
+    const makePin = (
+        finalUrl: string,
+        fw = w,
+        fh = h,
+        fx = x,
+        fy = y,
+        card = opts?.card ? { ...opts.card } : undefined,
+    ) => {
+        const stack =
+            Array.isArray(opts?.stack) &&
+            opts.stack.length > 1 &&
+            opts.stack.every(
+                (s: unknown) =>
+                    typeof s === "string" && s.startsWith("data:image/"),
+            )
+                ? (opts.stack as string[]).slice(0, 24)
+                : undefined;
+        const entry = setNewDing(
+            String(wid),
+            fx,
+            fy,
+            fw,
+            fh,
+            finalUrl,
+            "ding",
+            stack,
+            undefined,
+            card,
+        );
+        if (typeof opts?.opacity === "number")
+            entry.opacity(String(Math.round(opts.opacity * 100)));
+        const el = elFromId(entry.id)?.el;
+        if (opts?.collapsed && el) {
+            collapsedPins.set(entry.id, h);
+            el.style.height = "8px";
+            el.classList.add("pin-collapsed");
+        }
+        elMap.push(entry);
+        markSessionDirty();
+    };
+    if (type === "text" || type === "qrcode") {
+        const payload = opts?.card?.text ?? opts?.text ?? "";
+        if (!payload.trim()) return;
+        const fallbackLength = Array.from(payload).length;
+        const metadata: CardPinMetadata = opts?.card
+            ? { ...opts.card, text: payload }
+            : {
+                  kind: type,
+                  text: payload,
+                  sourceLength: fallbackLength,
+                  retainedLength: fallbackLength,
+                  truncated: false,
+              };
+        const done = (cardImage: CardImage | null) => {
+            if (cardImage)
+                makePin(
+                    cardImage.url,
+                    cardImage.w,
+                    cardImage.h,
+                    Math.round(x - cardImage.w / 2),
+                    Math.round(y - cardImage.h / 2),
+                    metadata,
+                );
+            else makePin(url, w, h, x, y, metadata);
+        };
+        if (type === "text") done(textCardImage(metadata));
+        else
+            void qrCardImage(payload).then((result) => {
+                metadata.qrError = result.ok ? undefined : result.error;
+                done(result.card);
+            });
+        return;
+    }
+    makePin(url);
 });
 
+const pendingRestore: SavedDingPin[] = [];
 function collectSessionPins(): SavedDingPin[] {
-    const pins: SavedDingPin[] = [];
+    const pins: SavedDingPin[] = [...pendingRestore];
     for (const [id, data] of dingData) {
         const el = elFromId(id)?.el;
         const img = el?.querySelector<HTMLImageElement>(".img > img");
@@ -2102,10 +2712,14 @@ function collectSessionPins(): SavedDingPin[] {
             x: el.offsetLeft,
             y: el.offsetTop,
             w: el.offsetWidth,
-            h: el.offsetHeight,
+            h: collapsedPins.get(id) ?? el.offsetHeight,
             src: data.url,
             opacity: Number(img.style.opacity || 1),
             z: Number(el.style.zIndex || 0),
+            collapsed: collapsedPins.has(id) || undefined,
+            stack: data.urls,
+            label: data.label || undefined,
+            card: data.card,
         });
     }
     return pins;
@@ -2125,7 +2739,11 @@ void ipcRenderer
     .invoke("ding:session:get")
     .then((pins: SavedDingPin[]) => {
         if (!Array.isArray(pins) || !pins.length) return;
-        for (const [index, pin] of pins.entries()) {
+        // 첫 몇 개만 즉시 복원하고 나머지는 순차 지연 — 시작 시 이미지 디코드 폭주 방지
+        const IMMEDIATE = 4;
+        const restorePin = (pin: SavedDingPin, index: number) => {
+            const pi = pendingRestore.indexOf(pin);
+            if (pi !== -1) pendingRestore.splice(pi, 1);
             const entry = setNewDing(
                 `restored-${Date.now()}-${index}`,
                 pin.x,
@@ -2134,11 +2752,29 @@ void ipcRenderer
                 pin.h,
                 pin.src,
                 "ding",
+                pin.stack,
+                pin.label,
+                pin.card,
             );
             entry.opacity(String(Math.round(pin.opacity * 100)));
             const el = elFromId(entry.id)?.el;
             if (el) el.style.zIndex = String(pin.z);
+            if (pin.collapsed && el) {
+                collapsedPins.set(entry.id, pin.h);
+                el.style.height = "8px";
+                el.classList.add("pin-collapsed");
+            }
             elMap.push(entry);
+        };
+        for (const [index, pin] of pins.entries()) {
+            if (index < IMMEDIATE) restorePin(pin, index);
+            else {
+                pendingRestore.push(pin);
+                setTimeout(
+                    () => restorePin(pin, index),
+                    (index - IMMEDIATE + 1) * 120,
+                );
+            }
         }
         toppest = Math.max(toppest, ...pins.map((p) => p.z)) + 1;
     })

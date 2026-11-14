@@ -3,7 +3,7 @@ body {
 }
 
 #recorder_rect {
-    border: 1px dashed #000;
+    border: 2px solid color-mix(in srgb, var(--font-color) 55%, transparent);
     box-sizing: border-box;
     width: 100vw;
     height: 100vh;
@@ -16,7 +16,7 @@ body {
     height: 24px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    background-color: #ff08;
+    background-color: color-mix(in srgb, var(--font-color) 30%, transparent);
     overflow: hidden;
 }
 
@@ -86,7 +86,7 @@ body {
     height: 24px;
     transform: translate(-50%, -50%) scale(0.5);
     border-radius: 50%;
-    border: 3px solid #ff0;
+    border: 3px solid var(--font-color);
     opacity: 0.9;
     pointer-events: none;
     animation: click_ripple 0.55s ease-out forwards;

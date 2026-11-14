@@ -1,4 +1,5 @@
 import { button, ele, image, initDKH, input, pack, select, view } from "dkh-ui";
+import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
 import { Class, getImgUrl } from "../root/root";
 
@@ -14,7 +15,7 @@ pack(document.body).style({ background: "var(--bg)" });
 
 const p = view("x").style({ gap: "8px", padding: "8px" }).addInto();
 p.add([
-    button("文字按钮"),
+    button(t("文字按钮")),
     iconBEl("translate"),
     select([{ value: "1" }]),
     input().sv("hi"),

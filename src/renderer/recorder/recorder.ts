@@ -5,7 +5,6 @@ import {
     ele,
     image,
     input,
-    label,
     p,
     txt,
 } from "dkh-ui";
@@ -23,11 +22,27 @@ let recorder: MediaRecorder;
 
 /** 临时保存的原始视频位置 */
 let tmpPath: string;
+let crashPath = "";
+let crashReset = true;
 /** 转换 */
 let output: string;
 
 let sS = false;
 let stop = false;
+let cancelled = false;
+let trimChanged = false;
+
+type RecorderState =
+    | "ready"
+    | "recording"
+    | "paused"
+    | "processing"
+    | "saved"
+    | "cancelled"
+    | "error";
+
+let recorderState: RecorderState = "ready";
+let retryAction: (() => void) | undefined;
 
 const clipTime = Number(store.get("录屏.转换.分段")) * 1000;
 
@@ -58,6 +73,14 @@ function setTime(t: string) {
     renderSend("recordTime", [t]);
     timeEl.sv(t);
 }
+function formatT(t: number) {
+    const s = Math.trunc(t / 1000);
+    const m = Math.trunc(s / 60);
+    const h = Math.trunc(m / 60);
+    return `${h === 0 ? "" : `${h}:`}${m - 60 * h}:${String(
+        s - 60 * m,
+    ).padStart(2, "0")}`;
+}
 function getTime() {
     if (recorder.state === "recording") {
         let t = 0;
@@ -65,14 +88,13 @@ function getTime() {
             t += timeL[i] - timeL[i - 1];
         }
         t += Date.now() - (timeL.at(-1) as number);
-        const s = Math.trunc(t / 1000);
-        const m = Math.trunc(s / 60);
-        const h = Math.trunc(m / 60);
-        setTime(
-            `${h === 0 ? "" : `${h}:`}${m - 60 * h}:${String(
-                s - 60 * m,
-            ).padStart(2, "0")}`,
-        );
+        setTime(formatT(t));
+    } else if (recorder.state === "paused") {
+        let elapsed = 0;
+        for (let i = 1; i < timeL.length; i += 2) {
+            elapsed += timeL[i] - timeL[i - 1];
+        }
+        setTime(`${formatT(elapsed)} · ${t("일시정지")}`);
     }
 }
 
@@ -98,9 +120,9 @@ let rect: [number, number, number, number];
 // biome-ignore format:
 const spawn = require("node:child_process").spawn as typeof import("child_process").spawn;
 const fs = require("node:fs") as typeof import("fs");
-const os = require("node:os") as typeof import("os");
 const path = require("node:path") as typeof import("path");
-import { renderOn, renderSend } from "../../../lib/ipc";
+const { pathToFileURL } = require("node:url") as typeof import("url");
+import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import { typedEntries } from "../../../lib/utils";
 import type { IconType } from "../../iconTypes";
 let pathToFfmpeg = "ffmpeg";
@@ -161,8 +183,10 @@ function resize() {
 }
 
 let editting = false;
+let exportedPlayback = false;
 
 function setVideo(n: number) {
+    exportedPlayback = false;
     videoEl.src = `${tmpPath}/${n}`;
 }
 
@@ -215,6 +239,8 @@ function showControl() {
     mEl.style({ backgroundColor: cssColor.bg });
     videoPEl.style({ transform: "" });
     segEl.remove();
+    sEl.el.prepend(retryEl.el);
+    sEl.el.prepend(statusEl.el);
     setVideo(0);
     videoEl.style.left = `${-rect[0]}px`;
     videoEl.style.top = `${-rect[1]}px`;
@@ -225,7 +251,7 @@ function showControl() {
         minHeight: `${rect[3]}px`,
     });
     clipV();
-    saveEl.el.disabled = false;
+    saveEl.el.disabled = !isTsOk;
     renderSend("windowMax", []);
 
     setTimeout(() => {
@@ -242,6 +268,7 @@ function clipV() {
 
     tTEl.sv(tFormat(tEndEl.gv - tStartEl.gv));
     tNtEl.sv(tFormat(0));
+    trimChanged = false;
 }
 
 /**
@@ -259,25 +286,46 @@ function tFormat(x: number) {
 }
 
 function videoPlay() {
-    setPlayT(tStartEl.gv);
+    if (!exportedPlayback) setPlayT(tStartEl.gv);
     videoEl.play();
 }
 
 const clipPath: string[] = [];
-let isClipRun = false;
+let clipPromise: Promise<void> | undefined;
+let clipReady = false;
 /** 获取要切割的视频和位置 */
 async function clip() {
-    if (isClipRun) return;
-    isClipRun = true;
+    if (clipReady) return;
+    if (clipPromise) return clipPromise;
+    clipPromise = runClip();
+    try {
+        await clipPromise;
+        clipReady = true;
+    } finally {
+        clipPromise = undefined;
+    }
+}
+
+async function runClip() {
     const start = tStartEl.gv;
     const end = tEndEl.gv;
     const startV = getTimeInV(start);
     const endV = getTimeInV(end);
+    const segmentDuration = nameT[startV.v].e - nameT[startV.v].s;
+    if (
+        !trimChanged &&
+        startV.v === endV.v &&
+        startV.time <= 1 &&
+        Math.abs(endV.time - segmentDuration) <= 50
+    ) {
+        clipPath.length = 0;
+        clipPath.push(path.join(output, `${startV.v}.${type}`));
+        return;
+    }
     const output1 = path.join(tmpPath, "output1");
-    try {
-        fs.rmSync(output1, { recursive: true });
-    } catch (error) {}
+    fs.rmSync(output1, { recursive: true, force: true });
     fs.mkdirSync(output1);
+    clipPath.length = 0;
     function toArg(
         v: number,
         t: number,
@@ -325,59 +373,72 @@ async function clip() {
     }
 }
 
-function joinAndSave(filepath: string) {
+async function joinAndSave(filepath: string) {
     if (clipPath.length === 1) {
         fs.cpSync(clipPath[0], filepath);
         ffprocess.join[0] = { args: [], finish: "ok", logs: [], testCom: "" };
         updataPrEl(ffprocess);
-        return;
-    }
-    const args: string[] = [];
+    } else {
+        const args: string[] = [];
 
-    // 针对不同格式的合并（用switch还要加上作用域的话缩进就太多了）
-    if (type === "gif") {
-        for (const i of clipPath) {
-            args.push("-i", i);
+        // 针对不同格式的合并（用switch还要加上作用域的话缩进就太多了）
+        if (type === "gif") {
+            for (const i of clipPath) args.push("-i", i);
+            args.push("-filter_complex");
+            let filter = "";
+            for (const i in clipPath) filter += `[${i}:v:0]`;
+            filter += `concat=n=${clipPath.length}:v=1[outv]`;
+            args.push(filter, "-map", "[outv]");
+        } else {
+            const list = clipPath.map((i) => `file '${i}'`).join("\n");
+            const textPath = path.join(tmpPath, "output1", "x.txt");
+            fs.writeFileSync(textPath, list);
+            args.push(
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                textPath,
+                "-c",
+                "copy",
+            );
         }
-        args.push("-filter_complex");
-        let t = "";
-        for (const i in clipPath) {
-            t += `[${i}:v:0]`;
-        }
-        t += `concat=n=${clipPath.length}:v=1[outv]`;
-        args.push(`"${t}"`, "-map", '"[outv]"');
-    } else if (
-        type === "webm" ||
-        type === "mp4" ||
-        type === "ts" ||
-        type === "mkv" ||
-        type === "mov" ||
-        type === "flv" ||
-        type === "mpeg"
-    ) {
-        let t = "";
-        for (const i of clipPath) {
-            t += `file ${i}\n`;
-        }
-        const textPath = path.join(tmpPath, "output1", "x.txt");
-        fs.writeFileSync(textPath, t);
-        args.push("-f", "concat", "-safe", "0", "-i", textPath, "-c", "copy");
-    } else if (type === "avi") {
+        args.push(filepath);
+        await runFfmpeg("join", 0, args);
     }
-    args.push(filepath);
-
-    runFfmpeg("join", 0, args).then((r) => {
-        if (r) renderSend("ok_save", [filepath, true]);
-    });
+    if (!fs.existsSync(filepath) || fs.statSync(filepath).size === 0) {
+        throw new Error(t("저장된 녹화 파일이 비어 있습니다."));
+    }
+    exportedPlayback = true;
+    videoEl.src = pathToFileURL(filepath).href;
+    renderSend("ok_save", [filepath, true]);
 }
 
 async function save() {
+    if (!isTsOk || recorderState === "processing") return;
     store.set("录屏.转换.格式", 格式El.el.gv);
-    renderSend("recordSavePath", [type]); // todo 可以使用promise控制流程
+    setRecorderState("processing", t("저장 위치를 선택하는 중입니다."));
+    renderSend("recordSavePath", [type]);
 }
 
-let savePath = "";
 let isTsOk = false;
+let lastSavePath = "";
+
+async function performSave(filepath: string) {
+    lastSavePath = filepath;
+    setRecorderState("processing", t("녹화를 저장하는 중입니다."));
+    try {
+        await clip();
+        await joinAndSave(filepath);
+        retryAction = undefined;
+        setRecorderState("saved", t("녹화를 저장했습니다."));
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        retryAction = () => void performSave(lastSavePath);
+        setRecorderState("error", message);
+    }
+}
 
 const prText = {
     wait: {
@@ -414,13 +475,9 @@ function setFFState(type: keyof typeof prEl, n: number, state: prst) {
         type === "ts" &&
         Object.values(ffprocess[type]).every((i) => i.finish === "ok")
     ) {
-        if (savePath) {
-            clip()
-                .then(() => joinAndSave(savePath))
-                .catch(() => {
-                    isClipRun = false;
-                });
-        }
+        isTsOk = true;
+        saveEl.el.disabled = false;
+        setRecorderState("ready", t("검토 후 저장할 수 있습니다."));
     }
 }
 
@@ -464,9 +521,7 @@ function updataPrEl(pr: typeof ffprocess) {
                 prEl[key].class("pro_ok");
                 if (key === "ts") {
                     isTsOk = true;
-                    if (!savePath) {
-                        prEl[key].el.innerText += ` ${t("等待保存")}`;
-                    }
+                    prEl[key].el.innerText += ` ${t("等待保存")}`;
                 }
             } else {
                 prEl[key].el.innerText =
@@ -516,7 +571,16 @@ function runFfmpeg(type: "ts" | "clip" | "join", n: number, args: string[]) {
                 setFFState(type, n, "err");
                 updataPrEl(ffprocess);
                 console.log(ffprocess);
-                rj(false);
+                if (type === "ts") {
+                    retryAction = () => {
+                        void runFfmpeg(type, n, args).catch(() => {});
+                    };
+                    setRecorderState(
+                        "error",
+                        t("녹화 처리에 실패했습니다. 다시 시도할 수 있습니다."),
+                    );
+                }
+                rj(new Error(`FFmpeg exited with code ${String(code)}`));
             }
         });
         ffmpeg.stdout.on("data", (data: Uint8Array) => {
@@ -700,12 +764,40 @@ class time_i extends HTMLElement {
 window.customElements.define("time-i", time_i);
 
 const mEl = view().attr({ id: "m" }).addInto();
+const statusEl = txt().attr({ id: "record_status", role: "status" });
+statusEl.el.setAttribute("aria-live", "polite");
+const retryEl = button(t("다시 시도"))
+    .attr({ id: "record_retry", type: "button" })
+    .on("click", () => {
+        retryAction?.();
+    });
+
+function setRecorderState(state: RecorderState, detail = "") {
+    recorderState = state;
+    document.body.dataset.recorderState = state;
+    saveEl.el.disabled = state === "processing" || !isTsOk;
+    const labels: Record<RecorderState, string> = {
+        ready: t("준비"),
+        recording: t("녹화 중"),
+        paused: t("일시정지"),
+        processing: t("처리 중"),
+        saved: t("저장됨"),
+        cancelled: t("저장 취소됨"),
+        error: t("오류"),
+    };
+    statusEl.el.textContent = detail
+        ? `${labels[state]} · ${detail}`
+        : labels[state];
+}
+
+const recDot = view().class("rec-dot");
 const startStop = button()
     .add(iconEl("start_record").style({ filter: "none" }))
-    .attr({ id: "start_stop" })
-    .style({ width: "80px", height: "80px" })
+    .attr({ id: "start_stop", title: t("녹화 시작/중지") })
     .on("click", () => {
         if (sS) {
+            if (!recorder || !stream) return;
+            cancelled = false;
             if (!recordSysAudio) {
                 // 下面是用来移除系统音频
                 const audioTracks = stream.getAudioTracks();
@@ -717,28 +809,31 @@ const startStop = button()
             for (const a of audioStreamS.values()) {
                 for (const i of a.getAudioTracks()) stream.addTrack(i);
             }
-            recorder.start();
+            crashReset = true;
+            recorder.start(2000);
             格式El.el.style({ display: "none" });
             type = 格式El.el.gv as mimeType;
             startStop
                 .clear()
                 .add(iconEl("stop_record").style({ filter: "none" }));
+            recDot.el.classList.remove("paused");
             settingEl
                 .clear()
-                .add([
-                    startStop,
-                    view("x")
-                        .add([timeEl, cancelEl])
-                        .style({ alignItems: "center" }),
-                ]);
+                .add([recDot, startStop, pauseBtn, timeEl, statusEl, cancelEl]);
             pTime();
-            setInterval(getTime, 500);
+            timeInterval = window.setInterval(getTime, 500);
             sS = false;
+            setRecorderState("recording");
             renderSend("recordStart", []);
 
             c();
         } else {
             stop = true;
+            setRecorderState("processing", t("녹화를 정리하는 중입니다."));
+            if (timeInterval !== undefined) {
+                clearInterval(timeInterval);
+                timeInterval = undefined;
+            }
             recorder.stop();
             for (const i of stream.getTracks()) {
                 i.stop();
@@ -753,22 +848,47 @@ const startStop = button()
     });
 
 const timeEl = txt().class(Class.mono);
-const cancelEl = iconBEl("close").on("click", () => {
-    recorder.stop();
-    for (const i of stream.getTracks()) {
-        i.stop();
+let timeInterval: number | undefined;
+const togglePause = () => {
+    if (!recorder || recorder.state === "inactive") return;
+    if (recorder.state === "recording") {
+        recorder.pause();
+        pTime();
+    } else if (recorder.state === "paused") {
+        recorder.resume();
+        pTime();
     }
-    for (const s of audioStreamS.values())
-        for (const t of s.getTracks()) {
-            t.stop();
-        }
+    recDot.el.classList.toggle("paused", recorder.state === "paused");
+    setRecorderState(recorder.state === "paused" ? "paused" : "recording");
+};
+const pauseBtn = iconBEl("play_pause")
+    .attr({ title: t("일시정지/재개") })
+    .on("click", () => togglePause());
+const cancelEl = iconBEl("close")
+    .attr({ title: t("녹화 취소") })
+    .on("click", () => {
+        cancelled = true;
+        setRecorderState("cancelled", t("녹화를 취소했습니다."));
+        if (timeInterval !== undefined) clearInterval(timeInterval);
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+        if (stream)
+            for (const i of stream.getTracks()) {
+                i.stop();
+            }
+        for (const s of audioStreamS.values())
+            for (const t of s.getTracks()) {
+                t.stop();
+            }
 
-    renderSend("recordStop", []);
-    renderSend("windowClose", []);
-});
+        try {
+            if (crashPath) fs.rmSync(crashPath, { force: true });
+        } catch {}
+        renderSend("recordStop", []);
+        renderSend("windowClose", []);
+    });
 
 const cameraEl = check("camera")
-    .attr({ id: "camera" })
+    .attr({ id: "camera", title: t("카메라 표시") })
     .on("click", () => {
         try {
             cameraStreamF(cameraEl.gv);
@@ -778,6 +898,7 @@ const cameraEl = check("camera")
         }
     });
 const micList = view("y");
+const audioSelect = dynamicSelect();
 
 const 格式El = dynamicSelect();
 const types: mimeType[] = [
@@ -792,27 +913,24 @@ const types: mimeType[] = [
 ];
 格式El.setList(types.map((i) => ({ value: i, text: i })));
 格式El.el.el.value = type;
+格式El.el.attr({ title: t("출력 형식") });
+audioSelect.el.attr({ title: t("마이크 입력") });
 
-const settingEl = view("y")
-    .style({
-        position: "fixed",
-        left: 0,
-        top: 0,
-        width: "100vw",
-        height: "100vh",
-        alignItems: "center",
-        justifyContent: "center",
-    })
-    .class(Class.gap)
+const settingEl = view("x")
+    .attr({ id: "rec_setting" })
     .add([
         startStop,
-        view("y")
+        statusEl,
+        retryEl,
+        ele("details")
+            .attr({ id: "rec_options" })
             .add([
-                view("y").add([t("格式"), 格式El.el]),
-                view("y").add([t("选择输入音频"), micList]),
-                view("y").add([t("摄像头"), label([cameraEl, t("开启")])]),
-            ])
-            .class(Class.gap),
+                ele("summary").add(t("설정")),
+                view("x")
+                    .class("rec-options-row")
+                    .add([格式El.el, audioSelect.el, micList, cameraEl]),
+            ]),
+        cancelEl,
     ])
     .addInto();
 
@@ -837,7 +955,7 @@ videoEl.onplay = () => {
 };
 
 videoEl.ontimeupdate = () => {
-    if (!editting) return;
+    if (!editting || exportedPlayback) return;
     tNtEl.sv(tFormat(getPlayT() - tStartEl.gv));
     if (getPlayT() > tEndEl.gv) {
         videoEl.pause();
@@ -847,6 +965,10 @@ videoEl.ontimeupdate = () => {
 };
 
 videoEl.onended = () => {
+    if (exportedPlayback) {
+        playEl.sv(true);
+        return;
+    }
     if (playName < nameT.length - 1) {
         playName++;
         setVideo(playName);
@@ -889,12 +1011,14 @@ const tEndEl = document.createElement("time-i") as time_i;
 tEndEl.id = "t_end";
 
 tStartEl.oninput = () => {
+    trimChanged = true;
     const t = tStartEl.gv / 1000;
     videoEl.currentTime = tEndEl.min = t;
     jdtEl.el.min = String(t);
     tTEl.sv(tFormat(tEndEl.gv - tStartEl.gv));
 };
 tEndEl.oninput = () => {
+    trimChanged = true;
     const t = tEndEl.gv / 1000;
     videoEl.currentTime = tStartEl.max = t;
     jdtEl.el.max = String(t);
@@ -923,6 +1047,7 @@ function setEnd() {
 }
 
 const saveEl = iconBEl("save")
+    .add(t("저장"))
     .attr({ id: "save", disabled: true })
     .on("click", () => save());
 
@@ -951,72 +1076,83 @@ const logP = ele("details").attr({ id: "log_p" }).class("hide_log");
 const logText = ele("textarea").attr({ id: "log", cols: 30, rows: 10 });
 logP.add([ele("summary").add(t("FFmpeg 错误日志")), logText]);
 
-sEl.add([
-    jdtEl,
-    ele("br"),
-    t("开始时间："),
-    tStartEl,
-    tNtEl,
-    " / ",
-    tTEl,
-    playEl,
-    t("结束时间："),
-    tEndEl,
-    setEndEl,
-    saveEl,
-    prTs,
-    prClip,
-    prJoin,
-    logP,
-]);
+const editDetails = ele("details")
+    .attr({ id: "record_edit_details" })
+    .add([
+        ele("summary").add(t("구간 편집")),
+        view()
+            .class("record-detail-content")
+            .add([
+                jdtEl,
+                view("x")
+                    .class("record-time-row")
+                    .add([
+                        t("开始时间："),
+                        tStartEl,
+                        tNtEl,
+                        " / ",
+                        tTEl,
+                        playEl,
+                        t("结束时间："),
+                        tEndEl,
+                        setEndEl,
+                    ]),
+            ]),
+    ]);
+const processingDetails = ele("details")
+    .attr({ id: "record_processing_details" })
+    .add([
+        ele("summary").add(t("처리 상세")),
+        view().class("record-detail-content").add([prTs, prClip, prJoin, logP]),
+    ]);
+
+sEl.add([saveEl, editDetails, processingDetails]);
 
 const devices = await navigator.mediaDevices.enumerateDevices();
 const audioL = devices.filter((i) => i.kind === "audioinput");
 const canSysAudio = store.get("录屏.音频.启用系统内录");
-if (canSysAudio)
-    micList.add(
-        label([check(""), t("系统音频")])
-            .on("input", (_, el) => {
-                recordSysAudio = el.gv;
-                store.set("录屏.音频.设备列表", getAudioNames());
-            })
-            .sv(store.get("录屏.音频.设备列表").includes(sysAudioName)),
-    );
-
 const audioRmb = store.get("录屏.音频.设备列表");
-
 let recordSysAudio = audioRmb.includes(sysAudioName);
 
-for (const i of audioL) {
-    const el = label([check(""), i.label || i.deviceId]).sv(
-        audioRmb.includes(i.deviceId),
-    );
-    set(el.gv);
-    async function set(v: boolean) {
-        if (v) {
-            const audioStream = await navigator.mediaDevices.getUserMedia({
-                audio: { deviceId: i.deviceId },
-                video: false,
-            });
-            audioStreamS.set(i.deviceId, audioStream);
-        } else {
-            const s = audioStreamS.get(i.deviceId);
-            if (s) {
-                for (const t of s.getTracks()) {
-                    t.stop();
-                }
-            }
-            audioStreamS.delete(i.deviceId);
+async function setMicStream(id: string) {
+    for (const s of audioStreamS.values())
+        for (const t of s.getTracks()) {
+            t.stop();
         }
+    audioStreamS.clear();
+    if (id) {
+        const audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: id },
+            video: false,
+        });
+        audioStreamS.set(id, audioStream);
     }
-    el.on("input", async () => {
-        await set(el.gv);
+}
+
+const audioDeviceL = audioL.map((i) => ({
+    value: i.deviceId,
+    text: i.label || i.deviceId,
+}));
+audioDeviceL.unshift({ value: "", text: t("마이크 없음") });
+audioSelect.setList(audioDeviceL);
+const rememberedMic = audioL.find((i) => audioRmb.includes(i.deviceId));
+audioSelect.el.sv(rememberedMic?.deviceId ?? "");
+audioSelect.el.on("change", async () => {
+    await setMicStream(audioSelect.el.gv);
+    store.set("录屏.音频.设备列表", getAudioNames());
+});
+if (rememberedMic) await setMicStream(rememberedMic.deviceId);
+
+if (canSysAudio) {
+    const sysAudioEl = check("mic").attr({ title: t("시스템 오디오 녹음") });
+    sysAudioEl.on("input", (_, el) => {
+        recordSysAudio = el.gv;
         store.set("录屏.音频.设备列表", getAudioNames());
     });
-    micList.add(el);
-}
-if (!canSysAudio && audioL.length === 0) {
-    micList.add(t("无音频输入设备"));
+    sysAudioEl.sv(recordSysAudio);
+    micList.add(sysAudioEl);
+} else if (audioL.length === 0) {
+    audioSelect.el.style({ display: "none" });
 }
 
 if (store.get("录屏.摄像头.开启")) {
@@ -1029,6 +1165,31 @@ if (store.get("录屏.摄像头.开启")) {
 }
 
 document.body.onresize = resize;
+
+function recordFatal(message: string) {
+    sS = false;
+    if (stream) {
+        for (const track of stream.getTracks()) track.stop();
+    }
+    startStop.style({ opacity: "0.4", pointerEvents: "none" });
+    retryAction = () => {
+        startStop.style({ opacity: "1", pointerEvents: "auto" });
+        setRecorderState("ready", t("화면을 다시 준비하는 중입니다."));
+        renderSend("recorderReady", []);
+    };
+    setRecorderState("error", message);
+    renderSend("dialogMessage", [{ message, buttons: [t("확인")] }]);
+    renderSend("recordStop", []);
+}
+
+renderOn("recordInitError", () => {
+    waitTip.remove();
+    recordFatal(
+        t(
+            "녹화할 화면을 준비하지 못했습니다. 화면 공유 권한을 확인한 뒤 다시 시도하세요.",
+        ),
+    );
+});
 
 renderOn("recordInit", async ([sourceId, r, screen_w, screen_h]) => {
     waitTip.remove();
@@ -1057,21 +1218,67 @@ renderOn("recordInit", async ([sourceId, r, screen_w, screen_h]) => {
     } catch (e) {
         console.error(e);
     }
-    if (!stream) return;
+    if (!stream) {
+        recordFatal(
+            t(
+                "화면 녹화 권한을 얻지 못했습니다. 권한을 허용한 뒤 다시 시도하세요.",
+            ),
+        );
+        return;
+    }
+    retryAction = undefined;
+    startStop.style({ opacity: "1", pointerEvents: "auto" });
+    setRecorderState("ready", t("녹화를 시작할 수 있습니다."));
     let chunks: Blob[] = [];
-    recorder = new MediaRecorder(stream, {
-        videoBitsPerSecond: store.get("录屏.视频比特率") * 10 ** 6,
-        mimeType: "video/webm",
-    });
-    recorder.ondataavailable = (e) => {
+    const mimeType = MediaRecorder.isTypeSupported("video/webm")
+        ? "video/webm"
+        : "";
+    try {
+        recorder = new MediaRecorder(
+            stream,
+            mimeType
+                ? {
+                      videoBitsPerSecond:
+                          store.get("录屏.视频比特率") * 10 ** 6,
+                      mimeType,
+                  }
+                : {
+                      videoBitsPerSecond:
+                          store.get("录屏.视频比特率") * 10 ** 6,
+                  },
+        );
+    } catch (e) {
+        console.error(e);
+        recordFatal(t("녹화를 초기화하지 못했습니다."));
+        return;
+    }
+    recorder.ondataavailable = async (e) => {
         chunks.push(e.data);
+        try {
+            const buf = Buffer.from(await e.data.arrayBuffer());
+            if (crashReset) {
+                fs.writeFileSync(crashPath, buf);
+                crashReset = false;
+            } else fs.appendFileSync(crashPath, buf);
+        } catch {}
     };
 
     const fileName = String(Date.now());
-    tmpPath = path.join(os.tmpdir(), "eSearch/", fileName);
+    tmpPath = path.join(
+        renderSendSync("userDataPath", []),
+        "recording-recovery",
+        fileName,
+    );
     output = path.join(tmpPath, "output");
-    fs.mkdirSync(tmpPath);
-    fs.mkdirSync(output);
+    crashPath = path.join(tmpPath, "crash.webm");
+    crashReset = true;
+    try {
+        fs.mkdirSync(output, { recursive: true });
+    } catch (e) {
+        console.error(e);
+        recordFatal(t("임시 녹화 폴더를 만들지 못했습니다."));
+        return;
+    }
     let clipName = 0;
     function save(f: () => void) {
         const b = new Blob(chunks, { type: "video/webm" });
@@ -1098,13 +1305,20 @@ renderOn("recordInit", async ([sourceId, r, screen_w, screen_h]) => {
 
     recorder.onstop = () => {
         (nameT.at(-1) as (typeof nameT)[0]).e = getT();
+        if (cancelled) return;
         if (stop) {
             renderSend("recordStop", []);
-            save(showControl);
+            save(() => {
+                try {
+                    fs.rmSync(crashPath, { force: true });
+                } catch {}
+                showControl();
+            });
             console.log(nameT);
         } else {
             save(() => {});
-            recorder.start();
+            crashReset = true;
+            recorder.start(2000);
             nameT.push({ s: getT(), e: Number.NaN });
         }
     };
@@ -1131,28 +1345,23 @@ renderOn("recordStartStop", () => {
     startStop.el.click();
 });
 
-renderOn("recordSavePathReturn", ([arg]) => {
-    savePath = arg;
-    if (isTsOk)
-        clip()
-            .then(() => joinAndSave(arg))
-            .catch(() => {
-                isClipRun = false;
-            });
+renderOn("recordSavePathReturn", ([result]) => {
+    if (result.status === "selected") {
+        void performSave(result.path);
+    } else if (result.status === "cancelled") {
+        retryAction = () => void save();
+        setRecorderState("cancelled", t("파일은 저장되지 않았습니다."));
+    } else {
+        retryAction = () => void save();
+        setRecorderState("error", result.error);
+    }
 });
 
 renderOn("recordState", ([s]) => {
     if (s === "stop") {
         startStop.el.click();
     } else if (s === "pause") {
-        if (recorder.state === "inactive") return;
-        if (recorder.state === "recording") {
-            recorder.pause();
-            pTime();
-        } else if (recorder.state === "paused") {
-            recorder.resume();
-            pTime();
-        }
+        togglePause();
     }
 });
 

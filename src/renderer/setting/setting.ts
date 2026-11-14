@@ -31,6 +31,7 @@ import type { GetValue, SettingPath } from "../../../lib/store/renderStore";
 import store from "../../../lib/store/renderStore";
 import { getLanName, getLans, lan, t } from "../../../lib/translate/translate";
 import type { GithubUrlType, setting, 功能 } from "../../ShareTypes";
+import { labLangFor, setLabLang } from "../lib/labText";
 import {
     Class,
     cssColor,
@@ -185,33 +186,33 @@ const s: Partial<settingItem<SettingPath>> = {
             const el = xGroup("y").class(blockSetting);
             const iEvent = () => el.el.dispatchEvent(new CustomEvent("input"));
             const l = input().addInto(el).on("input", iEvent);
-            const t = input().addInto(el).on("input", iEvent);
+            const top = input().addInto(el).on("input", iEvent);
             const b = xGroup("x").addInto(el);
-            button("左上")
+            button(t("左上"))
                 .addInto(b)
                 .on("click", () => {
                     l.sv("10px");
-                    t.sv("100px");
+                    top.sv("100px");
                     iEvent();
                 });
-            button("右上")
+            button(t("右上"))
                 .addInto(b)
                 .on("click", () => {
                     const size = getSet("工具栏.按钮大小");
                     l.sv(`calc(100vw - 10px - ${size} * 2 - 8px)`);
-                    t.sv("100px");
+                    top.sv("100px");
                     iEvent();
                 });
             return el
                 .bindGet(() => {
                     return {
                         left: l.gv,
-                        top: t.gv,
+                        top: top.gv,
                     };
                 })
                 .bindSet((_v: typeof v) => {
                     l.sv(_v.left);
-                    t.sv(_v.top);
+                    top.sv(_v.top);
                 });
         },
     },
@@ -271,6 +272,7 @@ const s: Partial<settingItem<SettingPath>> = {
             xSelect(
                 [
                     { value: "no", name: "无" },
+                    { value: "copysave", name: "复制并保存" },
                     ...tools
                         .filter((i) => i.key !== "close" && i.key !== "screens")
                         .map((i) => ({
@@ -332,16 +334,16 @@ const s: Partial<settingItem<SettingPath>> = {
                     xEl,
                     yEl,
                     xGroup("x").add([
-                        button(txt("无")).on("click", () => {
+                        button(txt(t("无"))).on("click", () => {
                             xEl.sv([]);
                             yEl.sv([]);
                         }),
-                        button(txt("九宫格")).on("click", () => {
+                        button(txt(t("九宫格"))).on("click", () => {
                             const v = 0.333;
                             xEl.sv([v, 1 - v]);
                             yEl.sv([v, 1 - v]);
                         }),
-                        button(txt("黄金比例")).on("click", () => {
+                        button(txt(t("黄金比例"))).on("click", () => {
                             const v = 0.618;
                             xEl.sv([v, 1 - v]);
                             yEl.sv([v, 1 - v]);
@@ -673,9 +675,9 @@ const s: Partial<settingItem<SettingPath>> = {
                                     ele("br"),
                                     configEl,
                                 ]),
-                                label([supportVision, "支持图像识别"]),
+                                label([supportVision, t("支持图像识别")]),
                                 view().add([
-                                    button("测试").on("click", async () => {
+                                    button(t("测试")).on("click", async () => {
                                         testResult.sv("测试中...");
                                         const [r, error] = tryx(async () => {
                                             const t = runAI(
@@ -1528,6 +1530,7 @@ const s: Partial<settingItem<SettingPath>> = {
                 "语言",
             ).on("input", () => {
                 lan(list.gv);
+                setLabLang(labLangFor(list.gv));
                 el.el.dispatchEvent(new CustomEvent("input"));
             });
             return el
@@ -1803,7 +1806,10 @@ const s: Partial<settingItem<SettingPath>> = {
 
                     dialogB(
                         dialog,
-                        [screenSelect, view().add(["缩放比例", scaleFactor])],
+                        [
+                            screenSelect,
+                            view().add([t("缩放比例"), scaleFactor]),
+                        ],
                         () => resolve(null),
                         () =>
                             resolve({
@@ -1957,7 +1963,7 @@ const xs: Record<
     _clear_history: {
         name: "清空所有文字记录",
         el: () =>
-            button("清空").on("click", async () => {
+            button(t("清空")).on("click", async () => {
                 const c = await confirm(
                     "这将清除所有的历史记录\n且不能复原\n确定清除？",
                 );
@@ -1973,10 +1979,10 @@ const xs: Record<
         name: "清除数据",
         el: () =>
             xGroup("x").add([
-                button("Cookie 等存储数据").on("click", () => {
+                button(t("Cookie 等存储数据")).on("click", () => {
                     renderSend("clearStorage", []);
                 }),
-                button("缓存").on("click", () => {
+                button(t("缓存")).on("click", () => {
                     renderSend("clearCache", []);
                 }),
             ]),
@@ -1985,7 +1991,7 @@ const xs: Record<
         name: "设置源文件",
         desc: "直接编辑设置源文件，更多自定义设置",
         el: () =>
-            button("打开设置源文件").on("click", () => {
+            button(t("打开设置源文件")).on("click", () => {
                 shell.openPath(
                     path.join(
                         renderSendSync("userDataPath", []),
@@ -1998,7 +2004,7 @@ const xs: Record<
         name: "恢复默认设置",
         el: () =>
             xGroup().add([
-                button("恢复").on("click", () => {
+                button(t("恢复")).on("click", () => {
                     const defaultSetting = getDefaultSetting();
                     for (const [x] of Object.entries(s)) {
                         setSet(
@@ -2007,7 +2013,7 @@ const xs: Record<
                         );
                     }
                 }),
-                button("显示更改的设置").on("click", () => {
+                button(t("显示更改的设置")).on("click", () => {
                     const defaultSetting = getDefaultSetting();
                     const ss = Object.entries(s).filter(
                         ([x]) =>
@@ -2027,7 +2033,7 @@ const xs: Record<
             const runPath = renderSendSync("runPath", []);
             const portablePath = path.join(runPath, "portable");
 
-            const portableConfigBtn = button("改为便携版");
+            const portableConfigBtn = button(t("改为便携版"));
             const pathInfo = view()
                 .class(blockSetting)
                 .add([
@@ -2107,7 +2113,7 @@ const xs: Record<
     },
     _exit: {
         name: "退出应用",
-        el: () => button("退出").on("click", () => renderSend("exit", [])),
+        el: () => button(t("退出")).on("click", () => renderSend("exit", [])),
     },
 };
 
@@ -2658,7 +2664,7 @@ const bindF2: { f: (has: boolean) => void; keys: SettingPath[] }[] = [
             if (h)
                 reloadScreenShot
                     .add(
-                        button("重启截屏以生效").on("click", () => {
+                        button(t("重启截屏以生效")).on("click", () => {
                             renderSend("reloadMainFromSetting", []);
                         }),
                     )
@@ -2697,7 +2703,7 @@ const bindF2: { f: (has: boolean) => void; keys: SettingPath[] }[] = [
             if (h)
                 reloadEl
                     .add(
-                        button("重启软件以生效").on("click", () => {
+                        button(t("重启软件以生效")).on("click", () => {
                             renderSend("reload", []);
                         }),
                     )
@@ -2761,10 +2767,10 @@ function setSet<t extends SettingPath>(k: t, v: GetValue<setting, t>) {
     historyEl.clear();
     if (nowStoreK.size > 0) {
         historyEl.add([
-            button("更改的设置").on("click", () => {
+            button(t("更改的设置")).on("click", () => {
                 renderSettingList(Array.from(nowStoreK));
             }),
-            button("放弃本次修改").on("click", () => {
+            button(t("放弃本次修改")).on("click", () => {
                 for (const x of Array.from(nowStoreK)) {
                     setSet(x, getFromStore(oldStore, x));
                     reRenderSetting(x);
@@ -2818,7 +2824,7 @@ const editedItem = addClass(
 
 function setEidtedItem(el: ElType<HTMLElement>, x: boolean) {
     if (x) {
-        el.class(editedItem).attr({ title: "已修改，右键撤销" });
+        el.class(editedItem).attr({ title: t("已修改，右键撤销") });
     } else {
         el.attr({ title: "" }).el.classList.remove(editedItem);
     }
@@ -2840,11 +2846,11 @@ const themes: Theme2[] = [
             fontInEmphasis: "#000",
         },
         dark: {
-            barbg: "#333333",
-            bg: "#000000",
-            emphasis: "#333333",
-            fontColor: "#fff",
-            fontInEmphasis: "#fff",
+            barbg: "#17171a",
+            bg: "#0c0c0e",
+            emphasis: "#232328",
+            fontColor: "#f2f2f4",
+            fontInEmphasis: "#f2f2f4",
         },
     },
     {
@@ -3710,11 +3716,11 @@ function dialogB(
             ...els,
             xGroup("x").add([
                 spacer(),
-                button(txt("关闭")).on("click", () => {
+                button(txt(t("关闭"))).on("click", () => {
                     onClose();
                     d.el.close();
                 }),
-                button(txt("完成")).on("click", () => {
+                button(txt(t("完成"))).on("click", () => {
                     if (onOk() !== false) d.el.close();
                 }),
             ]),
@@ -3735,7 +3741,7 @@ function selectUrl(l: { name: string; url: string }[]) {
             }),
         ),
     );
-    const test = button("测试").on("click", () => {
+    const test = button(t("测试")).on("click", () => {
         fetch(new URL(i.gv).origin)
             .then(() => {
                 testResult.sv("测试成功");
@@ -3962,7 +3968,7 @@ function translatorD(
 
     const testEl = view();
     const testR = p("");
-    const testB = button(txt("测试"));
+    const testB = button(txt(t("测试")));
     testEl.add([testB, testR]);
     testB.on("click", async () => {
         testR.el.innerText = t("正在测试...");
@@ -4799,12 +4805,11 @@ function ocrEl() {
             });
             const pa = path.join(configPath, "models", i);
             const exists = fs.existsSync(pa);
-            const downloadButton = button(exists ? "重新下载" : "下载").on(
-                "click",
-                () => {
-                    click(i, pa, true);
-                },
-            );
+            const downloadButton = button(
+                exists ? t("重新下载") : t("下载"),
+            ).on("click", () => {
+                click(i, pa, true);
+            });
             ocrListEl.add(
                 view("y").add([
                     view("x", "wrap")
@@ -4822,7 +4827,7 @@ function ocrEl() {
                             }),
                             downloadButton,
                             exists
-                                ? button("使用").on("click", () =>
+                                ? button(t("使用")).on("click", () =>
                                       click(i, pa, false),
                                   )
                                 : null,
@@ -4943,6 +4948,21 @@ function hotkeyX(
         .bindSet((v: string) => h.sv(v));
     h.on("input", () => {
         const next = h.gv;
+        if (next) {
+            const taken =
+                Object.entries(store.get("快捷键")).some(
+                    ([n, v]) => !(x[1] === "1" && n === x[0]) && v.key === next,
+                ) ||
+                Object.entries(store.get("全局工具快捷键")).some(
+                    ([n, v]) => !(x[1] === "2" && n === x[0]) && v === next,
+                );
+            if (taken) {
+                h.sv(applied);
+                el.el.title = t("이미 다른 기능에 할당된 단축키입니다");
+                el.el.dispatchEvent(new CustomEvent("input"));
+                return;
+            }
+        }
         const arg =
             x[1] === "1"
                 ? renderSendSync("hotkey", ["快捷键", x[0], next])
@@ -5000,11 +5020,13 @@ async function showPage(page: (typeof main)[0] | undefined) {
     }
     if (page.items) {
         for (const item of page.items) {
-            mainView.add(ele("h2").add(noI18n(item.title)));
-            if (item.desc) mainView.add(comment(item.desc));
+            const details = ele("details").attr({ open: true });
+            details.add(ele("summary").add(ele("h2").add(noI18n(item.title))));
+            if (item.desc) details.add(comment(item.desc));
             for (const setting of item.settings) {
-                mainView.add(renderSetting(setting));
+                details.add(renderSetting(setting));
             }
+            mainView.add(details);
             // @ts-ignore
             await scheduler.yield();
         }
@@ -5050,7 +5072,7 @@ function about() {
         });
     const nameEl = p(packageJson.name, true).style({ fontSize: "2rem" });
     const version = button(noI18n(packageJson.version))
-        .attr({ title: "点击检查更新" })
+        .attr({ title: t("点击检查更新") })
         .class(Class.mono, Class.click)
         .on("click", () => {
             fetch(githubUrl("repos/xushengfeng/eSearch/releases", "api"), {
@@ -5092,24 +5114,27 @@ function about() {
                                 });
                         }
                         md(b);
-                        const trans = button("翻译").on("click", async () => {
-                            const transE = getSet("翻译.翻译器");
-                            if (transE.length === 0) {
-                                trans.remove();
-                                return;
-                            }
-                            // biome-ignore format:
-                            const x = transE.at(0) as setting["翻译"]["翻译器"][0];
-                            // @ts-ignore
-                            translator.e[x.type].setKeys(x.keys);
-                            // @ts-ignore
-                            const t = await translator.e[x.type].run(
-                                b,
-                                "zh",
-                                getSet("语言.语言"),
-                            );
-                            md(t);
-                        });
+                        const trans = button(t("翻译")).on(
+                            "click",
+                            async () => {
+                                const transE = getSet("翻译.翻译器");
+                                if (transE.length === 0) {
+                                    trans.remove();
+                                    return;
+                                }
+                                // biome-ignore format:
+                                const x = transE.at(0) as setting["翻译"]["翻译器"][0];
+                                // @ts-ignore
+                                translator.e[x.type].setKeys(x.keys);
+                                // @ts-ignore
+                                const t = await translator.e[x.type].run(
+                                    b,
+                                    "zh",
+                                    getSet("语言.语言"),
+                                );
+                                md(t);
+                            },
+                        );
                         div.add([
                             ele("h1").add(noI18n(r.name)).style({
                                 fontFamily: "var(--monospace)",
@@ -5145,7 +5170,7 @@ function about() {
                             ),
                         );
                         tags.add(
-                            button("忽略此版本").on("click", () => {
+                            button(t("忽略此版本")).on("click", () => {
                                 setSet("更新.忽略版本", r.name);
                                 reRenderSetting("更新.忽略版本");
                             }),
@@ -5331,7 +5356,7 @@ const searchI = input()
                             renderSendSync("feedbackFeature", [
                                 { title: t("添加设置项") },
                             ]),
-                        ).add(button("提交新功能")),
+                        ).add(button(t("提交新功能"))),
                     ]),
             );
         renderSettingList(l);

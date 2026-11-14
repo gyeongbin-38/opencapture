@@ -315,7 +315,7 @@ const ocrImageFileDrop = view()
     .on("click", () => {
         ocrImageFile.el.click();
     })
-    .attr({ title: "点击浏览文件" });
+    .attr({ title: t("点击浏览文件") });
 view()
     .add(image(getImgUrl("add.svg"), "upload").class("icon"))
     .addInto(ocrImageFileDrop);
@@ -450,7 +450,7 @@ const aiSpellCheckModel = select(
         runAiSpellcheck();
     });
 if (aiModelList.length === 0) {
-    aiSpellCheckModel.attr({ title: "请到设置添加在线模型" });
+    aiSpellCheckModel.attr({ title: t("请到设置添加在线模型") });
 }
 const spellcheckList = view("y")
     .style({ overflow: "scroll" })
@@ -1446,7 +1446,7 @@ class spellcheckGen {
     }
 
     async spellcheckAi() {
-        const t = editor.get();
+        const text = editor.get();
 
         const model = aiModelList;
         if (model.length === 0) return;
@@ -1458,7 +1458,7 @@ class spellcheckGen {
                 {
                     role: "user",
                     content: {
-                        text: `这是一个OCR识别结果：\n>>>\n${t}\n\n>>>\n请更正其中的拼写错误，返回修改后的文本。不需要解释。`,
+                        text: `这是一个OCR识别结果：\n>>>\n${text}\n\n>>>\n请更正其中的拼写错误，返回修改后的文本。不需要解释。`,
                     },
                 },
             ],
@@ -1466,7 +1466,7 @@ class spellcheckGen {
         );
 
         const stopEl = view()
-            .attr({ title: "点击取消" })
+            .attr({ title: t("点击取消") })
             .addInto(spellcheckCancel.clear())
             .class(Class.click)
             .on("click", () => {
@@ -1486,7 +1486,7 @@ class spellcheckGen {
             });
 
         ai.stream((te, e) => {
-            const p = e ? 1 : te.length / t.length;
+            const p = e ? 1 : te.length / text.length;
             console.log(p);
             stopEl.sv(p);
         });
@@ -1607,7 +1607,7 @@ function renderSpellcheck(list: SpellItem[]) {
         });
         item.add(
             getClip(i.word)
-                .attr({ title: "点击跳转" })
+                .attr({ title: t("点击跳转") })
                 .on("click", () => {
                     editor.find.render([selection]);
                     jumpToFind(0);

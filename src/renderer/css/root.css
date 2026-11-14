@@ -55,8 +55,8 @@
     --blur: blur(10px);
     --shadow: color-mix(in srgb, var(--emphasis-color) 20%, transparent) 0 0 4px,
         color-mix(in srgb, var(--font-color) 30%, transparent) 0 0 2px;
-    --font-color-l: color-mix(in srgb, var(--font-color) 50%, var(--bg));
-    --font-color-ll: color-mix(in srgb, var(--font-color) 30%, var(--bg));
+    --font-color-l: color-mix(in srgb, var(--font-color) 62%, var(--bg));
+    --font-color-ll: color-mix(in srgb, var(--font-color) 38%, var(--bg));
     --border-color: color-mix(
         in oklab,
         var(--emphasis-color) 90%,
@@ -73,6 +73,24 @@
     --o-padding: 8px;
     --base-size2: 24px;
     --space2: 4px;
+
+    /* type scale (T1) */
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-md: 13px;
+    --fs-lg: 15px;
+    --fs-xl: 18px;
+    /* spacing grid (T2) */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+    /* motion (T6) */
+    --dur-fast: 80ms;
+    --dur-med: 160ms;
+    --ease: cubic-bezier(0.25, 1, 0.5, 1);
 
     --check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 8 9 19 4 14'%3E%3C/polyline%3E%3C/svg%3E");
     --d-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(0, 0, 0)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 8 9 19 4 14'%3E%3C/polyline%3E%3C/svg%3E");

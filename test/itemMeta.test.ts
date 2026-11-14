@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-    isValidTags,
-    normalizeTags,
     TAG_LIMIT,
     TAG_MAX_LENGTH,
+    isValidTags,
+    normalizeTags,
 } from "../lib/itemMeta";
 
 describe("normalizeTags", () => {

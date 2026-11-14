@@ -481,8 +481,6 @@ app.whenReady().then(async () => {
         );
         report.checks.push({ independentSessionReopen: true });
 
-
-
         assert(
             !rendererErrors.length,
             `Renderer errors occurred: ${rendererErrors.join("; ")}`,

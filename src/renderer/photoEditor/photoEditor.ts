@@ -137,7 +137,7 @@ const preview = view().style({
 const els = {
     select: pzSelect().sv(pz.map((i) => getStyleData(i.name))),
     raduis: input("number"),
-    outerRadius: label([check(""), "外圆角"]),
+    outerRadius: label([check(""), t("外圆角")]),
     bgType: select<(typeof styleData)["bgType"]>([
         { value: "color", name: "纯色" },
         { value: "image", name: "图片" },
@@ -165,7 +165,7 @@ const els = {
     scolor: input(),
     px: input("number"),
     py: input("number"),
-    magicPen: label([check(""), "魔法橡皮"]),
+    magicPen: label([check(""), t("魔法橡皮")]),
     magicPenList: flexLayout("x").style({
         "max-height": "200px",
         "overflow-y": "auto",
@@ -267,16 +267,16 @@ const controls = frame("sidebar", {
             quality: els.quality,
             phScale: {
                 _: flexLayout("x"),
-                _s0: button("原始").on("click", () => scale(1)),
+                _s0: button(t("原始")).on("click", () => scale(1)),
                 _s1: button(noI18n("3/4")).on("click", () => scale(0.75)),
                 _s2: button(noI18n("1/2")).on("click", () => scale(0.5)),
                 _s3: button(noI18n("1/3")).on("click", () => scale(0.333)),
                 _s4: button(noI18n("1/4")).on("click", () => scale(0.25)),
                 _s5: button(noI18n("1/5")).on("click", () => scale(0.2)),
-                _autoW: button("自动宽度").on("click", () => {
+                _autoW: button(t("自动宽度")).on("click", () => {
                     autoScale("width");
                 }),
-                _autoH: button("自动高度").on("click", () => {
+                _autoH: button(t("自动高度")).on("click", () => {
                     autoScale("height");
                 }),
             },

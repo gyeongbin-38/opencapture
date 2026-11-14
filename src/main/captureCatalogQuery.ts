@@ -62,6 +62,28 @@ export function applyCaptureTransition(
     return snapshot;
 }
 
+const searchTextCache = new WeakMap<
+    OpenCaptureItem,
+    { source: string; text: string }
+>();
+const searchText = (item: OpenCaptureItem) => {
+    const source = `${item.name}\n${item.note ?? ""}\n${item.ocrText ?? ""}`;
+    const hit = searchTextCache.get(item);
+    if (hit?.source === source) return hit.text;
+    const text = source.toLocaleLowerCase();
+    searchTextCache.set(item, { source, text });
+    return text;
+};
+const createdCache = new WeakMap<OpenCaptureItem, number>();
+const createdTime = (item: OpenCaptureItem) => {
+    let time = createdCache.get(item);
+    if (time === undefined) {
+        time = Date.parse(item.createdAt);
+        createdCache.set(item, time);
+    }
+    return time;
+};
+
 export function queryCaptureItems(
     catalog: OpenCaptureItem[],
     request: CaptureItemsQuery,
@@ -77,7 +99,7 @@ export function queryCaptureItems(
         request.limit < 1 ||
         request.limit > 200 ||
         !["temporary", "library", "trash", "all"].includes(request.scope) ||
-        !["newest", "oldest", "name"].includes(request.sort) ||
+        !["newest", "oldest", "name", "size"].includes(request.sort) ||
         typeof request.queryId !== "string" ||
         request.queryId.length > 100 ||
         (request.search !== undefined &&
@@ -140,13 +162,7 @@ export function queryCaptureItems(
         if (request.scope !== "all" && status !== request.scope) return false;
         if (request.collectionId && item.collectionId !== request.collectionId)
             return false;
-        if (
-            search &&
-            !`${item.name}\n${item.note ?? ""}\n${item.ocrText ?? ""}`
-                .toLocaleLowerCase()
-                .includes(search)
-        )
-            return false;
+        if (search && !searchText(item).includes(search)) return false;
         if (tags.length && !tags.every((tag) => item.tags?.includes(tag)))
             return false;
         if (request.smartId === "builtin:uncategorized" && item.tags?.length)
@@ -166,9 +182,11 @@ export function queryCaptureItems(
     scoped.sort((a, b) =>
         request.sort === "name"
             ? a.name.localeCompare(b.name)
-            : request.sort === "oldest"
-              ? Date.parse(a.createdAt) - Date.parse(b.createdAt)
-              : Date.parse(b.createdAt) - Date.parse(a.createdAt),
+            : request.sort === "size"
+              ? (b.size ?? 0) - (a.size ?? 0)
+              : request.sort === "oldest"
+                ? createdTime(a) - createdTime(b)
+                : createdTime(b) - createdTime(a),
     );
     return {
         items: scoped.slice(request.offset, request.offset + request.limit),

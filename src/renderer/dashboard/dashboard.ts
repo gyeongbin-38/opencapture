@@ -1,4 +1,8 @@
 import { button, ele, initDKH, input, p, select, textarea, view } from "dkh-ui";
+import {
+    type DashboardLanguageSettings,
+    dashboardLanguageDirection,
+} from "../../../lib/dashboardLanguage";
 import type {
     CaptureColorSample,
     CaptureExperiencePreferences,
@@ -15,7 +19,14 @@ import type {
     TranslationStatus,
 } from "../../../lib/openCaptureTypes";
 import { fromSavedComparisonSession } from "../../../lib/referenceComparison";
+import {
+    type ConvertResult,
+    openConvertDonut as openDonut,
+} from "../lib/convertDonut";
+import { openFileTools } from "../lib/fileToolsDialog";
 import { type ImageHoldHandle, createImageHold } from "../lib/imageHold";
+import { labLangFor, setLabDict, setLabLang } from "../lib/labText";
+import { en as labEn } from "../lib/labText.en";
 import { createBundleComposer } from "./bundleComposer";
 import { createCaptureBoard } from "./captureBoard";
 import { createCaptureExperiencePanel } from "./captureExperiencePanel";
@@ -52,6 +63,13 @@ import { t } from "./t";
 import { virtualLibraryRange, virtualLibrarySlots } from "./virtualLibrary";
 
 initDKH({ pureStyle: true });
+const activeDashboardLanguage = window.openCapture?.lang || "ko";
+document.documentElement.lang = activeDashboardLanguage;
+document.documentElement.dir = dashboardLanguageDirection(
+    activeDashboardLanguage,
+);
+setLabDict("en", labEn);
+setLabLang(labLangFor(activeDashboardLanguage));
 
 const transparencyPreference = matchMedia(
     "(prefers-reduced-transparency: reduce)",
@@ -75,7 +93,7 @@ let todayOnly = false;
 let ocrOnly = false;
 let activeTag: string | null = null;
 let smartFilter: "" | "week" | "uncategorized" | "videos" | "no-ocr" = "";
-let sortMode: "new" | "old" | "name" = "new";
+let sortMode: "new" | "old" | "name" | "size" = "new";
 let thumbSize = localStorage.getItem("oc:thumb-size") || "m";
 let quickLookId: string | null = null;
 const quickLookImages = new Map<string, string>();
@@ -170,17 +188,6 @@ button()
     .add(icon("?"))
     .on("click", () => openShortcutSheet())
     .addInto(sidebarTools);
-button()
-    .class("ghost-button", "compact", "icon-button")
-    .attr({
-        type: "button",
-        title: t("시작 가이드"),
-        ariaLabel: t("시작 가이드"),
-    })
-    .add(icon("✦"))
-    .on("click", () => openOnboarding())
-    .addInto(sidebarTools);
-
 const versionLabel = label("small", "").class("version").addInto(sidebarBottom);
 
 const topbar = view("x").class("topbar").addInto(main);
@@ -195,7 +202,7 @@ button()
         title: t("명령 검색"),
         ariaLabel: t("명령 검색"),
     })
-    .add([icon("⌕"), label("span", "Ctrl K")])
+    .add([icon("⌕"), label("span", formatShortcut("CommandOrControl+K"))])
     .on("click", () => openDashboardCommands())
     .addInto(topActions);
 
@@ -254,7 +261,6 @@ const captureActions: {
     icon: string;
     title: string;
     description: string;
-    shortcut?: string;
     featured?: boolean;
 }[] = [
     {
@@ -262,7 +268,6 @@ const captureActions: {
         icon: "⌗",
         title: t("영역 캡처"),
         description: t("원하는 영역을 빠르게 선택해요"),
-        shortcut: "Ctrl + Shift + A",
         featured: true,
     },
     {
@@ -294,7 +299,6 @@ const captureActions: {
         icon: "●",
         title: t("화면 녹화"),
         description: t("화면 움직임과 소리를 기록해요"),
-        shortcut: "Ctrl + Shift + R",
     },
     {
         name: "steps",
@@ -363,12 +367,7 @@ function makeActionCard(action: (typeof captureActions)[number]) {
     actionButton.add([
         view("x")
             .class("action-card-top")
-            .add([
-                view().class("action-icon").add(icon(action.icon)),
-                action.shortcut
-                    ? label("small", action.shortcut).class("key-hint")
-                    : undefined,
-            ]),
+            .add(view().class("action-icon").add(icon(action.icon))),
         label("h3", action.title),
     ]);
     return actionButton;
@@ -491,21 +490,37 @@ for (const option of workflowOptions) {
         .addInto(workflowChoices);
 }
 
-const libraryToolbar = view("x").class("section-toolbar").addInto(libraryPage);
-const collectionGroup = view("y").class("field-group").addInto(libraryToolbar);
-const collectionSelect = select([])
-    .class("select-control")
-    .attr({ ariaLabel: t("컬렉션 선택") })
-    .on("change", async (_event, element) => {
-        const id = element.el.value;
-        if (id) {
-            await runAction("choose-collection", id, true);
-            await refreshState();
+const libraryToolbar = view("x", "wrap")
+    .class("section-toolbar", "library-toolbar")
+    .addInto(libraryPage);
+const scopeSegment = view("x")
+    .class("scope-segment")
+    .attr({ role: "tablist", ariaLabel: "보관 범위" })
+    .addInto(libraryToolbar);
+const scopeButtons = new Map<CaptureQueryScope, HTMLButtonElement>();
+for (const [scope, text] of [
+    ["temporary", "임시"],
+    ["library", "보관함"],
+    ["trash", "휴지통"],
+] as const) {
+    const control = button(t(text))
+        .class("scope-segment-button")
+        .attr({
+            type: "button",
+            role: "tab",
+            ariaSelected: String(scope === libraryScope),
+        })
+        .on("click", () => {
+            libraryScope = scope;
+            selectedItemIds.clear();
             void refreshLibraryQuery(true);
-        }
-    })
-    .addInto(collectionGroup);
-const searchGroup = view("y").class("field-group").addInto(libraryToolbar);
+        })
+        .addInto(scopeSegment);
+    scopeButtons.set(scope, control.el);
+}
+const searchGroup = view("y")
+    .class("field-group", "search-grow")
+    .addInto(libraryToolbar);
 const searchField = view("x").class("search-field").addInto(searchGroup);
 searchField.add(view().class("search-icon").add(icon("⌕")));
 const searchInput = input("text")
@@ -536,13 +551,23 @@ const favFilterButton = button()
         favFilterButton.el.classList.toggle("active", favoritesOnly);
         favFilterButton.attr({ ariaPressed: String(favoritesOnly) });
         void refreshLibraryQuery(true);
+    });
+const filterToggle = button()
+    .class("chip-button", "filter-toggle")
+    .attr({
+        type: "button",
+        ariaExpanded: "false",
+        title: t("필터"),
+        ariaLabel: t("필터"),
     })
-    .addInto(libraryButtons);
-button()
-    .class("outline-button", "folder-add-button")
-    .attr({ type: "button" })
-    .add([icon("＋"), label("span", t("폴더 추가"))])
-    .on("click", () => runAction("add-collection", undefined, true))
+    .add([icon("⚙"), label("span", t("필터"))])
+    .on("click", () => {
+        filterBar.el.hidden = !filterBar.el.hidden;
+        filterToggle.el.setAttribute(
+            "aria-expanded",
+            String(!filterBar.el.hidden),
+        );
+    })
     .addInto(libraryButtons);
 const fileInput = input("file")
     .class("visually-hidden")
@@ -559,39 +584,45 @@ button()
     .add([icon("⇧"), label("span", t("이미지 가져오기"))])
     .on("click", () => fileInput.el.click())
     .addInto(libraryButtons);
+button()
+    .class("outline-button", "library-file-tools-button")
+    .attr({ type: "button", title: t("处理任意文件或文件夹") })
+    .add([icon("⚙"), label("span", t("文件工具"))])
+    .on("click", () => openFileTools())
+    .addInto(libraryButtons);
 
-const filterBar = view("x", "wrap").class("filter-bar").addInto(libraryPage);
-const scopeSegment = view("x")
-    .class("scope-segment")
-    .attr({ role: "tablist", ariaLabel: "보관 범위" })
-    .addInto(filterBar);
-const scopeButtons = new Map<CaptureQueryScope, HTMLButtonElement>();
-for (const [scope, text] of [
-    ["temporary", "임시"],
-    ["library", "보관함"],
-    ["trash", "휴지통"],
-] as const) {
-    const control = button(text)
-        .class("scope-segment-button")
-        .attr({
-            type: "button",
-            role: "tab",
-            ariaSelected: String(scope === libraryScope),
-        })
-        .on("click", () => {
-            libraryScope = scope;
-            selectedItemIds.clear();
+const filterBar = view("x", "wrap")
+    .class("filter-bar")
+    .attr({ hidden: true })
+    .addInto(libraryPage);
+filterBar.add(favFilterButton);
+const collectionGroup = view("x").class("filter-section").addInto(filterBar);
+const collectionSelect = select([])
+    .class("select-control")
+    .attr({ ariaLabel: t("컬렉션 선택") })
+    .on("change", async (_event, element) => {
+        const id = element.el.value;
+        if (id) {
+            await runAction("choose-collection", id, true);
+            await refreshState();
             void refreshLibraryQuery(true);
-        })
-        .addInto(scopeSegment);
-    scopeButtons.set(scope, control.el);
-}
+        }
+    })
+    .addInto(collectionGroup);
+button()
+    .class("outline-button", "compact", "folder-add-button")
+    .attr({ type: "button" })
+    .add([icon("＋"), label("span", t("폴더 추가"))])
+    .on("click", () => runAction("add-collection", undefined, true))
+    .addInto(collectionGroup);
 const todayChip = button()
     .class("chip-button")
     .attr({ type: "button", ariaPressed: "false" })
     .add([icon("◷"), label("span", t("오늘"))])
     .on("click", () => {
         todayOnly = !todayOnly;
+        todayChip.el.classList.toggle("active", todayOnly);
+        todayChip.attr({ ariaPressed: String(todayOnly) });
         void refreshLibraryQuery(true);
     })
     .addInto(filterBar);
@@ -605,6 +636,8 @@ const ocrChip = button()
     .add([icon("T"), label("span", t("텍스트"))])
     .on("click", () => {
         ocrOnly = !ocrOnly;
+        ocrChip.el.classList.toggle("active", ocrOnly);
+        ocrChip.attr({ ariaPressed: String(ocrOnly) });
         void refreshLibraryQuery(true);
     })
     .addInto(filterBar);
@@ -646,6 +679,7 @@ const sortSelect = select([
     { value: "new", name: t("최신순") },
     { value: "old", name: t("오래된순") },
     { value: "name", name: t("이름순") },
+    { value: "size", name: t("크기순") },
 ])
     .class("select-control", "sort-select")
     .attr({ ariaLabel: t("정렬") })
@@ -698,12 +732,144 @@ const dropZone = view("y")
     .on("drop", (event, element) => {
         event.preventDefault();
         element.el.classList.remove("dragging");
-        const files = Array.from(event.dataTransfer?.files ?? []).filter(
-            (file) => file.type.startsWith("image/"),
-        );
-        if (files.length) importFiles(files);
+        handleDropFiles(event);
     })
     .addInto(libraryPage);
+
+const handleDropFiles = (event: DragEvent) => {
+    const all = Array.from(event.dataTransfer?.files ?? []);
+    const paths = all
+        .map((file) => {
+            try {
+                return window.openCapture.pathForFile(file);
+            } catch {
+                return "";
+            }
+        })
+        .filter(Boolean);
+    const files = all.filter(
+        (file) =>
+            file.type.startsWith("image/") || file.type.startsWith("video/"),
+    );
+    if (all.length !== files.length) {
+        if (paths.length !== all.length)
+            showToast(
+                t("{count} 个拖入项目无法读取路径").replace(
+                    "{count}",
+                    String(all.length - paths.length),
+                ),
+                true,
+            );
+        if (paths.length) openFileTools(paths);
+        else showToast(t("无法读取拖入文件的路径"), true);
+        return;
+    }
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    const videos = files.filter((file) => file.type.startsWith("video/"));
+    if (videos.length) {
+        const paths = videos
+            .map((file) => {
+                try {
+                    return window.openCapture.pathForFile(file);
+                } catch {
+                    return "";
+                }
+            })
+            .filter(Boolean);
+        if (paths.length)
+            void window.openCapture
+                .importPaths(paths)
+                .then((state) => {
+                    appState = state;
+                    renderState();
+                    showToast(`${paths.length}개 영상을 가져왔습니다.`);
+                })
+                .catch((error) => showToast(errorMessage(error), true));
+    }
+    if (images.length)
+        openDropDonut({ x: event.clientX, y: event.clientY }, images);
+};
+
+homePage.el.addEventListener("dragover", (event) => {
+    if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+});
+homePage.el.addEventListener("drop", (event) => {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    handleDropFiles(event);
+});
+
+document.addEventListener("paste", (event) => {
+    const target = event.target as HTMLElement;
+    if (
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+        target.isContentEditable
+    )
+        return;
+    const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith("image/"),
+    );
+    if (!files.length) return;
+    event.preventDefault();
+    importFiles(files);
+});
+
+libraryPage.el.dataset.dropHint = t("놓으면 가져오기 · 변환");
+libraryPage.el.addEventListener("dragover", (event) => {
+    if (event.dataTransfer?.types.includes("Files")) {
+        event.preventDefault();
+        libraryPage.el.classList.add("dragging");
+    }
+});
+libraryPage.el.addEventListener("dragleave", () => {
+    libraryPage.el.classList.remove("dragging");
+});
+libraryPage.el.addEventListener("drop", (event) => {
+    event.preventDefault();
+    libraryPage.el.classList.remove("dragging");
+    handleDropFiles(event);
+});
+
+function openDropDonut(point: { x: number; y: number }, files: File[]) {
+    convertDonutClose?.();
+    if (convertDonutClose) return;
+    const targets = files
+        .map((file) => {
+            try {
+                return {
+                    path: window.openCapture.pathForFile(file),
+                    file,
+                };
+            } catch {
+                return undefined;
+            }
+        })
+        .filter((target): target is { path: string; file: File } =>
+            Boolean(target?.path),
+        );
+    if (!targets.length) {
+        importFiles(files);
+        return;
+    }
+    convertDonutClose = openDonut({
+        point,
+        targets,
+        api: window.openCapture,
+        presets: true,
+        extraActions: [
+            {
+                label: t("가져오기"),
+                hint: t("라이브러리에 원본 그대로 추가"),
+                run: () => void importFiles(files),
+            },
+        ],
+        onError: (message) => showToast(message, true),
+        onDone: (result) => {
+            convertDonutClose = undefined;
+            reportConvertResult(result, []);
+        },
+    });
+}
 
 const libraryMeta = view("x")
     .class("section-heading", "library-meta")
@@ -735,6 +901,42 @@ const clearSelectionButton = button(t("선택 해제"))
         renderState();
     })
     .addInto(selectionActions);
+const moreActionsWrap = view().class("more-actions");
+const moreActionsPanel = view("y")
+    .class("more-actions-panel")
+    .attr({ hidden: true });
+const moreActionsToggle = button()
+    .class("outline-button", "compact", "icon-button")
+    .attr({
+        type: "button",
+        ariaExpanded: "false",
+        title: t("더 많은 작업"),
+        ariaLabel: t("더 많은 작업"),
+    })
+    .add(icon("•••"))
+    .on("click", (event) => {
+        event.stopPropagation();
+        moreActionsPanel.el.hidden = !moreActionsPanel.el.hidden;
+        moreActionsToggle.el.setAttribute(
+            "aria-expanded",
+            String(!moreActionsPanel.el.hidden),
+        );
+        if (!moreActionsPanel.el.hidden)
+            setTimeout(() =>
+                document.addEventListener(
+                    "click",
+                    () => {
+                        moreActionsPanel.el.hidden = true;
+                        moreActionsToggle.el.setAttribute(
+                            "aria-expanded",
+                            "false",
+                        );
+                    },
+                    { once: true },
+                ),
+            );
+    });
+moreActionsWrap.add([moreActionsToggle, moreActionsPanel]);
 const copyBundleButton = button(t("묶음 복사"))
     .class("outline-button", "compact", "bulk-action", "image-bulk-action")
     .attr({
@@ -750,7 +952,7 @@ const copySourceFilesButton = button("원본 파일 복사")
         title: "선택한 원본 파일을 Explorer에 붙여넣을 수 있게 복사",
     })
     .on("click", () => void copySelectedSourceFiles())
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
 const promoteSelectionButton = button("보관")
     .class("outline-button", "compact", "bulk-action", "temporary-action")
     .attr({ type: "button" })
@@ -774,6 +976,20 @@ const compareSelectionButton = button(t("비교"))
     })
     .on("click", () => void openSelectedComparison())
     .addInto(selectionActions);
+const convertSelectionButton = button(t("변환"))
+    .class("outline-button", "compact", "bulk-action")
+    .attr({
+        type: "button",
+        title: t("선택한 이미지를 다른 형식으로 변환"),
+    })
+    .on("click", () => {
+        const rect = convertSelectionButton.el.getBoundingClientRect();
+        openConvertDonut(
+            { x: rect.left + rect.width / 2, y: rect.bottom + 10 },
+            selectedItemsInOrder(),
+        );
+    })
+    .addInto(selectionActions);
 const addSelectionToBoardButton = button(t("보드에 추가"))
     .class("outline-button", "compact", "bulk-action", "board-action")
     .attr({
@@ -794,12 +1010,18 @@ const addSelectionToBoardButton = button(t("보드에 추가"))
         }
     })
     .addInto(selectionActions);
-for (const [text, action, direction] of [
-    [t("내보내기"), "export-items"],
-    [t("고정"), "pin-items"],
-    [t("세로 합치기"), "combine-items", "vertical"],
-    [t("가로 합치기"), "combine-items", "horizontal"],
-] as [string, OpenCaptureActionName, "vertical" | "horizontal" | undefined][]) {
+for (const [text, action, direction, secondary] of [
+    [t("내보내기"), "export-items", undefined, false],
+    [t("고정"), "pin-items", undefined, true],
+    [t("스택으로 고정"), "pin-stack", undefined, true],
+    [t("세로 합치기"), "combine-items", "vertical", true],
+    [t("가로 합치기"), "combine-items", "horizontal", true],
+] as [
+    string,
+    OpenCaptureActionName,
+    "vertical" | "horizontal" | undefined,
+    boolean,
+][]) {
     button(text)
         .class(
             "outline-button",
@@ -813,7 +1035,7 @@ for (const [text, action, direction] of [
             if (!ids.length) return;
             await runAction(action, direction ? { ids, direction } : { ids });
         })
-        .addInto(selectionActions);
+        .addInto(secondary ? moreActionsPanel : selectionActions);
 }
 button(t("핀 세트 저장"))
     .class("outline-button", "compact", "bulk-action")
@@ -826,7 +1048,7 @@ button(t("핀 세트 저장"))
         if (!ids.length) return;
         await runAction("save-pin-set", { ids });
     })
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
 button(t("번호 합치기"))
     .class("outline-button", "compact", "combine-action")
     .attr({
@@ -834,12 +1056,12 @@ button(t("번호 합치기"))
         title: t("선택한 캡처를 번호가 붙은 순서 이미지로 합성"),
     })
     .on("click", () => void composeLayout([...selectedItemIds], "steps"))
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
 button(t("비교 합치기"))
     .class("outline-button", "compact", "combine-action")
     .attr({ type: "button", title: t("선택한 캡처를 A/B 라벨로 나란히 합성") })
     .on("click", () => void composeLayout([...selectedItemIds], "compare"))
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
 button(t("타임라인 합치기"))
     .class("outline-button", "compact", "combine-action")
     .attr({
@@ -847,7 +1069,19 @@ button(t("타임라인 합치기"))
         title: t("선택한 캡처를 번호가 붙은 가로 타임라인으로 합성"),
     })
     .on("click", () => void composeLayout([...selectedItemIds], "timeline"))
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
+button(t("PDF 묶기"))
+    .class("outline-button", "compact", "combine-action")
+    .attr({
+        type: "button",
+        title: t("선택한 이미지를 한 개의 다중페이지 PDF로 내보내기"),
+    })
+    .on("click", async () => {
+        const ids = [...selectedItemIds];
+        if (!ids.length) return;
+        await runAction("combine-pdf", { ids });
+    })
+    .addInto(moreActionsPanel);
 button(t("텍스트 인식"))
     .class("outline-button", "compact", "bulk-action")
     .attr({
@@ -863,8 +1097,89 @@ button(t("텍스트 인식"))
         }
         await runAction("index-ocr", { ids });
     })
-    .addInto(selectionActions);
+    .addInto(moreActionsPanel);
+moreActionsWrap.addInto(selectionActions);
 const itemGrid = view("x", "wrap").class("item-grid").addInto(libraryPage);
+let dragSelect: {
+    x0: number;
+    y0: number;
+    box: HTMLDivElement;
+    base: Set<string>;
+    replace: boolean;
+    moved: boolean;
+} | null = null;
+function applyDragSelection(selection: Set<string>) {
+    selectedItemIds.clear();
+    for (const id of selection) selectedItemIds.add(id);
+    for (const card of itemGrid.el.querySelectorAll<HTMLElement>(
+        ".item-card",
+    )) {
+        const on = selectedItemIds.has(card.dataset.itemId ?? "");
+        card.classList.toggle("selected", on);
+        const checkbox = card.querySelector<HTMLInputElement>(".item-select");
+        if (checkbox) checkbox.checked = on;
+    }
+}
+itemGrid.el.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest(".item-card, button, input, a, select, textarea"))
+        return;
+    const box = document.createElement("div");
+    box.className = "drag-select-box";
+    dragSelect = {
+        x0: event.clientX,
+        y0: event.clientY,
+        box,
+        base: new Set(selectedItemIds),
+        replace: !(event.ctrlKey || event.metaKey),
+        moved: false,
+    };
+    itemGrid.el.setPointerCapture(event.pointerId);
+});
+itemGrid.el.addEventListener("pointermove", (event) => {
+    if (!dragSelect) return;
+    const x = Math.min(dragSelect.x0, event.clientX);
+    const y = Math.min(dragSelect.y0, event.clientY);
+    const w = Math.abs(event.clientX - dragSelect.x0);
+    const h = Math.abs(event.clientY - dragSelect.y0);
+    if (!dragSelect.moved) {
+        if (w + h < 8) return;
+        dragSelect.moved = true;
+        document.body.append(dragSelect.box);
+        document.body.classList.add("drag-selecting");
+    }
+    Object.assign(dragSelect.box.style, {
+        left: `${x}px`,
+        top: `${y}px`,
+        width: `${w}px`,
+        height: `${h}px`,
+    });
+    const selection = new Set(dragSelect.replace ? [] : dragSelect.base);
+    for (const card of itemGrid.el.querySelectorAll<HTMLElement>(
+        ".item-card",
+    )) {
+        const rect = card.getBoundingClientRect();
+        const hit =
+            rect.right > x &&
+            rect.left < x + w &&
+            rect.bottom > y &&
+            rect.top < y + h;
+        if (hit && card.dataset.itemId) selection.add(card.dataset.itemId);
+    }
+    applyDragSelection(selection);
+});
+function endDragSelect() {
+    if (!dragSelect) return;
+    const { moved, box } = dragSelect;
+    dragSelect = null;
+    box.remove();
+    document.body.classList.remove("drag-selecting");
+    if (!moved) selectedItemIds.clear();
+    renderState();
+}
+itemGrid.el.addEventListener("pointerup", endDragSelect);
+itemGrid.el.addEventListener("pointercancel", endDragSelect);
 const loadMoreButton = button(t("더 불러오기"))
     .class("outline-button", "load-more")
     .attr({ type: "button" })
@@ -985,6 +1300,62 @@ const installButton = button()
     .addInto(modelPanel);
 
 const settingsLayout = view("y").class("settings-layout").addInto(settingsPage);
+let dashboardLanguageSettings: DashboardLanguageSettings | undefined;
+const languageCard = view("y")
+    .class("settings-card", "language-settings-card")
+    .addInto(settingsLayout);
+languageCard.add(
+    view("x")
+        .class("settings-card-heading")
+        .add(label("h2", t("앱 언어"))),
+);
+const languageSelect = select([
+    { value: activeDashboardLanguage, name: activeDashboardLanguage },
+])
+    .class("select-control")
+    .attr({ ariaLabel: t("표시 언어") });
+languageSelect.el.setAttribute("data-ui-language", "");
+languageSelect.el.setAttribute("aria-describedby", "language-apply-note");
+const languageNote = label(
+    "small",
+    t("언어 변경은 다음 앱 실행부터 적용됩니다."),
+)
+    .class("helper-text")
+    .attr({ id: "language-apply-note" });
+languageNote.el.hidden = true;
+view("x", "wrap")
+    .class("language-settings-row")
+    .add([languageSelect, languageNote])
+    .addInto(languageCard);
+const renderLanguageSettings = (settings: DashboardLanguageSettings) => {
+    dashboardLanguageSettings = settings;
+    languageSelect.el.replaceChildren(
+        ...settings.options.map(({ value, name }) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = name;
+            return option;
+        }),
+    );
+    languageSelect.el.value = settings.configured;
+    languageCard.el.dataset.pending = String(settings.pending);
+    languageNote.el.hidden = !settings.pending;
+};
+languageSelect.on("change", async () => {
+    const previous = dashboardLanguageSettings;
+    languageSelect.el.disabled = true;
+    try {
+        const settings = await window.openCapture.setLanguage(
+            languageSelect.el.value,
+        );
+        renderLanguageSettings(settings);
+    } catch (error) {
+        if (previous) renderLanguageSettings(previous);
+        showToast(errorMessage(error), true);
+    } finally {
+        languageSelect.el.disabled = false;
+    }
+});
 const storageCard = view("y").class("settings-card").addInto(settingsLayout);
 storageCard.add([
     view("x")
@@ -1049,6 +1420,132 @@ ele("label")
         mouseChordSelect,
     ])
     .addInto(convenienceCard);
+
+const radialActionOptions = [
+    { value: "screens", name: t("영역 캡처") },
+    { value: "quick", name: t("빠른 캡처") },
+    { value: "ocr", name: t("텍스트 인식") },
+    { value: "ding", name: t("클립보드 고정") },
+    { value: "record", name: t("화면 녹화") },
+    { value: "long", name: t("긴 캡처") },
+    { value: "translate", name: t("화면 번역") },
+    { value: "home", name: t("시작 화면 열기") },
+    { value: "cutout", name: t("배경 제거") },
+    { value: "ocrclip", name: t("클립보드 텍스트 인식") },
+    { value: "recent", name: t("최근 항목 열기") },
+    { value: "repeat", name: t("같은 영역 다시 캡처") },
+    { value: "textpin", name: t("텍스트 고정") },
+    { value: "qrpin", name: t("클립보드 QR") },
+];
+const radialConfig: {
+    enabled: boolean;
+    actions: string[];
+    trigger: "wheel" | "back" | "both";
+} = {
+    enabled: false,
+    actions: ["screens", "quick", "ocr", "ding", "record", "home"],
+    trigger: "both",
+};
+const radialSlotsRow = view("x", "wrap").class("radial-slots");
+const saveRadial = async () => {
+    await runAction("configure-runtime", {
+        radial: {
+            enabled: radialConfig.enabled,
+            actions: radialConfig.actions,
+            trigger: radialConfig.trigger,
+        },
+    });
+    await refreshState();
+};
+const rebuildRadialSlots = () => {
+    radialSlotsRow.el.innerHTML = "";
+    for (const [index, id] of radialConfig.actions.entries()) {
+        const slot = select(radialActionOptions.map((o) => ({ ...o })))
+            .class("select-control", "radial-slot")
+            .attr({ ariaLabel: `${t("도넛 동작")} ${index + 1}` })
+            .on("change", async (_e, el) => {
+                radialConfig.actions[index] = el.el.value;
+                await saveRadial();
+            });
+        slot.el.value = id;
+        slot.addInto(radialSlotsRow);
+    }
+    const tweak = (text: string, fn: () => Promise<void>) =>
+        button(text)
+            .class("outline-button", "compact")
+            .attr({ type: "button" })
+            .on("click", fn);
+    if (radialConfig.actions.length < 8)
+        tweak("+", async () => {
+            radialConfig.actions.push("screens");
+            await saveRadial();
+        }).addInto(radialSlotsRow);
+    if (radialConfig.actions.length > 2)
+        tweak("−", async () => {
+            radialConfig.actions.pop();
+            await saveRadial();
+        }).addInto(radialSlotsRow);
+    const stats = appState?.runtime.radialMenu?.stats ?? {};
+    if (
+        radialConfig.actions.length > 2 &&
+        Object.values(stats).some((n) => n > 0)
+    )
+        tweak("↧", async () => {
+            radialConfig.actions.sort(
+                (a, b) => (stats[b] ?? 0) - (stats[a] ?? 0),
+            );
+            await saveRadial();
+        })
+            .attr({ title: t("자주 쓰는 동작을 앞으로 정렬") })
+            .addInto(radialSlotsRow);
+};
+const radialToggle = input("checkbox").on("change", async () => {
+    radialConfig.enabled = radialToggle.el.checked;
+    await saveRadial();
+});
+ele("label")
+    .class("toggle-option")
+    .attr({
+        title: t(
+            "트리거 버튼을 누른 채 드래그하면 커서 주위에 동작 도넛이 뜹니다. 놓으면 실행, 중앙에서 놓으면 취소.",
+        ),
+    })
+    .add([
+        view().class("option-icon").add(icon("◎")),
+        label("strong", t("도넛 빠른 동작")),
+        radialToggle,
+    ])
+    .addInto(convenienceCard);
+const radialTriggerSelect = select([
+    { value: "both", name: t("휠 + 뒤로 버튼") },
+    { value: "wheel", name: t("휠 버튼만") },
+    { value: "back", name: t("뒤로 버튼만 (스크롤 충돌 없음)") },
+])
+    .class("select-control")
+    .attr({
+        title: t(
+            "뒤로 버튼(X1)은 웹페이지 자동 스크롤과 충돌하지 않아 가장 안정적입니다.",
+        ),
+        ariaLabel: t("도넛 트리거 버튼"),
+    })
+    .on("change", async (_e, el) => {
+        radialConfig.trigger = el.el.value as typeof radialConfig.trigger;
+        await saveRadial();
+    });
+view("x")
+    .class("radial-trigger-row")
+    .add([label("span", t("트리거 버튼")), radialTriggerSelect])
+    .addInto(convenienceCard);
+radialSlotsRow.addInto(convenienceCard);
+const radialHookWarning = label(
+    "small",
+    t(
+        "마우스 후킹을 시작하지 못해 도넛이 동작하지 않습니다. 앱을 다시 시작해 보세요.",
+    ),
+).addInto(convenienceCard);
+radialHookWarning.el.style.color = "var(--error-color, #e5484d)";
+radialHookWarning.el.hidden = true;
+
 const runtimeShortcutList = view("y")
     .class("runtime-shortcut-list")
     .addInto(convenienceCard);
@@ -1099,7 +1596,7 @@ const savedToolsCard = view("y")
 savedToolsCard.add(
     view("x")
         .class("settings-card-heading")
-        .add(label("h2", "저장된 스타일과 색상")),
+        .add(label("h2", t("저장된 스타일과 색상"))),
 );
 const savedStyleRow = view("x", "wrap")
     .class("saved-style-row")
@@ -1116,14 +1613,32 @@ const diagnosticsCard = ele("details")
     .addInto(settingsLayout);
 diagnosticsCard.add(
     ele("summary").add([
-        label("strong", "단축키 진단"),
-        label("small", "입력부터 캡처 완료까지"),
+        label("strong", t("단축키 진단")),
+        label("small", t("입력부터 캡처 완료까지")),
     ]),
 );
 const diagnosticsList = view("y")
     .class("diagnostics-list")
     .addInto(diagnosticsCard);
-button("새로고침")
+for (const card of Array.from(settingsLayout.el.children)) {
+    if (
+        card === storageCard.el ||
+        card === languageCard.el ||
+        card === aboutCard.el ||
+        card.tagName === "DETAILS"
+    )
+        continue;
+    const heading = card.querySelector<HTMLElement>(
+        ":scope > .settings-card-heading",
+    );
+    if (!heading) continue;
+    const details = ele("details").class("settings-disclosure");
+    const summary = ele("summary").class("settings-disclosure-title");
+    card.before(details.el);
+    summary.el.append(heading);
+    details.el.append(summary.el, card);
+}
+button(t("새로고침"))
     .class("text-button", "compact")
     .attr({ type: "button" })
     .on("click", () => void refreshState())
@@ -1292,6 +1807,18 @@ const minimalHome = createMinimalHome({
         await showPage("board");
     },
     showLibrary: () => void showPage("library"),
+    pinAction: (action, id) => {
+        void window.openCapture
+            .pinAction(action, id)
+            .then(() => setTimeout(() => void renderMinimalHome(), 120))
+            .catch((error) => showToast(errorMessage(error), true));
+    },
+    pinWorkspace: (op, name, opts) => {
+        void window.openCapture
+            .pinWorkspace(op, name, opts)
+            .then(() => setTimeout(() => void renderMinimalHome(), 400))
+            .catch((error) => showToast(errorMessage(error), true));
+    },
 });
 homePage.el.prepend(minimalHome.root);
 
@@ -1300,7 +1827,6 @@ const captureCommands: DashboardCommand[] = captureActions.map((action) => ({
     label: action.title,
     detail: action.description,
     keywords: ["캡처", action.name],
-    shortcut: action.shortcut,
     run: () =>
         action.name === "steps" ? toggleSteps() : runAction(action.name),
 }));
@@ -1345,6 +1871,25 @@ const navigationCommands: DashboardCommand[] = [
 }));
 const workspaceCommands: DashboardCommand[] = [
     {
+        id: "workspace:file-tools",
+        label: t("文件工具"),
+        detail: t("处理任意文件或文件夹"),
+        keywords: [
+            "파일",
+            "변환",
+            "오디오",
+            "영상",
+            "zip",
+            "pdf",
+            "convert",
+            "file",
+            "tools",
+        ],
+        async run() {
+            openFileTools();
+        },
+    },
+    {
         id: "home:all-tools",
         label: "모든 캡처 도구 보기",
         detail: "자동 작업과 전체 캡처 모드",
@@ -1378,6 +1923,98 @@ const workspaceCommands: DashboardCommand[] = [
             settingsPage.el
                 .querySelector<HTMLElement>(".experience-settings")
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        },
+    },
+    {
+        id: "pins:restore",
+        label: t("핀 모두 복원"),
+        detail: t("숨겨지거나 클릭 통과 상태의 핀을 되돌려요"),
+        keywords: ["핀", "고정", "복원", "화면"],
+        async run() {
+            await window.openCapture.pinAction("restore");
+            void renderMinimalHome();
+        },
+    },
+    {
+        id: "pins:close-all",
+        label: t("핀 모두 닫기"),
+        detail: t("화면 위 고정된 이미지를 전부 닫아요"),
+        keywords: ["핀", "고정", "닫기", "화면"],
+        async run() {
+            await window.openCapture.pinAction("closeAll");
+            void renderMinimalHome();
+        },
+    },
+    {
+        id: "pins:hide-all",
+        label: t("핀 모두 숨기기"),
+        detail: t("핀을 닫지 않고 화면에서 잠시 숨겨요"),
+        keywords: ["핀", "고정", "숨기기", "화면"],
+        async run() {
+            await window.openCapture.pinAction("hideAll");
+            showToast(t("핀을 숨겼어요. '핀 모두 복원'으로 되돌릴 수 있어요."));
+            void renderMinimalHome();
+        },
+    },
+    {
+        id: "pins:toggle-below",
+        label: t("핀 배경 모드"),
+        detail: t("핀을 다른 창 아래에 두고 클릭이 통과되게 해요"),
+        keywords: ["핀", "배경", "아래", "워터마크"],
+        async run() {
+            const below = await window.openCapture.pinAction("toggleBelow");
+            showToast(
+                below === true
+                    ? t("핀이 다른 창 아래에 고정됐어요")
+                    : t("핀이 화면 위로 돌아왔어요"),
+            );
+            void renderMinimalHome();
+        },
+    },
+    {
+        id: "library:compare-latest",
+        label: t("최근 두 항목 비교"),
+        detail: t("가장 최근 이미지 두 장을 바로 비교"),
+        keywords: ["비교", "레퍼런스", "compare", "최근"],
+        async run() {
+            const pair = [...appState.items, ...visibleLibraryItems()]
+                .filter(isComparableImage)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                .slice(0, 2);
+            if (pair.length < 2) {
+                showToast(t("비교할 이미지가 두 장 필요합니다."), true);
+                return;
+            }
+            referenceComparison.open(
+                pair.map<ReferenceComparisonItem>((c) => ({
+                    id: c.id,
+                    name: c.name,
+                    thumbnail: c.thumbnail,
+                })),
+            );
+        },
+    },
+    {
+        id: "settings:export",
+        label: t("설정 내보내기"),
+        detail: t("캡처 경험과 자동 작업 설정을 JSON으로 저장"),
+        keywords: ["설정", "내보내기", "백업", "json"],
+        async run() {
+            const result = await window.openCapture.action("export-settings");
+            if ((result as { path?: string } | null)?.path)
+                showToast(t("설정을 내보냈습니다."));
+        },
+    },
+    {
+        id: "settings:import",
+        label: t("설정 가져오기"),
+        detail: t("JSON 파일에서 캡처 설정을 복원"),
+        keywords: ["설정", "가져오기", "복원", "json"],
+        async run() {
+            const result = await window.openCapture.action("import-settings");
+            if (!result) return;
+            await refreshState();
+            showToast(t("설정을 가져왔습니다."));
         },
     },
 ];
@@ -1439,23 +2076,26 @@ let minimalHomeRequest = 0;
 async function renderMinimalHome() {
     const request = ++minimalHomeRequest;
     try {
-        const [libraryRecent, temporaryRecent, boards] = await Promise.all([
-            window.openCapture.queryItems({
-                scope: "library",
-                sort: "newest",
-                offset: 0,
-                limit: 3,
-                queryId: `home-library-${request}`,
-            }),
-            window.openCapture.queryItems({
-                scope: "temporary",
-                sort: "newest",
-                offset: 0,
-                limit: 3,
-                queryId: `home-temporary-${request}`,
-            }),
-            window.openCapture.boards.list(),
-        ]);
+        const [libraryRecent, temporaryRecent, boards, pins, workspaces] =
+            await Promise.all([
+                window.openCapture.queryItems({
+                    scope: "library",
+                    sort: "newest",
+                    offset: 0,
+                    limit: 3,
+                    queryId: `home-library-${request}`,
+                }),
+                window.openCapture.queryItems({
+                    scope: "temporary",
+                    sort: "newest",
+                    offset: 0,
+                    limit: 3,
+                    queryId: `home-temporary-${request}`,
+                }),
+                window.openCapture.boards.list(),
+                window.openCapture.listPins().catch(() => []),
+                window.openCapture.pinWorkspace("list").catch(() => []),
+            ]);
         if (request !== minimalHomeRequest) return;
         const capture = appState.runtime.shortcuts.find(
             (shortcut) => shortcut.id === "capture",
@@ -1481,7 +2121,10 @@ async function renderMinimalHome() {
             activeBoard:
                 boards.find((board) => board.id === activeId) ??
                 boards.find((board) => board.active),
+            pins,
+            workspaces,
         });
+        renderConvertHistory();
     } catch (error) {
         if (request === minimalHomeRequest)
             showToast(errorMessage(error), true);
@@ -1510,7 +2153,7 @@ button()
             })
             .catch((error) => showToast(String(error), true));
     })
-    .addInto(libraryButtons);
+    .addInto(filterBar);
 const shortcutDialog = ele("dialog")
     .class("shortcut-dialog")
     .addInto(modalBackdrop);
@@ -1595,6 +2238,55 @@ function renderShortcutSheet() {
                         ]),
                 ]),
         );
+    const radial = appState.runtime.radialMenu;
+    if (radial?.enabled) {
+        const triggerName =
+            radial.trigger === "wheel"
+                ? t("휠 버튼")
+                : radial.trigger === "back"
+                  ? t("뒤로 버튼")
+                  : t("휠 또는 뒤로 버튼");
+        shortcutList.add(
+            view("x")
+                .class("shortcut-row")
+                .add([
+                    view("y").add([
+                        label("strong", t("도넛 빠른 동작")),
+                        label(
+                            "small",
+                            t(
+                                "누른 채 드래그하여 동작 선택, 중앙에서 놓으면 취소",
+                            ),
+                        ),
+                    ]),
+                    view("x")
+                        .class("key-group")
+                        .add([
+                            ele("kbd").attr({ textContent: triggerName }),
+                            ele("kbd").attr({ textContent: t("드래그") }),
+                        ]),
+                ]),
+        );
+    }
+    for (const [gesture, desc] of [
+        [t("길게 누르기"), t("고정된 이미지 배경 제거")],
+        [`${t("Ctrl")}+${t("Shift")}+${t("클릭")}`, t("즉시 배경 제거")],
+        [`${t("Alt")}+${t("드래그")}`, t("이미지를 파일로 꺼내기")],
+    ] as const) {
+        shortcutList.add(
+            view("x")
+                .class("shortcut-row")
+                .add([
+                    view("y").add([
+                        label("strong", t("고정 이미지")),
+                        label("small", desc),
+                    ]),
+                    view("x")
+                        .class("key-group")
+                        .add([ele("kbd").attr({ textContent: gesture })]),
+                ]),
+        );
+    }
 }
 button(t("닫기"))
     .class("primary-button", "wide")
@@ -2201,8 +2893,24 @@ const qlStage = view().class("ql-stage").addInto(qlBody);
 const qlImageWrap = view().class("ql-image-wrap").addInto(qlStage);
 const qlImage = ele("img")
     .class("ql-image")
-    .attr({ alt: "" })
+    .attr({
+        alt: "",
+        title: t("길게 누르거나 Ctrl+Shift+클릭으로 배경 제거"),
+    })
     .addInto(qlImageWrap);
+qlImage.el.addEventListener(
+    "pointerdown",
+    (e) => {
+        if (e.button === 0 && e.ctrlKey && e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            const item = quickLookId ? findKnownItem(quickLookId) : undefined;
+            if (item && isComparableImage(item) && !isGifItem(item))
+                void cutoutQuickLookItem(item);
+        }
+    },
+    true,
+);
 const qlCropOverlay = view().class("ql-crop-overlay").addInto(qlImageWrap);
 qlCropOverlay.el.hidden = true;
 const qlCropRect = view().class("ql-crop-rect").addInto(qlCropOverlay);
@@ -2233,6 +2941,11 @@ const qlNext = button()
     .addInto(qlStage);
 const qlSide = view("y").class("ql-side").addInto(qlBody);
 const qlActions = view("x", "wrap").class("ql-actions").addInto(qlSide);
+const qlMoreActions = ele("details").class("ql-more-actions").addInto(qlSide);
+qlMoreActions.add(ele("summary").add(label("span", t("추가 도구"))));
+const qlAdvancedActions = view("x", "wrap")
+    .class("ql-actions")
+    .addInto(qlMoreActions);
 const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
     ["▣", t("복사"), (item) => runAction("copy-item", item.id)],
     ["⌖", t("고정"), (item) => runAction("pin-item", item.id)],
@@ -2259,7 +2972,7 @@ const qlActionList: [string, string, (item: OpenCaptureItem) => void][] = [
     ["⧉", t("복제"), (item) => runAction("duplicate-item", item.id)],
     ["▤", t("폴더"), (item) => runAction("reveal-item", item.id)],
 ];
-for (const [glyph, text, run] of qlActionList) {
+for (const [index, [glyph, text, run]] of qlActionList.entries()) {
     button()
         .class("ql-action")
         .attr({ type: "button" })
@@ -2268,7 +2981,7 @@ for (const [glyph, text, run] of qlActionList) {
             const item = quickLookId ? findKnownItem(quickLookId) : undefined;
             if (item) run(item);
         })
-        .addInto(qlActions);
+        .addInto(index < 4 ? qlActions : qlAdvancedActions);
 }
 qlSide.add(label("small", t("태그")).class("eyebrow", "ql-eyebrow"));
 const qlTags = view("x", "wrap").class("ql-tags").addInto(qlSide);
@@ -2467,137 +3180,6 @@ compareDialog.el.addEventListener("close", () => {
 // while integrations migrate, without exposing duplicate controls in the DOM.
 compareDialog.el.remove();
 
-const onboardDialog = ele("dialog")
-    .class("onboard-dialog")
-    .addInto(modalBackdrop);
-onboardDialog.add(
-    view("x")
-        .class("dialog-header")
-        .add([
-            view("y").add(label("h2", t("OpenCapture 시작하기"))),
-            button()
-                .class("close-button")
-                .attr({ type: "button", ariaLabel: t("닫기") })
-                .add(icon("×"))
-                .on("click", () => closeOnboarding()),
-        ]),
-);
-const onboardGrid = view("x", "wrap")
-    .class("onboard-grid")
-    .addInto(onboardDialog);
-const onboardCaptureKeys = view("x")
-    .class("key-group", "onboard-keys")
-    .addInto(
-        view("y")
-            .class("onboard-card")
-            .attr({ title: t("언제든 이 단축키로 화면을 선택하세요.") })
-            .add([
-                view().class("onboard-icon").add(icon("⌗")),
-                label("strong", t("한 번에 캡처")),
-            ])
-            .addInto(onboardGrid),
-    );
-const onboardChordCard = view("y")
-    .class("onboard-card")
-    .attr({ title: t("좌·우 버튼을 함께 누르면 캡처가 시작됩니다.") })
-    .add([
-        view().class("onboard-icon").add(icon("◉")),
-        label("strong", t("마우스로도 바로")),
-    ])
-    .addInto(onboardGrid);
-const onboardChordButton = button(t("지금 켜기"))
-    .class("outline-button", "compact")
-    .attr({ type: "button" })
-    .on("click", async () => {
-        onboardChordButton.el.disabled = true;
-        await runAction("configure-runtime", { mouseChord: "截屏" });
-        await refreshState();
-        onboardChordButton.el.textContent = t("켜짐");
-    })
-    .addInto(onboardChordCard);
-view("y")
-    .class("onboard-card")
-    .attr({
-        title: t(
-            "캡처 하나로 복사·고정·주석·번역·업스케일·태그·검색까지 바로 이어집니다.",
-        ),
-    })
-    .add([
-        view().class("onboard-icon").add(icon("✦")),
-        label("strong", t("한 장에서 모두")),
-    ])
-    .addInto(onboardGrid);
-const onboardTestResult = label(
-    "small",
-    t("여기를 누르고 단축키를 눌러보세요"),
-);
-const onboardTestPad = view("y")
-    .class("onboard-card", "onboard-test")
-    .attr({
-        tabIndex: 0,
-        role: "button",
-        title: t("눌러서 캡처 단축키를 직접 테스트하세요."),
-    })
-    .add([
-        view().class("onboard-icon").add(icon("⌨")),
-        label("strong", t("키 테스트")),
-        onboardTestResult,
-    ])
-    .on("keydown", (e) => {
-        const acc = acceleratorFromEvent(e);
-        if (!acc) return;
-        e.preventDefault();
-        const capture = appState.runtime.shortcuts.find(
-            (s) => s.id === "capture",
-        );
-        const shown = formatShortcut(acc);
-        if (acc === capture?.active)
-            onboardTestResult.attr({
-                textContent: `${shown} — ${t("정상 등록됨")}`,
-            });
-        else if (acc === capture?.requested && !capture.available)
-            onboardTestResult.attr({
-                textContent: `${shown} — ${t("등록 실패 상태입니다")}`,
-            });
-        else
-            onboardTestResult.attr({
-                textContent: shown,
-            });
-    })
-    .addInto(onboardGrid);
-button(t("시작하기"))
-    .class("primary-button", "wide")
-    .attr({ type: "button" })
-    .on("click", () => closeOnboarding())
-    .addInto(onboardDialog);
-onboardDialog.el.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeOnboarding();
-});
-
-function renderOnboarding() {
-    onboardCaptureKeys.clear();
-    const capture = appState.runtime.shortcuts.find((s) => s.id === "capture");
-    const keyText = capture?.active ?? capture?.requested ?? "";
-    for (const key of (keyText ? formatShortcut(keyText) : "—").split(" + "))
-        onboardCaptureKeys.add(ele("kbd").attr({ textContent: key }));
-    onboardChordButton.el.disabled =
-        appState.runtime.mouseChord !== undefined &&
-        appState.runtime.mouseChord !== "关闭";
-    if (onboardChordButton.el.disabled)
-        onboardChordButton.el.textContent = t("켜짐");
-}
-
-function openOnboarding() {
-    renderOnboarding();
-    openModal(onboardDialog.el);
-}
-
-function closeOnboarding() {
-    localStorage.setItem("oc:onboarded", "1");
-    closeModal(onboardDialog.el);
-}
-
 modalBackdrop.on("click", (event) => {
     if (event.target === modalBackdrop.el) closeAllModals();
 });
@@ -2734,6 +3316,34 @@ function selectedItemsInOrder() {
     return [...selectedItemIds]
         .map((id) => available.get(id))
         .filter((item): item is OpenCaptureItem => Boolean(item));
+}
+
+// 카드 도넛/팔레트에서 즉시 비교 — 다른 선택 항목이 있으면 그것과,
+// 없으면 가장 최근의 다른 이미지와 바로 연다.
+function openItemComparison(item: OpenCaptureItem) {
+    if (!isComparableImage(item)) {
+        showToast(t("일반 이미지 두 장만 비교할 수 있습니다."), true);
+        return;
+    }
+    const selected = selectedItemsInOrder().filter(
+        (c) => c.id !== item.id && isComparableImage(c),
+    );
+    const other =
+        selected[0] ??
+        [...appState.items, ...visibleLibraryItems()]
+            .filter((c) => c.id !== item.id && isComparableImage(c))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!other) {
+        showToast(t("비교할 다른 이미지가 없습니다."), true);
+        return;
+    }
+    referenceComparison.open(
+        [item, other].map<ReferenceComparisonItem>((c) => ({
+            id: c.id,
+            name: c.name,
+            thumbnail: c.thumbnail,
+        })),
+    );
 }
 
 function findKnownItem(id: string) {
@@ -3084,19 +3694,27 @@ let shortcutWarned = false;
 
 async function refreshState() {
     try {
-        const [nextState, preferences, styles, smartFilters, colors] =
-            await Promise.all([
-                window.openCapture.getState(),
-                window.openCapture.getPreferences(),
-                window.openCapture.listStyles(),
-                window.openCapture.listSmartFilters(),
-                window.openCapture.getSampledColors(),
-            ]);
+        // 첫 페인트 우선: 항목 렌더는 getState만으로 가능 — 부가 데이터는 병렬 후행
+        const secondary = Promise.all([
+            window.openCapture.getPreferences(),
+            window.openCapture.listStyles(),
+            window.openCapture.listSmartFilters(),
+            window.openCapture.getSampledColors(),
+            window.openCapture.getLanguageSettings(),
+        ]);
+        const nextState = await window.openCapture.getState();
         appState = nextState;
+        const previewIdEarly = appState.previewItemId;
+        renderState();
+        void renderMinimalHome();
+        if (previewIdEarly) void openPreviewById(previewIdEarly);
+        const [preferences, styles, smartFilters, colors, languages] =
+            await secondary;
         experiencePreferences = preferences;
         savedStyles = styles;
         savedSmartFilters = smartFilters;
         recentColors = colors;
+        renderLanguageSettings(languages);
         experiencePanel.update(preferences);
         if (appState.recoveryWarning) showToast(appState.recoveryWarning, true);
         if (!shortcutWarned) {
@@ -3182,6 +3800,32 @@ async function mutateItems(
                 : kind === "trash"
                   ? "휴지통으로 옮겼습니다."
                   : "복원했습니다.",
+            false,
+            kind === "promote"
+                ? []
+                : [
+                      [
+                          t("되돌리기"),
+                          () => {
+                              void (async () => {
+                                  try {
+                                      if (kind === "trash")
+                                          await window.openCapture.restoreItems(
+                                              ids,
+                                          );
+                                      else
+                                          await window.openCapture.trashItems(
+                                              ids,
+                                          );
+                                      await refreshState();
+                                      await refreshLibraryQuery(true);
+                                  } catch (error) {
+                                      showToast(errorMessage(error), true);
+                                  }
+                              })();
+                          },
+                      ],
+                  ],
         );
     } catch (error) {
         showToast(errorMessage(error), true);
@@ -3425,6 +4069,7 @@ function renderState() {
         activeCollection?.path ||
         appState.defaultFolder ||
         t("저장 폴더가 설정되지 않았습니다.");
+    folderPath.el.title = folderPath.el.textContent;
     versionLabel.el.textContent = appState.version
         ? `OpenCapture ${appState.version}`
         : "OpenCapture";
@@ -3439,16 +4084,18 @@ function renderState() {
     const filtered = isLibraryFiltered();
     libraryTitle.el.textContent =
         libraryScope === "temporary"
-            ? "임시 캡처"
+            ? t("임시 캡처")
             : libraryScope === "trash"
-              ? "휴지통"
+              ? t("휴지통")
               : (activeCollection?.name ?? t("저장된 캡처"));
     const displayedTotal = queriedItems ? queriedTotal : visibleItems.length;
-    itemCount.el.textContent = filtered
-        ? `${displayedTotal}개 · 전체 ${appState.totalItemCount}개`
-        : appState.totalItemCount > appState.items.length
-          ? `${displayedTotal}개 · 전체 ${appState.totalItemCount}개`
-          : `${displayedTotal}개`;
+    itemCount.el.textContent = (
+        filtered || appState.totalItemCount > appState.items.length
+            ? t("{count}개 · 전체 {total}개")
+            : t("{count}개")
+    )
+        .replace("{count}", String(displayedTotal))
+        .replace("{total}", String(appState.totalItemCount));
     for (const [scope, control] of scopeButtons) {
         const active = scope === libraryScope;
         control.classList.toggle("active", active);
@@ -3468,7 +4115,7 @@ function renderState() {
     renderRuntimeShortcuts();
     const selectedCount = selectedItemIds.size;
     selectionStatus.el.textContent = selectedCount
-        ? `${selectedCount}개 선택됨`
+        ? t("{count}개 선택됨").replace("{count}", String(selectedCount))
         : t("선택 없음");
     selectionToolbar.el.classList.toggle("has-selection", selectedCount > 0);
     clearSelectionButton.el.disabled = !selectedCount;
@@ -3502,7 +4149,9 @@ function renderState() {
     loadMoreButton.el.hidden =
         Boolean(queriedItems) ||
         appState.items.length >= appState.totalItemCount;
-    loadMoreButton.el.textContent = `더 불러오기 (${appState.items.length}/${appState.totalItemCount})`;
+    loadMoreButton.el.textContent = t("더 불러오기 ({current}/{total})")
+        .replace("{current}", String(appState.items.length))
+        .replace("{total}", String(appState.totalItemCount));
     const stepsCard = homePage.el.querySelector<HTMLElement>(
         '[data-action="steps"]',
     );
@@ -3567,6 +4216,20 @@ function renderState() {
             seg.setAttribute("aria-pressed", String(pressed));
         });
     itemGrid.el.dataset.size = thumbSize;
+    itemGrid.el.classList.toggle("selecting", selectedCount > 0);
+    dropZone.el.hidden =
+        appState.totalItemCount > 0 || Boolean(queriedItems?.length);
+    filterToggle.el.classList.toggle(
+        "active",
+        Boolean(
+            favoritesOnly ||
+                todayOnly ||
+                ocrOnly ||
+                activeTag ||
+                smartFilter ||
+                activeSavedSmartId,
+        ),
+    );
     renderTagChips();
     renderLibraryWindow();
     renderDiagnostics();
@@ -3619,6 +4282,8 @@ function visibleLibraryItems() {
     if (sortMode === "old") items = [...items].reverse();
     else if (sortMode === "name")
         items = [...items].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    else if (sortMode === "size")
+        items = [...items].sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
     return items;
 }
 
@@ -3652,7 +4317,9 @@ function currentQuery(offset: number, limit: number): CaptureItemsQuery {
                 ? "newest"
                 : sortMode === "old"
                   ? "oldest"
-                  : "name",
+                  : sortMode === "size"
+                    ? "size"
+                    : "name",
         offset,
         limit,
         queryId: String(querySequence),
@@ -3819,6 +4486,18 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
 function renderRuntimeShortcuts() {
     runtimeShortcutList.clear();
     mouseChordSelect.el.value = appState.runtime.mouseChord ?? "关闭";
+    if (appState.runtime.radialMenu) {
+        radialConfig.enabled = appState.runtime.radialMenu.enabled;
+        if (appState.runtime.radialMenu.actions.length >= 2)
+            radialConfig.actions = appState.runtime.radialMenu.actions;
+        radialConfig.trigger = appState.runtime.radialMenu.trigger ?? "both";
+        radialToggle.el.checked = radialConfig.enabled;
+        radialTriggerSelect.el.value = radialConfig.trigger;
+        radialHookWarning.el.hidden = !(
+            radialConfig.enabled && appState.runtime.radialMenu.hookFailed
+        );
+        rebuildRadialSlots();
+    }
     if (!appState.runtime.shortcuts.length) {
         runtimeShortcutList.add(p(t("등록된 시스템 단축키가 없습니다.")));
         return;
@@ -3915,6 +4594,12 @@ function renderItems(
         } else if (isProjectItem(item)) {
             thumbnail.add(view().class("item-video-badge").add("✎"));
         }
+        if (convertedRecently(item))
+            thumbnail.add(
+                label("small", "⇄")
+                    .class("item-convert-badge")
+                    .attr({ title: t("최근에 변환한 항목") }),
+            );
         if (item.ocrText) {
             const ocrPreview = view("y").class("item-ocr-preview");
             const ocrLines = item.ocrText
@@ -4008,12 +4693,122 @@ function renderItems(
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     openQuickLook(item);
+                    return;
+                }
+                const cardEl = itemCard.el;
+                const cards = [
+                    ...itemGrid.el.querySelectorAll<HTMLElement>(".item-card"),
+                ];
+                const index = cards.indexOf(cardEl);
+                if (index < 0) return;
+                let target: HTMLElement | undefined;
+                if (event.key === "ArrowRight") target = cards[index + 1];
+                else if (event.key === "ArrowLeft") target = cards[index - 1];
+                else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    const down = event.key === "ArrowDown";
+                    const rowTop = cardEl.offsetTop;
+                    const midX = cardEl.offsetLeft + cardEl.offsetWidth / 2;
+                    let best: HTMLElement | undefined;
+                    let bestDistance = Number.POSITIVE_INFINITY;
+                    for (const card of cards) {
+                        const inRow = down
+                            ? card.offsetTop > rowTop
+                            : card.offsetTop < rowTop;
+                        if (!inRow) continue;
+                        const distance =
+                            Math.abs(
+                                card.offsetLeft + card.offsetWidth / 2 - midX,
+                            ) +
+                            Math.abs(card.offsetTop - rowTop) * 0.01;
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            best = card;
+                        }
+                    }
+                    target = best;
+                }
+                if (target) {
+                    event.preventDefault();
+                    target.focus();
                 }
             })
             .add([
                 selectionInput,
                 favButton,
                 thumbnail.on("dblclick", () => runAction("open-item", item.id)),
+                ...(isComparableImage(item)
+                    ? [
+                          view("x")
+                              .class("item-quick-actions")
+                              .add(
+                                  (
+                                      [
+                                          [
+                                              "▣",
+                                              t("클립보드에 복사"),
+                                              () =>
+                                                  void runAction(
+                                                      "copy-item",
+                                                      item.id,
+                                                  ),
+                                          ],
+                                          [
+                                              "⌖",
+                                              t("화면에 고정"),
+                                              () =>
+                                                  void runAction(
+                                                      "pin-item",
+                                                      item.id,
+                                                  ),
+                                          ],
+                                          [
+                                              "✦",
+                                              t("배경 제거"),
+                                              () =>
+                                                  void runAction(
+                                                      "remove-background",
+                                                      item.id,
+                                                  ),
+                                          ],
+                                          [
+                                              "✎",
+                                              t("주석·편집"),
+                                              () =>
+                                                  void runAction(
+                                                      "open-item",
+                                                      item.id,
+                                                  ),
+                                          ],
+                                          [
+                                              "⇄",
+                                              t("변환"),
+                                              (event: MouseEvent) =>
+                                                  openConvertDonut(
+                                                      {
+                                                          x: event.clientX,
+                                                          y: event.clientY,
+                                                      },
+                                                      [item],
+                                                  ),
+                                          ],
+                                      ] as [
+                                          string,
+                                          string,
+                                          (event: MouseEvent) => void,
+                                      ][]
+                                  ).map(([glyph, name, run]) =>
+                                      button()
+                                          .class("item-quick-action")
+                                          .attr({ type: "button", title: name })
+                                          .add(icon(glyph))
+                                          .on("click", (event) => {
+                                              event.stopPropagation();
+                                              run(event);
+                                          }),
+                                  ),
+                              ),
+                      ]
+                    : []),
                 view("x")
                     .class("item-info")
                     .add([
@@ -4047,11 +4842,30 @@ function renderItems(
                             }),
                     ]),
             ]);
-        itemCard.on("click", () =>
-            isVideoItem(item) || isProjectItem(item)
-                ? void runAction("open-item", item.id)
-                : openQuickLook(item),
-        );
+        itemCard.on("click", (event) => {
+            if (event.shiftKey && lastSelectIndex !== null) {
+                const [from, to] = [
+                    Math.min(lastSelectIndex, absoluteIndex),
+                    Math.max(lastSelectIndex, absoluteIndex),
+                ];
+                const selectionSource = queriedItems ?? items;
+                for (const range of selectionSource.slice(from, to + 1))
+                    if (range) selectedItemIds.add(range.id);
+                renderState();
+                return;
+            }
+            if (event.ctrlKey || event.metaKey) {
+                lastSelectIndex = absoluteIndex;
+                if (selectedItemIds.has(item.id))
+                    selectedItemIds.delete(item.id);
+                else selectedItemIds.add(item.id);
+                renderState();
+                return;
+            }
+            if (isVideoItem(item) || isProjectItem(item))
+                void runAction("open-item", item.id);
+            else openQuickLook(item);
+        });
         itemCard.el.dataset.itemId = item.id;
         itemCard.el.dataset.itemIndex = String(absoluteIndex);
         fragment.append(itemCard.el);
@@ -4165,6 +4979,13 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
           : [
                 ["⌕", t("미리보기"), () => openQuickLook(item)],
                 ["⌖", t("화면에 고정"), () => runAction("pin-item", item.id)],
+                ...(isComparableImage(item)
+                    ? ([["◫", t("비교"), () => openItemComparison(item)]] as [
+                          string,
+                          string,
+                          () => void,
+                      ][])
+                    : []),
                 [
                     "▣",
                     t("클립보드에 복사"),
@@ -4199,6 +5020,20 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
                     "▤",
                     t("폴더에서 보기"),
                     () => runAction("reveal-item", item.id),
+                ],
+                [
+                    "⇄",
+                    t("변환"),
+                    () => {
+                        const rect = anchor.getBoundingClientRect();
+                        openConvertDonut(
+                            {
+                                x: rect.right + 12,
+                                y: rect.top + rect.height / 2,
+                            },
+                            [item],
+                        );
+                    },
                 ],
             ];
     if (item.draftCorrupt)
@@ -4243,6 +5078,181 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
     );
 }
 
+let convertDonutClose: (() => void) | undefined;
+
+interface ConvertHistoryEntry {
+    time: number;
+    format: string;
+    count: number;
+    written: string[];
+    sourceIds: string[];
+}
+
+function convertHistory(): ConvertHistoryEntry[] {
+    try {
+        const raw = localStorage.getItem("oc:convert-history");
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.slice(0, 20) : [];
+    } catch {
+        return [];
+    }
+}
+
+function recordConversion(entry: ConvertHistoryEntry) {
+    const list = [entry, ...convertHistory()].slice(0, 20);
+    localStorage.setItem("oc:convert-history", JSON.stringify(list));
+    renderConvertHistory();
+}
+
+const convertedRecently = (item: OpenCaptureItem) => {
+    const day = Date.now() - 24 * 60 * 60 * 1000;
+    return convertHistory().some(
+        (entry) => entry.time > day && entry.sourceIds.includes(item.id),
+    );
+};
+
+function formatBytes(bytes: number) {
+    if (!bytes) return "";
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+    if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`;
+    return `${bytes}B`;
+}
+
+function reportConvertResult(result: ConvertResult, sourceIds: string[]) {
+    const { written, bytes, failed, skipped, cancelled, format } = result;
+    if (!written.length && !failed.length && !skipped) return;
+    const registration = result.registration ?? [];
+    const registrationFailed = registration.filter(
+        (row) => row.status === "failed",
+    ).length;
+    const registrationUnsupported = registration.filter(
+        (row) => row.status === "unsupported",
+    ).length;
+    if (written.length && format)
+        recordConversion({
+            time: Date.now(),
+            format,
+            count: written.length,
+            written,
+            sourceIds,
+        });
+    if (!written.length && !skipped && failed.length) {
+        showToast(
+            `${t("변환에 실패했습니다.")} ${failed[0].error.slice(0, 60)}`,
+            true,
+        );
+        return;
+    }
+    const parts: string[] = [];
+    if (written.length) {
+        const size = formatBytes(bytes);
+        parts.push(
+            `${written.length}${t("개 변환 완료")}${size ? ` · ${size}` : ""}`,
+        );
+    }
+    if (skipped) parts.push(`${skipped}${t("개 동일 형식 건너뜀")}`);
+    if (failed.length)
+        parts.push(
+            `${failed.length}${t("개 실패")} — ${failed[0].error.slice(0, 40)}`,
+        );
+    if (cancelled) parts.push(t("취소됨"));
+    if (registrationFailed)
+        parts.push(`${t("보관함 등록 실패")} ${registrationFailed}`);
+    if (registrationUnsupported)
+        parts.push(`${t("보관함 미지원 형식")} ${registrationUnsupported}`);
+    if (!parts.length) return;
+    showToast(
+        parts.join(" · "),
+        failed.length > 0 || registrationFailed > 0,
+        written.length
+            ? [
+                  [
+                      t("폴더에서 보기"),
+                      () => void window.openCapture.revealPath(written[0]),
+                  ],
+              ]
+            : [],
+    );
+    renderState();
+}
+
+function openConvertDonut(
+    point: { x: number; y: number },
+    items: OpenCaptureItem[],
+) {
+    convertDonutClose?.();
+    if (convertDonutClose) return;
+    const targets = items.filter(isComparableImage);
+    if (!targets.length) {
+        showToast(t("변환할 수 있는 항목이 없습니다."), true);
+        return;
+    }
+    convertDonutClose = openDonut({
+        point,
+        targets: targets.map((item) => ({
+            id: item.id,
+            path: item.path,
+            name: item.name,
+        })),
+        api: window.openCapture,
+        presets: true,
+        onError: (message) => showToast(message, true),
+        onDone: (result) => {
+            convertDonutClose = undefined;
+            reportConvertResult(
+                result,
+                targets.map((i) => i.id),
+            );
+        },
+    });
+}
+
+function renderConvertHistory() {
+    const section = document.querySelector<HTMLElement>(
+        ".minimal-convert-history",
+    );
+    if (!section) return;
+    const entries = convertHistory();
+    const row = section.querySelector<HTMLElement>(
+        ".minimal-convert-history-row",
+    );
+    if (!row) return;
+    section.hidden = !entries.length;
+    row.replaceChildren();
+    for (const entry of entries.slice(0, 6)) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "convert-history-chip";
+        chip.textContent = `${entry.format.toUpperCase()} ×${entry.count} · ${formatRelativeTime(entry.time)}`;
+        chip.title = t(
+            "변환된 파일 위치 보기 · Shift+클릭은 라이브러리에서 찾기",
+        );
+        chip.addEventListener("click", (event) => {
+            if (event.shiftKey) locateConvertSource(entry);
+            else void window.openCapture.revealPath(entry.written[0]);
+        });
+        row.append(chip);
+    }
+}
+
+function locateConvertSource(entry: ConvertHistoryEntry) {
+    const pool = [...appState.items, ...visibleLibraryItems()];
+    const source = pool.find((item) => entry.sourceIds.includes(item.id));
+    const term =
+        source?.name ??
+        entry.written[0]
+            ?.split(/[\\/]/)
+            .pop()
+            ?.replace(/\.[^.]+$/, "");
+    if (!term) {
+        showToast(t("라이브러리에서 원본을 찾지 못했습니다."), true);
+        return;
+    }
+    searchInput.el.value = term;
+    searchQuery = term.toLowerCase();
+    void showPage("library").then(() => void refreshLibraryQuery());
+}
+
 async function refreshTranslationStatus() {
     try {
         translationStatus = await window.openCapture.translationStatus();
@@ -4260,19 +5270,30 @@ function renderTranslationStatus() {
     const engine = translationStatus.engine ?? "local";
     engineChoice.el.value = engine;
     const local = translationStatus.local;
-    modelStatusDot.el.classList.toggle("ready", local.installed);
-    modelStatusDot.el.classList.toggle("pending", Boolean(local.installing));
-    modelStatusText.el.textContent = local.installing
-        ? t("모델 설치 중")
-        : local.installed
-          ? t("로컬 모델 사용 가능")
-          : t("로컬 모델 설치 필요");
+    const runtimeReady = translationStatus.runtimeReady;
+    modelStatusDot.el.classList.toggle(
+        "ready",
+        runtimeReady && local.installed,
+    );
+    modelStatusDot.el.classList.toggle(
+        "pending",
+        runtimeReady && Boolean(local.installing),
+    );
+    modelStatusText.el.textContent = !runtimeReady
+        ? t("이 환경에서는 로컬 번역을 사용할 수 없습니다.")
+        : local.installing
+          ? t("모델 설치 중")
+          : local.installed
+            ? t("로컬 모델 사용 가능")
+            : t("로컬 모델 설치 필요");
     const sizeText = local.size ? `약 ${local.size}` : t("필요한 모델 파일");
-    modelDetails.el.textContent = local.installed
-        ? t("다운로드된 모델로 오프라인 번역을 사용할 수 있습니다.")
-        : `${sizeText}을 내려받습니다. 설치 후에는 오프라인으로 동작합니다.`;
-    installButton.el.hidden = local.installed;
-    installButton.el.disabled = Boolean(local.installing);
+    modelDetails.el.textContent = !runtimeReady
+        ? t("온라인 번역 서비스를 연결해 사용하세요.")
+        : local.installed
+          ? t("다운로드된 모델로 오프라인 번역을 사용할 수 있습니다.")
+          : `${sizeText}을 내려받습니다. 설치 후에는 오프라인으로 동작합니다.`;
+    installButton.el.hidden = !runtimeReady || local.installed;
+    installButton.el.disabled = !runtimeReady || Boolean(local.installing);
     providerStatus.el.textContent = [
         translationStatus.providers.deepl.configured
             ? t("DeepL 연결됨")
@@ -4284,13 +5305,17 @@ function renderTranslationStatus() {
 }
 
 async function installModels() {
+    if (translationStatus && !translationStatus.runtimeReady) return;
     installButton.el.disabled = true;
     modelStatusText.el.textContent = t("모델 설치 중");
     modelStatusDot.el.classList.add("pending");
     try {
         translationStatus = await window.openCapture.installModels();
         renderTranslationStatus();
-        showToast("로컬 번역 모델을 설치했습니다.");
+        if (translationStatus.runtimeReady && translationStatus.local.installed)
+            showToast("로컬 번역 모델을 설치했습니다.");
+        else
+            showToast(t("이 환경에서는 로컬 번역을 사용할 수 없습니다."), true);
     } catch (error) {
         installButton.el.disabled = false;
         showToast(errorMessage(error), true);
@@ -4357,7 +5382,6 @@ const allDialogs = [
     gifDialog,
     quickLookDialog,
     compareDialog,
-    onboardDialog,
 ];
 const externalDialogs = [
     bundleComposer.dialog,
@@ -5076,13 +6100,26 @@ async function applyGifTrim() {
     }
 }
 
+const animatedImageRe = /\.(gif|webp|avif|apng)$/i;
 async function loadQuickLookImage(id: string) {
     if (quickLookImages.has(id)) return;
     try {
-        const data = await window.openCapture.getItemData(id);
+        const item = findKnownItem(id);
+        let data: string;
+        if (animatedImageRe.test(item?.path ?? item?.name ?? "")) {
+            // 네이티브 재인코딩은 프레임을 죽이므로 원본 파일을 그대로 로드
+            const file = await window.openCapture.getItemFile(id);
+            data = URL.createObjectURL(new Blob([file], { type: "image/*" }));
+        } else {
+            data = await window.openCapture.getItemData(id);
+        }
         if (quickLookImages.size > 12) {
             const oldest = quickLookImages.keys().next().value;
-            if (oldest) quickLookImages.delete(oldest);
+            if (oldest) {
+                const evicted = quickLookImages.get(oldest);
+                if (evicted?.startsWith("blob:")) URL.revokeObjectURL(evicted);
+                quickLookImages.delete(oldest);
+            }
         }
         quickLookImages.set(id, data);
         if (quickLookId === id && quickLookDialog.el.open) renderQuickLook();
@@ -5275,6 +6312,28 @@ function showToast(
     );
 }
 
+window.addEventListener("error", (event) => {
+    const detail = `${event.message}\n${event.filename}:${event.lineno}:${event.colno}\n${event.error?.stack ?? ""}`;
+    showToast(`${t("오류")}: ${event.message || t("알 수 없는 오류")}`, true, [
+        [t("로그 복사"), () => void navigator.clipboard?.writeText(detail)],
+    ]);
+});
+window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    const message = errorMessage(reason);
+    showToast(`${t("오류")}: ${message}`, true, [
+        [
+            t("로그 복사"),
+            () =>
+                void navigator.clipboard?.writeText(
+                    reason instanceof Error
+                        ? (reason.stack ?? message)
+                        : message,
+                ),
+        ],
+    ]);
+});
+
 document.addEventListener("keydown", (event) => {
     const tag = (event.target as HTMLElement).tagName;
     if (
@@ -5360,6 +6419,24 @@ window.openCapture.onSrProgress(({ phase, percent }) => {
     }
 });
 window.openCapture.onPreviewItem((id) => void openPreviewById(id));
+window.openCapture.onConversionRequested((items) => {
+    convertDonutClose?.();
+    if (convertDonutClose) return;
+    convertDonutClose = openDonut({
+        point: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+        targets: items,
+        api: window.openCapture,
+        presets: true,
+        onError: (message) => showToast(message, true),
+        onDone: (result) => {
+            convertDonutClose = undefined;
+            reportConvertResult(
+                result,
+                items.map((item) => item.id),
+            );
+        },
+    });
+});
 window.openCapture.onCompareRequested((ids) => {
     void (async () => {
         libraryScope = "temporary";
@@ -5390,6 +6467,5 @@ window.openCapture.onCompareRequested((ids) => {
 });
 void refreshState().then(() => {
     void refreshLibraryQuery(true);
-    if (!localStorage.getItem("oc:onboarded")) openOnboarding();
 });
 void refreshTranslationStatus();

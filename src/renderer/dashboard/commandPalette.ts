@@ -1,3 +1,5 @@
+import { lt } from "../lib/labText";
+import { t } from "./t";
 export type DashboardCommand = {
     id: string;
     label: string;
@@ -22,7 +24,7 @@ export function createCommandPalette(
 ): CommandPaletteController {
     const dialog = document.createElement("dialog");
     dialog.className = "command-palette";
-    dialog.setAttribute("aria-label", "명령 검색");
+    dialog.setAttribute("aria-label", lt("명령 검색"));
 
     const searchWrap = document.createElement("div");
     searchWrap.className = "command-search";
@@ -31,10 +33,10 @@ export function createCommandPalette(
     glyph.textContent = "⌕";
     const input = document.createElement("input");
     input.type = "search";
-    input.placeholder = "기능이나 도구 검색";
+    input.placeholder = lt("기능이나 도구 검색");
     input.autocomplete = "off";
     input.spellcheck = false;
-    input.setAttribute("aria-label", "명령 검색");
+    input.setAttribute("aria-label", lt("명령 검색"));
     searchWrap.append(glyph, input);
 
     const results = document.createElement("div");
@@ -42,7 +44,7 @@ export function createCommandPalette(
     results.setAttribute("role", "listbox");
     const footer = document.createElement("div");
     footer.className = "command-footer";
-    footer.textContent = "↑↓ 이동  ·  Enter 실행  ·  Esc 닫기";
+    footer.textContent = lt("↑↓ 이동  ·  Enter 실행  ·  Esc 닫기");
     dialog.append(searchWrap, results, footer);
     parent.append(dialog);
 
@@ -50,12 +52,33 @@ export function createCommandPalette(
     let visible: DashboardCommand[] = [];
     let activeIndex = 0;
 
+    const RECENT_KEY = "oc:command-recent";
+    const loadRecent = (): string[] => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+            return Array.isArray(parsed)
+                ? parsed.filter((id): id is string => typeof id === "string")
+                : [];
+        } catch {
+            return [];
+        }
+    };
+    let recentIds = loadRecent();
+    const recordRecent = (id: string) => {
+        recentIds = [id, ...recentIds.filter((recent) => recent !== id)].slice(
+            0,
+            6,
+        );
+        localStorage.setItem(RECENT_KEY, JSON.stringify(recentIds));
+    };
+
     const close = () => {
         if (dialog.open) dialog.close();
     };
 
     const run = async (command: DashboardCommand) => {
         if (command.disabled) return;
+        recordRecent(command.id);
         close();
         await command.run();
     };
@@ -64,18 +87,32 @@ export function createCommandPalette(
         const query = input.value.trim().toLocaleLowerCase("ko-KR");
         visible = commands.filter((command) => {
             if (!query) return true;
-            return [command.label, command.detail, ...(command.keywords ?? [])]
+            return [
+                command.label,
+                t(command.label),
+                command.detail,
+                command.detail ? t(command.detail) : "",
+                ...(command.keywords ?? []),
+            ]
                 .filter(Boolean)
                 .join(" ")
                 .toLocaleLowerCase("ko-KR")
                 .includes(query);
         });
+        if (!query && recentIds.length) {
+            const rank = new Map(recentIds.map((id, index) => [id, index]));
+            visible = [...visible].sort(
+                (a, b) =>
+                    (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+                    (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+            );
+        }
         activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
         results.replaceChildren();
         if (!visible.length) {
             const empty = document.createElement("p");
             empty.className = "command-empty";
-            empty.textContent = "일치하는 기능이 없습니다.";
+            empty.textContent = lt("일치하는 기능이 없습니다.");
             results.append(empty);
             return;
         }
@@ -93,11 +130,11 @@ export function createCommandPalette(
             const copy = document.createElement("span");
             copy.className = "command-copy";
             const title = document.createElement("strong");
-            title.textContent = command.label;
+            title.textContent = t(command.label);
             copy.append(title);
             if (command.detail) {
                 const detail = document.createElement("small");
-                detail.textContent = command.detail;
+                detail.textContent = t(command.detail);
                 copy.append(detail);
             }
             control.append(copy);

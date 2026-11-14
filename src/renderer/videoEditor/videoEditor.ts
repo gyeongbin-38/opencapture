@@ -31,21 +31,9 @@ const { uIOhook, UiohookKey } = require("uiohook-napi") as typeof import("uiohoo
 type KeyCode = `${keyof typeof UiohookKey}`;
 const fs = require("node:fs") as typeof import("fs");
 
-import UPNG from "@pdf-lib/upng";
-// @ts-expect-error
-import { GIFEncoder, applyPalette, quantize } from "gifenc";
-import {
-    AudioBufferSource,
-    type AudioCodec,
-    BufferTarget,
-    EncodedPacket,
-    EncodedVideoPacketSource,
-    Mp4OutputFormat,
-    Output,
-    type OutputFormat,
-    WebMOutputFormat,
-    getFirstEncodableAudioCodec,
-} from "mediabunny";
+// 인코딩 의존성은보내기 실행 시에만 로드 — 초기 번들/파싱 비용 절감
+import type { AudioCodec, OutputFormat } from "mediabunny";
+const loadMediabunny = () => import("mediabunny");
 
 import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import type { RecordRect } from "../../../lib/ipc";
@@ -1514,7 +1502,7 @@ async function runTransform(
             const Tend = performance.now();
 
             transformTimeEl.sv(
-                `${t("处理帧数：")}${needDecode.size} ${t("处理：")}${((Tend - Tdiff) / needDecode.size).toFixed(0)}ms/f ${t("总耗时：")}${((Tend - Tdiff) / 1000).toFixed(0)}s`,
+                `${t("处理帧数：")} ${needDecode.size} · ${t("处理：")} ${((Tend - Tdiff) / needDecode.size).toFixed(0)}ms/f · ${t("总耗时：")} ${((Tend - Tdiff) / 1000).toFixed(0)}s`,
             );
         }
     }
@@ -1964,6 +1952,9 @@ async function showNowFrames(
                     padding: "4px",
                     alignItems: "center",
                 })
+                .class(Class.deco)
+                .class(Class.hover)
+                .class(Class.click1)
                 .data({ i: String(i) });
             if (inRange) {
                 const srcId = trans2src(id) ?? defaultSrcId;
@@ -2244,21 +2235,24 @@ async function uiDataSave() {
     await p;
 }
 
+const gifOp = () => ({
+    dither: exportConfigEls.gif.gv.dither
+        ? ("floyd-steinberg" as const)
+        : ("none" as const),
+    fps: exportConfigEls.gif.gv.fps,
+    startMs: exportConfigEls.gif.gv.startS * 1000,
+    endMs: exportConfigEls.gif.gv.endS * 1000,
+});
+
 async function save() {
     if (exportEls.type.gv === "png") await saveImages();
-    else if (exportEls.type.gv === "gif")
-        await saveGif({
-            dither: exportConfigEls.gif.gv.dither ? "floyd-steinberg" : "none",
-        });
+    else if (exportEls.type.gv === "gif") await saveGif(gifOp());
     else if (exportEls.type.gv === "apng") await saveApng();
     else if (exportEls.type.gv === "webm")
         await saveWebm({ codec: exportConfigEls.webm.gv.codec });
     else if (exportEls.type.gv === "mp4")
         await saveMp4({ codec: exportConfigEls.mp4.gv.codec });
-    else
-        await saveGif({
-            dither: exportConfigEls.gif.gv.dither ? "floyd-steinberg" : "none",
-        });
+    else await saveGif(gifOp());
     if (store.get("录屏.超级录屏.导出后关闭")) {
         renderSend("windowClose", []);
     }
@@ -2276,6 +2270,8 @@ const audioExportBitrate = 128000;
 /** 按容器支持与浏览器可编码能力选择音轨编码，不能带音频时返回 null */
 async function createAudioSource(format: OutputFormat) {
     if (!transAudio) return null;
+    const { Mp4OutputFormat, getFirstEncodableAudioCodec, AudioBufferSource } =
+        await loadMediabunny();
     const supported = format.getSupportedCodecs();
     const candidates: AudioCodec[] =
         format instanceof Mp4OutputFormat
@@ -2358,10 +2354,15 @@ async function saveImages() {
 
 async function saveGif(op?: {
     dither: "floyd-steinberg" | "none";
+    fps?: number;
+    startMs?: number;
+    endMs?: number;
 }) {
     const exportPath = getSavePath("gif");
     if (!exportPath) return;
 
+    // @ts-expect-error gifenc has no types
+    const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
     const gif = GIFEncoder();
 
     await waitProcessing();
@@ -2371,14 +2372,30 @@ async function saveGif(op?: {
     const delayMap = new Map<number, number>();
     const heightDt = ms2timestamp(1000 / srcRate);
     const lowDt = ms2timestamp(1000 / 15); // todo 设置
+    const maxFps = op?.fps && op.fps > 0 ? Math.min(op.fps, srcRate) : 0;
+    const minDt = maxFps ? ms2timestamp(1000 / maxFps) : 0;
     let lastT = 0;
+    let firstSeen = false;
+    const trimStart = op?.startMs && op.startMs > 0 ? op.startMs : 0;
+    const trimEnd = op?.endMs && op.endMs > 0 ? op.endMs : 0;
     const zeroByte = (transformCs.at(0 as TransId) as EncodedVideoChunk)
         .byteLength;
     for (const [i, chunk] of transformCs.entries()) {
-        if (i === 0) {
+        const tMs = timestamp2ms(chunk.timestamp);
+        if (tMs < trimStart || (trimEnd > 0 && tMs > trimEnd)) continue;
+        if (!firstSeen) {
+            firstSeen = true;
             delayMap.set(chunk.timestamp, 0);
+            lastT = chunk.timestamp;
         } else {
             const delay = chunk.timestamp - lastT;
+            if (maxFps) {
+                if (delay >= minDt) {
+                    delayMap.set(chunk.timestamp, timestamp2ms(delay));
+                    lastT = chunk.timestamp;
+                }
+                continue;
+            }
             if (chunk.byteLength < 0.3 * zeroByte) {
                 if (delay < lowDt) continue;
                 delayMap.set(chunk.timestamp, timestamp2ms(delay));
@@ -2530,6 +2547,7 @@ async function saveApng() {
     await decoder.flush();
     decoder.close();
 
+    const UPNG = (await import("@pdf-lib/upng")).default;
     const bytes = UPNG.encode(images, outputV.width, outputV.height, 0, dels);
 
     fs.writeFileSync(exportPath, Buffer.from(bytes));
@@ -2545,6 +2563,13 @@ async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
 
     await waitProcessing({ codec: op.codec });
 
+    const {
+        Output,
+        WebMOutputFormat,
+        BufferTarget,
+        EncodedVideoPacketSource,
+        EncodedPacket,
+    } = await loadMediabunny();
     const output = new Output({
         format: new WebMOutputFormat({
             appendOnly: false,
@@ -2593,6 +2618,13 @@ async function saveMp4(op: { codec: "avc" | "vp9" | "av1" }) {
 
     await waitProcessing({ codec: op.codec });
 
+    const {
+        Output,
+        Mp4OutputFormat,
+        BufferTarget,
+        EncodedVideoPacketSource,
+        EncodedPacket,
+    } = await loadMediabunny();
     const output = new Output({
         format: new Mp4OutputFormat(),
         target: new BufferTarget(),
@@ -2946,7 +2978,12 @@ const canvasView = view("y")
     .sv("play");
 
 const actionsEl = view("x")
-    .style({ justifyContent: "center", alignItems: "center" })
+    .style({
+        alignItems: "center",
+        padding: "var(--o-padding)",
+        borderTop: "1px solid var(--border-color)",
+    })
+    .class(Class.gap)
     .addInto();
 const playEl = check("", [
     iconEl("pause").style({ display: "block" }),
@@ -3021,11 +3058,27 @@ const playTimeEl = nowTimeEl(() => {
     return transformCs.getDuration() || srcCs.getDuration();
 });
 
+const quickGifButton = button("GIF")
+    .attr({ type: "button", title: t("현재 설정으로 바로 GIF 내보내기") })
+    .on("click", async () => {
+        quickGifButton.el.disabled = true;
+        try {
+            await saveGif(gifOp());
+        } finally {
+            quickGifButton.el.disabled = false;
+        }
+    });
+
 actionsEl.add([
-    view()
+    view("x").style({ flex: "1" }),
+    view("x")
         .class(Class.group)
+        .style({ alignItems: "center" })
         .add([lastKey, lastFrame, playEl, nextFrame, nextKey]),
-    playTimeEl,
+    playTimeEl.style({ marginLeft: "8px", opacity: "0.65" }),
+    view("x")
+        .style({ flex: "1", justifyContent: "flex-end" })
+        .add([quickGifButton]),
 ]);
 
 const transformLogEl = view("x").addInto();
@@ -3055,7 +3108,10 @@ const progressEl = () => {
 
 const transformProgressEl = progressEl();
 
-const transformTimeEl = txt();
+const transformTimeEl = monoTxt().style({
+    fontSize: "12px",
+    opacity: "0.65",
+});
 
 const transformCodec = monoTxt()
     .bindSet((x: [string, boolean, boolean], el) => {
@@ -3077,7 +3133,7 @@ const transformCodec = monoTxt()
     })
     .sv([codec, isDeAcc, isEnAcc]);
 
-const actionUndo = iconBEl("left", "撤回").on("click", async () => {
+const actionUndo = iconBEl("left", t("撤回")).on("click", async () => {
     history.undo();
     renderUiData(history.getData());
     // 启动编辑并立即刷新预览（脏帧自动等待处理完成），不阻塞交互
@@ -3093,7 +3149,7 @@ actionList.el.on("change", async () => {
     runAfterTrans();
     await p;
 });
-const actionUnundo = iconBEl("right", "重做").on("click", async () => {
+const actionUnundo = iconBEl("right", t("重做")).on("click", async () => {
     history.unundo();
     renderUiData(history.getData());
     const p = transform();
@@ -3109,19 +3165,29 @@ history.on("change", () => {
     actionList.el.sv(String(history.index));
 });
 
+actionList.el.style({ maxWidth: "220px" });
 transformLogEl
-    .style({ gap: "4px", alignItems: "center", padding: "var(--o-padding)" })
+    .style({
+        gap: "12px",
+        alignItems: "center",
+        padding: "var(--o-padding)",
+        borderTop: "1px solid var(--border-color)",
+    })
     .add([
         view("x")
             .add([actionUndo, actionList.el, actionUnundo])
             .class(Class.group),
         transformProgressEl,
+        spacer(),
         transformTimeEl,
         transformCodec,
     ]);
 
 const timeLineMain = view("x")
-    .style({ height: "80px" })
+    .style({
+        height: "80px",
+        borderTop: "1px solid var(--border-color)",
+    })
     .addInto()
     .on("click", (e) => {
         const p = e.offsetX / timeLineMain.el.offsetWidth;
@@ -3136,9 +3202,11 @@ const timeLineControlP = view()
         overflowX: "scroll",
         flexShrink: 0,
         paddingRight: "calc(100% - 300px)",
+        paddingBlock: "6px",
+        borderTop: "1px solid var(--border-color)",
     })
     .addInto()
-    .attr({ title: "[Shift+滚轮] 移动\n[滚轮] 缩放" })
+    .attr({ title: t("[Shift+滚轮] 移动\n[滚轮] 缩放") })
     .on("wheel", (e) => {
         e.preventDefault();
         const dx = e.shiftKey ? e.deltaY : e.deltaX;
@@ -3190,7 +3258,7 @@ const timeLineControlPoint = view()
         left: 0,
         width: "2px",
         height: "100%",
-        backgroundColor: "red",
+        backgroundColor: cssColor.main,
         pointerEvents: "none",
     })
     .addInto(timeLineControl)
@@ -3233,11 +3301,11 @@ const timeLineClip = () => {
                   );
             view()
                 .addInto(el)
-                .attr({ title: "点击编辑" })
+                .attr({ title: t("点击编辑") })
                 .style({
                     left: ipx(beforeId),
                     width: ipx(c.i - beforeId + 1),
-                    backgroundColor: "red",
+                    backgroundColor: "#e5484d",
                 })
                 .on("click", () => {
                     editClip(i);
@@ -3303,7 +3371,9 @@ const timeLineTrack = <D>(op: {
     function itemEl(d: (typeof data)[0]) {
         const el = view()
             .data({ id: d.id })
-            .attr({ title: op.setValue ? "点击编辑\n右键删除" : "右键删除" });
+            .attr({
+                title: op.setValue ? t("点击编辑\n右键删除") : t("右键删除"),
+            });
         setItemEl(d, el);
         op.el(el, d);
         track.add(el);
@@ -3537,13 +3607,13 @@ const timeLineTrack = <D>(op: {
 const timeLineClipEl = timeLineClip();
 timeLineClipEl.el
     .style({
-        backgroundColor: "#f001",
+        backgroundColor: "#e5484d1a",
     })
-    .attr({ title: "双击新建镜头" });
+    .attr({ title: t("双击新建镜头") });
 const timeLineSpeedEl = timeLineTrack({
     el: (el, data) => {
         el.style({
-            backgroundColor: "#00f",
+            backgroundColor: "#4c8bf5",
             fontSize: "min(100%, 16px)",
             lineHeight: "100%",
         })
@@ -3589,13 +3659,13 @@ const timeLineSpeedEl = timeLineTrack({
 });
 timeLineSpeedEl.el
     .style({
-        backgroundColor: "#00f1",
+        backgroundColor: "#4c8bf51a",
     })
-    .attr({ title: "拖动新建速度" });
+    .attr({ title: t("拖动新建速度") });
 const timeLineEventEl = timeLineTrack({
     el: (el) => {
         el.style({
-            backgroundColor: "#0f0",
+            backgroundColor: "#34a853",
         });
     },
     newValue: () => null,
@@ -3609,12 +3679,12 @@ const timeLineEventEl = timeLineTrack({
     },
 });
 timeLineEventEl.el.style({
-    backgroundColor: "#0f01",
+    backgroundColor: "#34a8531a",
 });
 const timeLineRemoveEl = timeLineTrack({
     el: (el) => {
         el.style({
-            backgroundColor: "#000",
+            backgroundColor: "#71717a",
         });
     },
     newValue: () => null,
@@ -3631,12 +3701,17 @@ const timeLineRemoveEl = timeLineTrack({
 });
 timeLineRemoveEl.el
     .style({
-        backgroundColor: "#0001",
+        backgroundColor: "#71717a1a",
     })
-    .attr({ title: "拖动删除区间" });
+    .attr({ title: t("拖动删除区间") });
 
 const timeLineFrame = view("x")
-    .style({ minHeight: "150px", gap: "8px" })
+    .style({
+        minHeight: "150px",
+        gap: "8px",
+        padding: "8px var(--o-padding)",
+        borderTop: "1px solid var(--border-color)",
+    })
     .addInto();
 const timeLineFrameHl = addClass(
     {
@@ -3653,14 +3728,55 @@ const exportConfigEls = {
             display: "flex",
             alignItems: "center",
         });
-        el.add(dither);
+        const fps = label(
+            [
+                select([
+                    { value: "0", name: t("원본 속도") },
+                    { value: "24" },
+                    { value: "15" },
+                    { value: "10" },
+                    { value: "5" },
+                ] as const).class(Class.noDeco),
+                t("초당 프레임"),
+            ],
+            1,
+        ).style({
+            display: "flex",
+            alignItems: "center",
+        });
+        const startInput = input("number")
+            .attr({ min: "0", step: "0.1", ariaLabel: t("시작(초)") })
+            .style({ width: "56px" })
+            .sv("0");
+        const endInput = input("number")
+            .attr({ min: "0", step: "0.1", ariaLabel: t("끝(초)") })
+            .style({ width: "56px" })
+            .sv("0");
+        const trim = label([startInput, "–", endInput, t("초")], 1).style({
+            display: "flex",
+            alignItems: "center",
+        });
+        el.add([dither, fps, trim]);
         return el
             .bindGet(() => ({
                 dither: dither.gv,
+                fps: Number(fps.gv) || 0,
+                startS: Math.max(0, Number(startInput.gv) || 0),
+                endS: Math.max(0, Number(endInput.gv) || 0),
             }))
-            .bindSet((v: { dither: boolean }) => {
-                dither.sv(v.dither);
-            });
+            .bindSet(
+                (v: {
+                    dither: boolean;
+                    fps?: number;
+                    startS?: number;
+                    endS?: number;
+                }) => {
+                    dither.sv(v.dither);
+                    fps.sv(String(v.fps ?? 0) as "0");
+                    startInput.sv(String(v.startS ?? 0));
+                    endInput.sv(String(v.endS ?? 0));
+                },
+            );
     })(),
     apng: view(),
     mp4: (() => {
@@ -3672,7 +3788,7 @@ const exportConfigEls = {
                     { value: "vp9" },
                     { value: "av1" },
                 ] as const).class(Class.noDeco),
-                "编码",
+                t("编码"),
             ],
             1,
         )
@@ -3700,7 +3816,7 @@ const exportConfigEls = {
                     { value: "vp9" },
                     { value: "av1" },
                 ] as const).class(Class.noDeco),
-                "编码",
+                t("编码"),
             ],
             1,
         )
@@ -3756,14 +3872,14 @@ const exportEl = frame("export", {
         .class(Class.gap),
     _x: {
         _: view("x").class(Class.group),
-        export: iconBEl("save", "保存").on("click", save),
+        export: iconBEl("save", t("保存")).on("click", save),
         type: exportEls.type,
     },
     exportConfig: exportEls.exportConfig,
     _s: spacer(),
     quality: exportQuality,
     px: exportPx.el,
-    editClip: iconBEl("draw", "编辑").on("click", async () => {
+    editClip: iconBEl("draw", t("编辑")).on("click", async () => {
         // 统一内容获取：渲染中的帧等完成，保证快照内容最新
         const canvas = await fetchFrame(mainFrameGet, willPlayI);
         if (!canvas) return;
@@ -4034,7 +4150,7 @@ pack(document.body).style({
         view("x")
             .add([
                 recordTime,
-                iconBEl("close", "取消录制").on("click", () => {
+                iconBEl("close", t("取消录制")).on("click", () => {
                     stopRecord(true);
                 }),
             ])
