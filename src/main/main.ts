@@ -2368,8 +2368,10 @@ let shelfPendingReshow = false;
 let shelfRefreshSequence = 0;
 let shelfVisibilitySequence = 0;
 
-function hideCaptureShelf(reshow = true) {
-    const sequence = ++shelfVisibilitySequence;
+function hideCaptureShelf(reshow = true, invalidate = true) {
+    const sequence = invalidate
+        ? ++shelfVisibilitySequence
+        : shelfVisibilitySequence;
     if (reshow && captureShelfWindow && !captureShelfWindow.isDestroyed())
         shelfPendingReshow = true;
     if (
@@ -2410,7 +2412,8 @@ async function showCaptureShelf() {
     }
     if (clipWindow?.isVisible()) {
         shelfPendingReshow = true;
-        hideCaptureShelf(false);
+        // 클립에 가려 숨길 뿐이므로 대기 중인 복원 시퀀스를 무효화하지 않음
+        hideCaptureShelf(false, false);
         return;
     }
     shelfPendingReshow = false;
