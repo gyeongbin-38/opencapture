@@ -3,6 +3,8 @@ import type {
     CaptureCutoutInput,
     CaptureCutoutResult,
 } from "./captureBoard";
+import type { DashboardLanguageSettings } from "./dashboardLanguage";
+import type { FileToolsApi } from "./fileTools";
 
 export type OpenCaptureActionName =
     | "capture"
@@ -30,7 +32,9 @@ export type OpenCaptureActionName =
     | "configure-workflow"
     | "export-items"
     | "pin-items"
+    | "pin-stack"
     | "combine-items"
+    | "combine-pdf"
     | "load-items"
     | "toggle-compact"
     | "hide-window"
@@ -47,6 +51,8 @@ export type OpenCaptureActionName =
     | "index-ocr"
     | "save-pin-set"
     | "remove-pin-set"
+    | "export-settings"
+    | "import-settings"
     | "pin-set";
 
 export type CaptureItemStatus = "temporary" | "library" | "trash";
@@ -131,7 +137,7 @@ export interface StageCaptureResult {
 }
 
 export type CaptureQueryScope = "temporary" | "library" | "trash" | "all";
-export type CaptureSort = "newest" | "oldest" | "name";
+export type CaptureSort = "newest" | "oldest" | "name" | "size";
 
 export interface CaptureItemsQuery {
     scope: CaptureQueryScope;
@@ -168,6 +174,7 @@ export interface CaptureExperiencePreferences {
     feedback: CaptureFeedbackPreferences;
     defaultPreset: "copy-close" | "stage-only" | "stage-pin" | "annotate";
     shelfEnabled: boolean;
+    trashRetentionDays: number;
 }
 
 export interface NamedBeautifyStyle {
@@ -276,6 +283,7 @@ export interface OpenCaptureItem {
     draftManifestPath?: string;
     source?: CaptureSourceContext;
     thumbnailPath?: string;
+    size?: number;
 }
 
 export interface OpenCaptureWorkflow {
@@ -318,6 +326,13 @@ export interface OpenCaptureRuntime {
     startAtLogin: boolean;
     shortcuts: OpenCaptureShortcut[];
     mouseChord?: MouseChordAction;
+    radialMenu?: {
+        enabled: boolean;
+        actions: string[];
+        trigger?: "wheel" | "back" | "both";
+        hookFailed?: boolean;
+        stats?: Record<string, number>;
+    };
     stepCapture?: boolean;
     captureDiagnostics?: CaptureDiagnosticTrace[];
 }
@@ -355,6 +370,7 @@ export interface TranslationOptions {
 }
 
 export interface TranslationStatus {
+    runtimeReady: boolean;
     engine?: TranslationEngine;
     local: {
         installed: boolean;
@@ -373,7 +389,74 @@ export interface TranslationConfiguration {
     apiKey?: string;
 }
 
+export interface DashboardPin {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    src: string;
+    opacity: number;
+    visible: boolean;
+    ignored: boolean;
+}
+
+export interface PinWorkspaceSummary {
+    name: string;
+    count: number;
+}
+
+export type CaptureConvertFormat =
+    | "png"
+    | "jpg"
+    | "webp"
+    | "avif"
+    | "bmp"
+    | "ico"
+    | "gif"
+    | "pdf";
+
+export interface CaptureConvertOptions {
+    scale?: number;
+    quality?: number;
+    background?: string;
+    maxWidth?: number;
+    pngData?: boolean;
+    namePattern?: string;
+    encodedSize?: { width: number; height: number };
+}
+
+export interface CaptureConvertOutput {
+    path: string;
+    bytes: number;
+    width: number;
+    height: number;
+}
+
+export interface CaptureConvertPreview {
+    data: Uint8Array;
+    previewMime: string;
+    exportMime: string;
+    outputBytes?: number;
+    width: number;
+    height: number;
+    approximate: boolean;
+}
+
+export interface CaptureRegistrationOutcome {
+    path: string;
+    status: "registered" | "duplicate" | "unsupported" | "failed";
+    itemId?: string;
+    error?: string;
+}
+
+export interface CaptureDragAcknowledgement {
+    started: boolean;
+    error?: string;
+}
+
 export interface OpenCaptureApi {
+    fileTools: FileToolsApi;
     boards: CaptureBoardApi;
     cutoutImage(input: CaptureCutoutInput): Promise<CaptureCutoutResult>;
     onBoardFlushRequested(callback: (requestId: string) => void): () => void;
@@ -384,6 +467,22 @@ export interface OpenCaptureApi {
     ): Promise<void>;
     finishBoardClose(): Promise<void>;
     shelfAction(name: "copy" | "edit" | "pin", id: string): Promise<boolean>;
+    listPins(): Promise<DashboardPin[]>;
+    pinAction(
+        action:
+            | "close"
+            | "blink"
+            | "restore"
+            | "closeAll"
+            | "hideAll"
+            | "toggleBelow",
+        id?: string,
+    ): Promise<unknown>;
+    pinWorkspace(
+        op: "save" | "restore" | "delete" | "list",
+        name?: string,
+        opts?: { keep?: boolean },
+    ): Promise<PinWorkspaceSummary[]>;
     action(name: OpenCaptureActionName, payload?: unknown): Promise<unknown>;
     getState(): Promise<OpenCaptureState>;
     translate(options: TranslationOptions): Promise<string[]>;
@@ -395,8 +494,44 @@ export interface OpenCaptureApi {
     importFiles(files: File[]): Promise<OpenCaptureState>;
     getItemData(id: string): Promise<string>;
     getItemFile(id: string): Promise<Uint8Array>;
+    convertItem(
+        id: string,
+        format: CaptureConvertFormat,
+        data?: Uint8Array,
+        options?: CaptureConvertOptions,
+    ): Promise<CaptureConvertOutput>;
+    convertPath(
+        path: string,
+        format: CaptureConvertFormat,
+        data?: Uint8Array,
+        options?: CaptureConvertOptions,
+    ): Promise<CaptureConvertOutput>;
+    previewItem(
+        id: string,
+        format: CaptureConvertFormat,
+        data?: Uint8Array,
+        options?: CaptureConvertOptions,
+    ): Promise<CaptureConvertPreview>;
+    previewPath(
+        path: string,
+        format: CaptureConvertFormat,
+        data?: Uint8Array,
+        options?: CaptureConvertOptions,
+    ): Promise<CaptureConvertPreview>;
+    registerConvertedPaths(
+        paths: string[],
+    ): Promise<CaptureRegistrationOutcome[]>;
+    dragConvertedPath(path: string): Promise<CaptureDragAcknowledgement>;
+    revealPath(path: string): Promise<boolean>;
+    importPaths(paths: string[]): Promise<OpenCaptureState>;
+    pathForFile(file: File): string;
+    readFilePath(path: string): Promise<Uint8Array>;
+    dragFilePath(path: string): void;
     startDrag(id: string): void;
+    getLanguageSettings(): Promise<DashboardLanguageSettings>;
+    setLanguage(language: string): Promise<DashboardLanguageSettings>;
     t(text: string): string;
+    lang: string;
     onShowLibrary(callback: () => void): () => void;
     onLibraryChanged(callback: () => void): () => void;
     onWorkflowError(callback: (message: string) => void): () => void;
@@ -416,6 +551,12 @@ export interface OpenCaptureApi {
     getDraft(id: string): Promise<CaptureDraft>;
     recognizeItem(id: string): Promise<OcrJobResult>;
     requestComparison(ids: string[]): Promise<void>;
+    requestConversion(ids: string[]): Promise<void>;
+    onConversionRequested(
+        callback: (
+            items: Pick<OpenCaptureItem, "id" | "path" | "name">[],
+        ) => void,
+    ): () => void;
     onCompareRequested(callback: (ids: string[]) => void): () => void;
     queryItems(query: CaptureItemsQuery): Promise<CaptureItemsQueryResult>;
     promoteItems(ids: string[]): Promise<OpenCaptureState>;

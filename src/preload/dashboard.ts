@@ -5,11 +5,25 @@ import type {
     TranslationConfiguration,
     TranslationOptions,
 } from "../../lib/openCaptureTypes";
+import arStrings from "../../lib/translate/ar.json";
+import enStrings from "../../lib/translate/en.json";
+import eoStrings from "../../lib/translate/eo.json";
+import esStrings from "../../lib/translate/es.json";
+import frStrings from "../../lib/translate/fr.json";
 import koStrings from "../../lib/translate/ko.json";
+import ruStrings from "../../lib/translate/ru.json";
 import sourceStrings from "../../lib/translate/source.json";
+import zhHantStrings from "../../lib/translate/zh-HANT.json";
 
 const langMaps: Record<string, Record<string, string>> = {
+    ar: arStrings as Record<string, string>,
+    en: enStrings as Record<string, string>,
+    eo: eoStrings as Record<string, string>,
+    es: esStrings as Record<string, string>,
+    fr: frStrings as Record<string, string>,
     ko: koStrings as Record<string, string>,
+    ru: ruStrings as Record<string, string>,
+    "zh-HANT": zhHantStrings as Record<string, string>,
 };
 const source = sourceStrings as Record<string, string>;
 let dashboardLang = "ko";
@@ -27,6 +41,50 @@ const t = (text: string) => {
 };
 
 const api: OpenCaptureApi = {
+    fileTools: {
+        select: (paths, mode) =>
+            ipcRenderer.invoke("oc:file-tools:select", paths, mode),
+        run: (input) => ipcRenderer.invoke("oc:file-tools:run", input),
+        cancel: (id) => ipcRenderer.invoke("oc:file-tools:cancel", id),
+        outputAction: (id, action) =>
+            ipcRenderer.invoke("oc:file-tools:output-action", id, action),
+        sourceAction: (ids, action, jobId, destinationId) =>
+            ipcRenderer.invoke(
+                "oc:file-tools:source-action",
+                ids,
+                action,
+                jobId,
+                destinationId,
+            ),
+        onProgress: (callback) => {
+            const listener = (
+                _event: Electron.IpcRendererEvent,
+                value: unknown,
+            ) => {
+                if (!value || typeof value !== "object") return;
+                const progress = value as Record<string, unknown>;
+                if (
+                    typeof progress.jobId !== "string" ||
+                    ![
+                        progress.completed,
+                        progress.total,
+                        progress.percent,
+                    ].every(
+                        (number) =>
+                            typeof number === "number" &&
+                            Number.isFinite(number),
+                    )
+                )
+                    return;
+                callback(
+                    value as import("../../lib/fileTools").FileToolProgress,
+                );
+            };
+            ipcRenderer.on("oc:file-tools:progress", listener);
+            return () =>
+                ipcRenderer.removeListener("oc:file-tools:progress", listener);
+        },
+    },
     boards: {
         status: () => ipcRenderer.invoke("oc:boards:status"),
         list: () => ipcRenderer.invoke("oc:boards:list"),
@@ -186,8 +244,50 @@ const api: OpenCaptureApi = {
         ),
     getItemData: (id: string) => ipcRenderer.invoke("oc:item-data", id),
     getItemFile: (id: string) => ipcRenderer.invoke("oc:item-file", id),
+    convertItem: (
+        id: string,
+        format: string,
+        data?: Uint8Array,
+        options?: unknown,
+    ) => ipcRenderer.invoke("oc:items:convert", { id, format, data, options }),
+    convertPath: (
+        path: string,
+        format: string,
+        data?: Uint8Array,
+        options?: unknown,
+    ) =>
+        ipcRenderer.invoke("oc:paths:convert", { path, format, data, options }),
+    previewItem: (
+        id: string,
+        format: string,
+        data?: Uint8Array,
+        options?: unknown,
+    ) => ipcRenderer.invoke("oc:items:preview", { id, format, data, options }),
+    previewPath: (
+        path: string,
+        format: string,
+        data?: Uint8Array,
+        options?: unknown,
+    ) =>
+        ipcRenderer.invoke("oc:paths:preview", { path, format, data, options }),
+    registerConvertedPaths: (paths: string[]) =>
+        ipcRenderer.invoke("oc:converted:register", paths),
+    dragConvertedPath: (path: string) =>
+        ipcRenderer.invoke("oc:converted:drag", path),
+    revealPath: (path: string) => ipcRenderer.invoke("oc:reveal-path", path),
+    importPaths: (paths: string[]) =>
+        ipcRenderer.invoke("oc:import-files", paths),
+    pathForFile: (file: File) => webUtils.getPathForFile(file),
+    readFilePath: (path: string) => ipcRenderer.invoke("oc:file:read", path),
+    dragFilePath: (path: string) => ipcRenderer.send("oc:drag-path", path),
     startDrag: (id: string) => ipcRenderer.send("oc:drag", id),
+    getLanguageSettings: () => ipcRenderer.invoke("oc:language:get"),
+    setLanguage: (language) => ipcRenderer.invoke("oc:language:set", language),
     shelfAction: (name, id) => ipcRenderer.invoke("oc:shelf:action", name, id),
+    listPins: () => ipcRenderer.invoke("oc:pins:list"),
+    pinAction: (action, id) => ipcRenderer.invoke("oc:pins:action", action, id),
+    pinWorkspace: (op, name, opts) =>
+        ipcRenderer.invoke("oc:pins:workspace", op, name, opts),
     getPreferences: () => ipcRenderer.invoke("oc:preferences:get"),
     configureExperience: (patch) =>
         ipcRenderer.invoke("oc:preferences:configure", patch),
@@ -196,11 +296,35 @@ const api: OpenCaptureApi = {
     recognizeItem: (id) => ipcRenderer.invoke("oc:ocr:recognize", id),
     queryItems: (query) => ipcRenderer.invoke("oc:items:query", query),
     promoteItems: (ids) => ipcRenderer.invoke("oc:items:promote", ids),
-    repairDraft: (id: string) => ipcRenderer.invoke("oc:items:repair-draft", id),
+    repairDraft: (id: string) =>
+        ipcRenderer.invoke("oc:items:repair-draft", id),
     trashItems: (ids) => ipcRenderer.invoke("oc:items:trash", ids),
     restoreItems: (ids) => ipcRenderer.invoke("oc:items:restore", ids),
     copySourceFiles: (ids) => ipcRenderer.invoke("oc:items:copy-source", ids),
     requestComparison: (ids) => ipcRenderer.invoke("oc:compare:open", ids),
+    requestConversion: (ids) => ipcRenderer.invoke("oc:conversion:open", ids),
+    onConversionRequested: (callback) => {
+        const listener = (
+            _event: Electron.IpcRendererEvent,
+            items: unknown,
+        ) => {
+            if (
+                Array.isArray(items) &&
+                items.length <= 1000 &&
+                items.every(
+                    (item) =>
+                        item &&
+                        typeof item.id === "string" &&
+                        typeof item.path === "string" &&
+                        typeof item.name === "string",
+                )
+            )
+                callback(items);
+        };
+        ipcRenderer.on("oc:conversion:requested", listener);
+        return () =>
+            ipcRenderer.removeListener("oc:conversion:requested", listener);
+    },
     onCompareRequested: (callback) => {
         const listener = (_event: Electron.IpcRendererEvent, ids: unknown) => {
             if (Array.isArray(ids) && ids.every((id) => typeof id === "string"))
@@ -226,6 +350,7 @@ const api: OpenCaptureApi = {
     getSampledColors: () => ipcRenderer.invoke("oc:colors:list"),
     cancelJob: (jobId) => ipcRenderer.invoke("oc:jobs:cancel", jobId),
     t,
+    lang: dashboardLang,
 };
 
 contextBridge.exposeInMainWorld("openCapture", api);

@@ -31,6 +31,12 @@ export interface setting {
         双击: "复制" | "保存";
         右键: "取色器" | "关闭";
         全局: "关闭" | "截屏" | "快速截屏" | "录屏" | "起始页";
+        径向菜单: {
+            开启: boolean;
+            动作: string[];
+            트리거?: "wheel" | "back" | "both";
+        };
+        径向菜单统计?: Record<string, number>;
     };
     起始页快捷键: { [id: string]: string };
     大小栏快捷键: {
@@ -78,6 +84,7 @@ export interface setting {
         按钮大小: number;
         按钮图标比例: number;
         初始位置: { left: string; top: string };
+        快捷位置: { left: number; top: number } | null;
         功能: 功能[];
         稍后出现: boolean;
     };
@@ -135,6 +142,7 @@ export interface setting {
             光标: boolean;
             选区: { x: number[]; y: number[] };
         };
+        延迟: number;
     };
     图像编辑: {
         默认属性: {
@@ -238,8 +246,24 @@ export interface setting {
         保存并复制: boolean;
     };
     保存名称: { 前缀: string; 时间: string; 后缀: string };
-    框选后默认操作: "no" | 功能;
+    框选后默认操作: "no" | 功能 | "copysave";
     快速截屏: { 模式: "clip" | "path"; 路径: string };
+    捕获: {
+        上次区域: {
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+            displayId?: number;
+        } | null;
+        历史区域: {
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+            displayId?: number;
+        }[];
+    };
     引擎: {
         记忆: {
             搜索: string;

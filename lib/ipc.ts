@@ -17,6 +17,7 @@ import type {
     translateWinType,
     功能,
 } from "../src/ShareTypes";
+import type { CaptureSelectionMode } from "./captureWindowSelection";
 import type { CaptureSourceContext } from "./openCaptureTypes";
 
 export type ClipProject = {
@@ -29,6 +30,34 @@ export type ClipProject = {
 export type ClipCaptureContext = {
     requestId: string;
     source: CaptureSourceContext;
+    selectionMode: CaptureSelectionMode;
+};
+
+export type CardPinMetadata = {
+    kind: "text" | "qrcode";
+    text: string;
+    sourceLength: number;
+    retainedLength: number;
+    truncated: boolean;
+    qrError?: string;
+};
+
+export type RecordSavePathResult =
+    | { status: "selected"; path: string }
+    | { status: "cancelled" }
+    | { status: "error"; error: string };
+
+export type DingPinInfo = {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    src: string;
+    opacity: number;
+    visible: boolean;
+    ignored: boolean;
+    card?: CardPinMetadata;
 };
 
 type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y
@@ -56,7 +85,8 @@ export type RecordRect = {
 };
 
 type Message = {
-    clip_show: (requestId?: string) => void;
+    clip_show: (requestId?: string, nowScreenId?: number) => void;
+    clip_capture_failed: (requestId?: string, message?: string) => void;
     capture_ready: (requestId: string) => void;
     capture_shown: (requestId: string) => void;
     capture_shelf_close: () => void;
@@ -72,6 +102,13 @@ type Message = {
         type: "translate" | "ding",
         rect: { w: number; h: number; x: number; y: number },
     ) => void;
+    clip_last_rect: (rect: {
+        w: number;
+        h: number;
+        x: number;
+        y: number;
+        displayId?: number;
+    }) => void;
     clip_mac_app: () => { canceled: boolean; filePaths: string[] };
     clip_record: (
         rect: [number, number, number, number],
@@ -114,6 +151,7 @@ type Message = {
     windowShow: () => void;
     runPath: () => string;
     systemLan: () => string;
+    active_language: () => string;
     feedbackBug: (op?: {
         title?: string;
         main?: string;
@@ -157,6 +195,7 @@ type Message = {
         screenW: number,
         screenH: number,
     ) => void;
+    recordInitError: () => void;
     recordStartStop: () => void;
     recordStop: () => void;
     recordStart: () => void;
@@ -170,8 +209,14 @@ type Message = {
             | { type: "move_start"; more: DingStart }
             | { type: "move_end" }
             | { type: "back"; id: string }
-            | { type: "resize"; more: DingResize },
+            | { type: "resize"; more: DingResize }
+            | { type: "focus"; id: string }
+            | { type: "blink"; id: string }
+            | { type: "ignore"; id: string; value: boolean }
+            | { type: "restore" },
     ) => void;
+    dingQuery: () => void;
+    dingQueryResult: (pins: DingPinInfo[]) => void;
     addDing: (
         wid: number,
         x: number,
@@ -179,7 +224,14 @@ type Message = {
         w: number,
         h: number,
         url: string,
-        type: "translate" | "ding",
+        type: "translate" | "ding" | "text" | "qrcode",
+        opts?: {
+            opacity?: number;
+            collapsed?: boolean;
+            stack?: string[];
+            text?: string;
+            card?: CardPinMetadata;
+        },
     ) => void;
     superRecorderInit: (sourceId: string, fixed?: RecordRect) => void;
     superPhotoEditorInit: (img: string) => void;
@@ -190,7 +242,11 @@ type Message = {
         rect: { x: number; y: number; w: number; h: number },
     ) => void;
     dingMouse: (x: number, y: number) => void;
-    recordSavePathReturn: (path: string) => void; // todo remove
+    radialShow: (ids: string[]) => void;
+    radialHighlight: (index: number) => void;
+    radialHide: () => void;
+    radialReady: () => void;
+    recordSavePathReturn: (result: RecordSavePathResult) => void;
     editorInit: (name: number, list: MainWinType) => void;
     browserNew: (id: number, url: string) => void;
     browserTitle: (id: number, title: string) => void;
