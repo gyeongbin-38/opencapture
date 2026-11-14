@@ -1,5 +1,6 @@
 import { button, ele, initDKH, txt, view } from "dkh-ui";
 import type { OpenCaptureItem } from "../../../lib/openCaptureTypes";
+import { icon } from "../dashboard/icons";
 import { t } from "../dashboard/t";
 
 initDKH({ pureStyle: true });
@@ -20,22 +21,42 @@ const status = txt("")
     .class("shelf-status")
     .attr({ role: "status", ariaLive: "polite" })
     .addInto(panel);
-const controls: HTMLButtonElement[] = [];
+txt(
+    [
+        `C ${t("복사")}`,
+        `E ${t("주석")}`,
+        `P ${t("고정")}`,
+        `V ${t("비교")}`,
+        `X ${t("변환")}`,
+        `A ${t("보관")}`,
+        t("드래그로 보내기"),
+    ].join(" · "),
+)
+    .class("shelf-hint")
+    .addInto(panel);
+const controls: { el: HTMLButtonElement; key?: string }[] = [];
 function action(
     label: string,
+    glyph: string,
+    key: string,
     handler: (ids: string[]) => Promise<unknown>,
     multiple = false,
 ) {
-    const control = button(t(label))
+    const control = button()
         .class("shelf-action")
-        .attr({ type: "button" })
+        .attr({
+            type: "button",
+            ariaLabel: `${t(label)} (${key.toUpperCase()})`,
+            title: `${t(label)} (${key.toUpperCase()})`,
+        })
+        .add(icon(glyph))
         .on("click", () => {
             const ids = Array.from(selected);
             if (!ids.length) return;
             control.el.disabled = true;
             void handler(ids)
-                .then(() => {
-                    status.el.textContent = t("완료");
+                .then((result) => {
+                    if (result !== false) status.el.textContent = t("완료");
                     return refresh();
                 })
                 .catch((error) => {
@@ -46,10 +67,13 @@ function action(
         })
         .addInto(actions);
     control.el.dataset.multiple = String(multiple);
-    controls.push(control.el);
+    control.el.dataset.shelfAction = key;
+    controls.push({ el: control.el, key });
 }
 action(
     "복사",
+    "▣",
+    "c",
     async (ids) => {
         if (ids.length === 1)
             return window.openCapture.shelfAction("copy", ids[0]);
@@ -57,23 +81,44 @@ action(
     },
     true,
 );
-action("주석", (ids) => window.openCapture.shelfAction("edit", ids[0]));
+action("주석", "✎", "e", (ids) =>
+    window.openCapture.shelfAction("edit", ids[0]),
+);
 action(
     "고정",
+    "◇",
+    "p",
     async (ids) => {
         for (const id of ids) await window.openCapture.shelfAction("pin", id);
     },
     true,
 );
-action("비교", (ids) => window.openCapture.requestComparison(ids), true);
-action("보관", (ids) => window.openCapture.promoteItems(ids), true);
+action(
+    "비교",
+    "⇄",
+    "v",
+    (ids) => window.openCapture.requestComparison(ids),
+    true,
+);
+action(
+    "변환",
+    "⭘",
+    "x",
+    async (ids) => {
+        await window.openCapture.requestConversion(ids);
+        status.el.textContent = "";
+        return false;
+    },
+    true,
+);
+action("보관", "⇩", "a", (ids) => window.openCapture.promoteItems(ids), true);
 
 function renderActions() {
     for (const control of controls) {
-        control.disabled =
+        control.el.disabled =
             !selected.size ||
-            (control.dataset.multiple !== "true" && selected.size !== 1) ||
-            (control.textContent === t("비교") && selected.size < 2);
+            (control.el.dataset.multiple !== "true" && selected.size !== 1) ||
+            (control.key === "v" && selected.size < 2);
     }
 }
 function render() {
@@ -147,7 +192,13 @@ document.addEventListener("keydown", (event) => {
         event.preventDefault();
         for (const item of items) selected.add(item.id);
         render();
+        return;
     }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const control = controls.find(
+        (control) => control.key === event.key.toLowerCase(),
+    );
+    if (control && !control.el.disabled) control.el.click();
 });
 void window.openCapture
     .getPreferences()

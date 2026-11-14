@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type * as Crypto from "node:crypto";
 import chroma from "chroma-js";
 import hotkeys from "hotkeys-js";
 import {
@@ -15,8 +16,6 @@ import { writeImage, writeText } from "../lib/clipboard";
 import { Class, cssColor, getImgUrl, initStyle, setTitle } from "../root/root";
 
 import { EraserBrush } from "@erase2d/fabric";
-import bmp from "bmp-js";
-import { detectBorders } from "edge_det";
 import {
     ActiveSelection,
     Canvas,
@@ -37,8 +36,6 @@ import {
     classRegistry,
     filters,
 } from "fabric";
-import { findOffset } from "picture_match";
-
 import initScreenShots from "../screenShot/screenShot";
 const screenShots = initScreenShots(
     { c: store.get("额外截屏器.命令"), path: store.get("额外截屏器.位置") },
@@ -62,6 +59,13 @@ import {
     view,
 } from "dkh-ui";
 import { DEFAULT_CAPTURE_EXPERIENCE } from "../../../lib/captureExperience";
+import {
+    type CaptureSelectionEdge,
+    type CaptureSelectionMode,
+    selectionEdgesForMode,
+    windowBoundsToCanvas,
+    windowEdgeAtPoint,
+} from "../../../lib/captureWindowSelection";
 import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import type {
     CaptureExperiencePreferences,
@@ -106,11 +110,23 @@ let captureInitSequence = 0;
 let screenRequestSequence = 0;
 let captureInitQueue: Promise<void> = Promise.resolve();
 let batchRegions: rect[] = [];
+let selectionBeforeDrag: {
+    rect: rect;
+    points: point[];
+    manual: boolean;
+} | null = null;
+let handleDrag: {
+    handle: HTMLButtonElement;
+    pointerId: number;
+    rect: rect;
+    origin: editor_position;
+} | null = null;
 let gestureOrigin: {
     x: number;
     y: number;
     moved: boolean;
     target: CaptureTool | null;
+    pointerId: number;
 } | null = null;
 let suppressContextUntil = 0;
 
@@ -370,8 +386,8 @@ function rangeBar(
 function setSetting() {
     const 工具栏 = store.get("工具栏");
     setProperties({
-        "--color-size": `${colorSize * colorISize}px`,
-        "--color-i-size": `${colorISize}px`,
+        "--color-size": `${Math.min(colorSize * colorISize, 96)}px`,
+        "--color-i-size": `${Math.min(colorSize * colorISize, 96) / colorSize}px`,
         "--color-i-i": `${colorSize}`,
         "--bar-size": `${bSize}px`,
         "--bar-icon": `${工具栏.按钮图标比例}`,
@@ -383,51 +399,68 @@ function toCanvas(canvas: HTMLCanvasElement, img: ImageData) {
 }
 
 async function setScreen(i: (typeof allScreens)[0]) {
+    if (!i) throw new Error(t("화면을 캡처하지 못했습니다."));
     const generation = captureInitSequence;
     const screenRequest = ++screenRequestSequence;
     let _img = screenShotCache.get(i.id);
     if (!_img) {
-        try {
-            const __img = (await i.capture()).toImageData();
-            if (
-                generation !== captureInitSequence ||
-                screenRequest !== screenRequestSequence
-            )
-                return;
-            if (__img) {
-                screenShotCache.set(i.id, __img);
-                _img = __img;
-            }
-        } catch (error) {
-            console.error("Error capturing screen:", error);
-            // todo tip
-        }
+        _img = (await i.capture()).toImageData();
     }
     const img = _img;
     if (
         generation !== captureInitSequence ||
         screenRequest !== screenRequestSequence
     )
-        return;
-    if (!img) return;
+        return false;
+    if (
+        !img ||
+        !Number.isSafeInteger(img.width) ||
+        !Number.isSafeInteger(img.height) ||
+        img.width <= 0 ||
+        img.height <= 0 ||
+        img.data?.length !== img.width * img.height * 4
+    )
+        throw new Error(t("캡처한 화면이 비어 있습니다. 다시 캡처해 주세요."));
+    screenShotCache.set(i.id, img);
     const w = img.width;
     const h = img.height;
-    mainCanvas.width = drawCanvas.width = w;
-    mainCanvas.height = drawCanvas.height = h;
+    mainCanvas.width = w;
+    mainCanvas.height = h;
+    fabricCanvas.setDimensions({ width: w, height: h });
     setClipSize(w, h);
     toCanvas(mainCanvas, img);
-    finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
-    if (记忆框选)
+    rectSelect = false;
+    finalRect =
+        captureSelectionMode === "window" ||
+        captureSourceContext.kind === "capture"
+            ? [0, 0, 0, 0]
+            : [0, 0, mainCanvas.width, mainCanvas.height];
+    if (captureSelectionMode === "region" && 记忆框选)
         if (记忆框选值?.[i.id]?.[2]) {
             finalRect = 记忆框选值[i.id];
             rectSelect = true;
             finalRectFix();
         } // 记忆框选边不为0时
-    drawClipRect();
     nowScreenId = i.id;
+    edgeRect.length = 0;
+    getWin();
+    drawClipRect();
+    if (finalRect[2] <= 0 || finalRect[3] <= 0) showBars(false);
+
+    if (captureSelectionMode === "window") {
+        if (selectionEdgesForMode(edgeRect, "window", false).length)
+            captureWorkspace?.showStatus(
+                "창 위로 포인터를 이동한 다음 클릭하세요.",
+            );
+        else
+            captureWorkspace?.showError(
+                new Error("현재 화면에서 캡처할 창을 찾을 수 없습니다."),
+            );
+    }
 
     if (w < window.innerWidth || h < window.innerHeight)
         document.body.classList.add("editor_bg");
+    return true;
 }
 
 function setEditorP(zoom: number, x: number, y: number) {
@@ -498,12 +531,13 @@ function setClipCursor(c: string) {
     clipEl.style.cursor = c;
 }
 
-function edge() {
+async function edge() {
     const canvas = mainCanvas;
 
     const cMin = store.get("框选.自动框选.最小阈值");
     const cMax = store.get("框选.自动框选.最大阈值");
 
+    const { detectBorders } = await import("edge_det");
     const borders = detectBorders(
         new Uint8Array(
             canvas
@@ -531,18 +565,13 @@ function edge() {
 }
 
 function getWin() {
+    const display = getNowScreen();
     for (const win of windows) {
-        const x = Math.max(win.rect.x, 0);
-        const y = Math.max(win.rect.y, 0);
-        const w = Math.min(win.rect.w, mainCanvas.width - x);
-        const h = Math.min(win.rect.h, mainCanvas.height - y);
-        edgeRect.push({
-            x: x,
-            y: y,
-            width: w,
-            height: h,
-            type: "system",
+        const edge = windowBoundsToCanvas(win.rect, display.bounds, {
+            width: mainCanvas.width,
+            height: mainCanvas.height,
         });
+        if (edge) edgeRect.push(edge);
     }
 }
 
@@ -581,7 +610,7 @@ function backHotkeyScope() {
 function setDefaultAction(act: setting["框选后默认操作"] | undefined) {
     if (!act) return;
     autoDo = act;
-    if (autoDo !== "no") {
+    if (autoDo !== "no" && autoDo !== "copysave") {
         toolsX[autoDo].el.el.style.backgroundColor = "var(--bar-focus-color)";
     }
 }
@@ -600,6 +629,7 @@ function 记忆框选f() {
 
 // 关闭
 async function closeWin() {
+    cancelSelectionInteraction();
     try {
         await captureWorkspace?.flush();
     } catch (error) {
@@ -672,25 +702,49 @@ function drawM(v: boolean) {
  */
 function trackLocation() {
     const toolbar = toolBar.getBoundingClientRect();
-    drawBar.style.left = `${Math.max(12, Math.min(innerWidth - drawBar.offsetWidth - 12, toolbar.left))}px`;
     const height = drawBar.offsetHeight;
+    const width = drawBar.offsetWidth;
     const below = toolbar.bottom + 8;
-    drawBar.style.top = `${Math.max(12, below + height < innerHeight ? below : toolbar.top - height - 8)}px`;
+    const above = toolbar.top - height - 8;
+    let left = Math.max(12, Math.min(innerWidth - width - 12, toolbar.left));
+    let top: number;
+    if (below + height < innerHeight) {
+        top = below;
+    } else if (above >= 12) {
+        top = above;
+    } else {
+        const right = toolbar.right + 8;
+        const sideLeft =
+            right + width + 12 <= innerWidth
+                ? right
+                : Math.max(12, toolbar.left - width - 8);
+        left = sideLeft;
+        top = Math.max(12, Math.min(toolbar.top, innerHeight - height - 12));
+    }
+    drawBar.style.left = `${left}px`;
+    drawBar.style.top = `${top}px`;
+    positionToolPopover();
 }
 
 // 在其他应用打开
 
-function openApp() {
+async function openApp() {
     const path = require("node:path");
     const os = require("node:os");
-    const tmpPhoto = path.join(os.tmpdir(), "/eSearch/tmp.png");
-    const fs = require("node:fs");
-    const c = getClipPhoto();
-    const f = c.toDataURL().replace(/^data:image\/\w+;base64,/, "");
-    const dataBuffer = Buffer.from(f, "base64");
-    fs.writeFile(tmpPhoto, dataBuffer, () => {
-        open_with(tmpPhoto);
-    });
+    const fs = require("node:fs") as typeof import("node:fs");
+    const { randomUUID } = require("node:crypto") as typeof Crypto;
+    try {
+        const c = getClipPhoto();
+        const f = c.toDataURL().replace(/^data:image\/\w+;base64,/, "");
+        const dataBuffer = Buffer.from(f, "base64");
+        const directory = path.join(os.tmpdir(), "OpenCapture");
+        const tmpPhoto = path.join(directory, `open-${randomUUID()}.png`);
+        await fs.promises.mkdir(directory, { recursive: true });
+        await fs.promises.writeFile(tmpPhoto, dataBuffer);
+        await open_with(tmpPhoto);
+    } catch (error) {
+        captureWorkspace?.showError(error);
+    }
 }
 
 function initRecord() {
@@ -721,61 +775,112 @@ function initRecord() {
 
 let longBusy = false;
 let longCapped = false;
+let longSession = 0;
+let longInFlight: Promise<void> | null = null;
+let longStopping: Promise<void> | null = null;
+let longStopSession = 0;
+let longKeyupHandler: (() => void) | null = null;
+let longWheelHandler: (() => void) | null = null;
 
-async function long_s() {
+function cleanupLongCapture() {
+    if (longClipTime !== null) clearInterval(longClipTime);
+    longClipTime = null;
+    if (longMouse !== null) clearInterval(longMouse);
+    longMouse = null;
+    if (uIOhook) {
+        if (longKeyupHandler) uIOhook.off("keyup", longKeyupHandler);
+        if (longWheelHandler) uIOhook.off("wheel", longWheelHandler);
+        uIOhook.stop();
+    }
+    uIOhook = null;
+    longKeyupHandler = null;
+    longWheelHandler = null;
+}
+
+async function long_s(session = longSession) {
     // 上一帧还没拼完就跳过这一帧：
     // 并发进 addLong 会抢 longX.lastImg/lastXY，
     // 拼出来的偏移互相错位
-    if (longBusy || longCapped) return;
+    if (session !== longSession || !longRunning || longCapped) return;
+    if (longInFlight) return longInFlight;
     longBusy = true;
+    const operation = (async () => {
+        try {
+            const image = (await getNowScreen().capture()).toImageData();
+            if (session !== longSession || !longRunning) return;
+            await addLong(image ?? undefined, session);
+        } catch (error) {
+            if (session !== longSession) return;
+            longCapped = true;
+            console.error(`长截图单帧失败: ${error}`);
+            renderSend("windowIgnoreMouse", [false]);
+        }
+    })();
+    longInFlight = operation;
     try {
-        await addLong(
-            (await getNowScreen().capture()).toImageData() ?? undefined,
-        );
-    } catch (error) {
-        console.error(`长截图单帧失败: ${error}`);
-        // 中途抛异常时不能把鼠标穿透留着，否则整个桌面看起来都点不动
-        renderSend("windowIgnoreMouse", [false]);
+        await operation;
     } finally {
-        longBusy = false;
+        if (longInFlight === operation) {
+            longInFlight = null;
+            longBusy = false;
+        }
     }
 }
 
 async function startLong() {
     initLong(finalRect);
-    await long_s();
+    const session = longSession;
+    await long_s(session);
+    if (session !== longSession || !longRunning) return;
+    if (longCapped) {
+        await stopLong();
+        return;
+    }
     renderSend("windowIgnoreMouse", [true]);
     if (store.get("广截屏.模式") === "自动") {
         uIOhook = require("uiohook-napi").uIOhook;
         if (uIOhook) {
             uIOhook.start();
-            uIOhook.on("keyup", () => {
+            longKeyupHandler = () => {
                 // 原来每次全局抬键都抓一整屏，完全不限流
                 const n = Date.now();
                 if (n - lastLong > 300) {
                     lastLong = n;
-                    long_s();
+                    void long_s(session);
                 }
-            });
-            uIOhook.on("wheel", () => {
+            };
+            longWheelHandler = () => {
                 const n = Date.now();
                 if (n - lastLong > 500) {
                     lastLong = n;
-                    long_s();
+                    void long_s(session);
                 }
-            });
+            };
+            uIOhook.on("keyup", longKeyupHandler);
+            uIOhook.on("wheel", longWheelHandler);
         }
     } else {
         longClipTime = setInterval(() => {
-            long_s();
+            void long_s(session);
         }, store.get("广截屏.t"));
     }
 }
 
 function initLong(rect: number[]) {
+    longSession++;
+    cleanupLongCapture();
     longRunning = true;
     longInited = true;
     longCapped = false;
+    longBusy = false;
+    longInFlight = null;
+    longStopping = null;
+    longStopSession = 0;
+    longX.img = null;
+    longX.imgXY = { x: 0, y: 0 };
+    longX.lastImg = null;
+    longX.lastXY = { x: 0, y: 0 };
+    longPreview.clear();
 
     longMouse = setInterval(() => {
         const { x, y } = renderSendSync("getMousePos", []).po;
@@ -832,28 +937,31 @@ function initLong(rect: number[]) {
 }
 
 async function stopLong() {
-    // 再截屏以覆盖结束按钮
-    await long_s();
-    // 等上一次抓取真的拼完，否则最后一帧会落在 pjLong 之后，成品少一截
-    for (let i = 0; longBusy && i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-    }
-
-    lr.style({ opacity: "0" });
-    renderSend("windowIgnoreMouse", [false]);
-    addLong(undefined);
-    for (const i of longHide) {
-        i.style.display = "";
+    const session = longSession;
+    if (!longInited || session === 0) return;
+    if (longStopping && longStopSession === session) return longStopping;
+    longStopSession = session;
+    const operation = (async () => {
+        if (longInFlight) await longInFlight;
+        if (session !== longSession) return;
+        if (!longCapped) await long_s(session);
+        if (longInFlight) await longInFlight;
+        if (session !== longSession) return;
+        longRunning = false;
+        await addLong(undefined, session);
+    })();
+    longStopping = operation;
+    try {
+        await operation;
+    } finally {
+        if (longStopping === operation) longStopping = null;
     }
 }
 
-async function addLong(x: ImageData | undefined) {
+async function addLong(x: ImageData | undefined, session = longSession) {
+    if (session !== longSession) return;
     if (!x) {
-        uIOhook?.stop();
-        uIOhook = null;
-        clearInterval(longClipTime);
-        if (longMouse !== null) clearInterval(longMouse);
-        pjLong();
+        pjLong(session);
         return;
     }
     // 原始区域
@@ -872,6 +980,7 @@ async function addLong(x: ImageData | undefined) {
 
     const match = await longMatch(longX.lastImg, canvas);
 
+    if (session !== longSession || !longRunning) return;
     if (!match.clipedImg) return;
 
     const dx = longFX === "xy" ? match.dx : 0;
@@ -886,6 +995,7 @@ async function addLong(x: ImageData | undefined) {
 
 async function longMatch(img0: HTMLCanvasElement, img1: HTMLCanvasElement) {
     // match
+    const { findOffset } = await import("picture_match");
     const m = await findOffset(
         img0.getContext("2d")!.getImageData(0, 0, img0.width, img0.height),
         img1.getContext("2d")!.getImageData(0, 0, img1.width, img1.height),
@@ -954,6 +1064,10 @@ function longPutImg(
     if (!newCtx) {
         longCapped = true;
         console.error("长截图：拿不到 2d 上下文，停止拼接");
+        captureWorkspace?.showStatus(
+            t("이미지가 커져서 여기까지만 이어붙였습니다"),
+        );
+        void stopLong();
         return;
     }
 
@@ -999,35 +1113,62 @@ function longPutImg(
     longPreview.add(newCanvas);
 }
 
-function pjLong() {
-    const oCanvas = longX.img;
-    if (!oCanvas) return;
-    mainCanvas.width = drawCanvas.width = oCanvas.width;
-    mainCanvas.height = drawCanvas.height = oCanvas.height;
-    setClipSize(oCanvas.width, oCanvas.height);
+function pjLong(session = longSession) {
+    if (session !== longSession) return;
+    try {
+        const oCanvas = longX.img;
+        if (!oCanvas) {
+            captureWorkspace?.showStatus(t("이어붙일 캡처가 없습니다"));
+            return;
+        }
+        mainCanvas.width = oCanvas.width;
+        mainCanvas.height = oCanvas.height;
+        fabricCanvas.setDimensions({
+            width: oCanvas.width,
+            height: oCanvas.height,
+        });
+        setClipSize(oCanvas.width, oCanvas.height);
 
-    const ggid = oCanvas
-        .getContext("2d")!
-        .getImageData(0, 0, oCanvas.width, oCanvas.height);
-    mainCanvas.getContext("2d")!.putImageData(ggid, 0, 0);
+        const ggid = oCanvas
+            .getContext("2d")!
+            .getImageData(0, 0, oCanvas.width, oCanvas.height);
+        mainCanvas.getContext("2d")!.putImageData(ggid, 0, 0);
 
-    finalRect = [0, 0, oCanvas.width, oCanvas.height];
-    // 尺寸变了，立即按当前形态重绘
-    drawClip();
+        finalRect = [0, 0, oCanvas.width, oCanvas.height];
+        drawClip();
 
-    fabricCanvas.setDimensions({
-        width: oCanvas.width,
-        height: oCanvas.height,
-    });
+        fabricCanvas.setDimensions({
+            width: oCanvas.width,
+            height: oCanvas.height,
+        });
+    } finally {
+        cleanupLongCapture();
+        longPreview.style({ display: "none" });
+        longPreview.clear();
+        document.body.classList.add("editor_bg");
+        lr.style({ opacity: "0", width: "0", height: "0" });
+        for (const element of longHide) element.style.display = "";
+        renderSend("windowIgnoreMouse", [false]);
+        longRunning = false;
+        longInited = false;
+        longBusy = false;
+        longInFlight = null;
+    }
+}
 
-    longPreview.style({ display: "none" });
-    longPreview.clear();
-
-    document.body.classList.add("editor_bg");
-
-    lr.style({ width: "0", height: "0" });
-
-    longRunning = false;
+// 마지막 선택 영역을 절대 좌표로 기억 — 이후 "같은 영역 다시 캡처"에 사용
+function rememberLastRect() {
+    if (!finalRect || finalRect[2] < 2 || finalRect[3] < 2) return;
+    const display = getNowScreen();
+    renderSend("clip_last_rect", [
+        {
+            x: finalRect[0] / ratio + display.bounds.x,
+            y: finalRect[1] / ratio + display.bounds.y,
+            w: finalRect[2] / ratio,
+            h: finalRect[3] / ratio,
+            displayId: display.id,
+        },
+    ]);
 }
 
 // 钉在屏幕上
@@ -1069,14 +1210,14 @@ function alert(m: string) {
 function checkTranslator() {
     const fyq = store.get("翻译.翻译器");
     if (fyq.length === 0) {
-        alert("无翻译器，请先设置翻译器");
+        alert(t("无翻译器，请先设置翻译器"));
         return false;
     }
     if (
         store.get("屏幕翻译.语言.to") === "" ||
         store.get("屏幕翻译.语言.from") === ""
     ) {
-        alert("请设置屏幕翻译的语言");
+        alert(t("请设置屏幕翻译的语言"));
         return false;
     }
     return true;
@@ -1121,26 +1262,38 @@ async function translate() {
 }
 
 // 复制
-async function runCopy() {
+async function runCopy(closeAfterCopy = true) {
+    const generation = captureInitSequence;
     try {
+        const c = getClipPhoto();
+        const blob = await getBlob(c, "image/png");
+        if (!blob)
+            throw new Error(
+                t("캡처한 화면이 비어 있습니다. 다시 캡처해 주세요."),
+            );
+        if (generation !== captureInitSequence) return false;
         await captureWorkspace?.stage(true);
+        if (generation !== captureInitSequence) return false;
+        await writeImage(blob);
+        if (generation !== captureInitSequence) return false;
+        playDoneSound();
+        if (closeAfterCopy) toolsX.close.f();
+        return true;
     } catch (error) {
         captureWorkspace?.showError(error);
-        return;
+        return false;
     }
-    const c = getClipPhoto();
-    const blob = await getBlob(c, "image/png");
-    if (blob) await writeImage(blob);
-    toolsX.close.f();
 }
 // 保存
 async function runSave() {
+    const generation = captureInitSequence;
     try {
         await captureWorkspace?.stage();
     } catch (error) {
         captureWorkspace?.showError(error);
         return;
     }
+    if (generation !== captureInitSequence) return;
     if (store.get("保存.快速保存")) {
         type = store.get("保存.默认格式");
         renderSend("clip_hide", []);
@@ -1208,6 +1361,7 @@ async function save(message: string) {
             abgrArray[i + 2] = data.data[i + 1];
             abgrArray[i + 3] = data.data[i];
         }
+        const bmp = (await import("bmp-js")).default;
         const arrayBuffer = bmp.encode({
             data: Buffer.from(abgrArray),
             width: data.width,
@@ -1245,6 +1399,7 @@ async function save(message: string) {
 
     fs.writeFile(message, dataBuffer, (err: Error | null) => {
         if (!err) {
+            playDoneSound();
             renderSend("ok_save", [message]);
             toolsX.close.f();
         } else {
@@ -1368,7 +1523,53 @@ function getClipPhoto() {
         // 将原始内容重新绘制到主Canvas上
         ctx.drawImage(tempCanvas, 0, 0);
     }
+    if (rulerImprint && isRect) drawRulerTicks(tmpctx, tmpCanvas);
     return tmpCanvas;
+}
+
+function drawRulerTicks(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+) {
+    const { width: w, height: h } = canvas;
+    const step = 10;
+    const major = 50;
+    const tick = (x: number, y0: number, len: number, vertical: boolean) => {
+        ctx.beginPath();
+        if (vertical) {
+            ctx.moveTo(y0, x + 0.5);
+            ctx.lineTo(y0 + len, x + 0.5);
+        } else {
+            ctx.moveTo(x + 0.5, y0);
+            ctx.lineTo(x + 0.5, y0 + len);
+        }
+        ctx.stroke();
+    };
+    const draw = (outline: boolean) => {
+        ctx.strokeStyle = outline
+            ? "rgba(255,255,255,0.75)"
+            : "rgba(20,20,20,0.8)";
+        ctx.lineWidth = outline ? 3 : 1;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.font = "9px sans-serif";
+        ctx.textBaseline = "top";
+        for (let x = 0; x <= w; x += step) {
+            const isMajor = x % major === 0;
+            tick(x, 0, isMajor ? 8 : 4, false);
+            tick(x, h - (isMajor ? 8 : 4), isMajor ? 8 : 4, false);
+            if (isMajor && x % 100 === 0 && x > 0)
+                ctx.fillText(String(x), x + 3, 10);
+        }
+        for (let y = 0; y <= h; y += step) {
+            const isMajor = y % major === 0;
+            tick(y, 0, isMajor ? 8 : 4, true);
+            tick(y, w - (isMajor ? 8 : 4), isMajor ? 8 : 4, true);
+            if (isMajor && y % 100 === 0 && y > 0)
+                ctx.fillText(String(y), 10, y + 3);
+        }
+    };
+    draw(true);
+    draw(false);
 }
 
 function createTemporaryCanvas(originalCanvas: HTMLCanvasElement) {
@@ -1427,6 +1628,25 @@ function src2cXY(e: SrcPoint) {
     return { x: Math.floor(x), y: Math.floor(y) } as px_position; // 放大后，可以进行高精度计算来获取所有像素，缩写后，看的是放大镜，这就无关紧要了
 }
 
+function dragRect(e: MouseEvent): rect {
+    const start = rectStartE;
+    const end = src2cXY(e2srcPoint(e));
+    if (!start || !end) return [0, 0, 0, 0];
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    if (e.shiftKey) {
+        const m = Math.max(Math.abs(dx), Math.abs(dy));
+        dx = Math.sign(dx || 1) * m;
+        dy = Math.sign(dy || 1) * m;
+    }
+    return e.altKey
+        ? p2Rect(
+              { x: start.x - dx, y: start.y - dy } as px_position,
+              { x: start.x + dx, y: start.y + dy } as px_position,
+          )
+        : p2Rect(start, { x: start.x + dx, y: start.y + dy } as px_position);
+}
+
 function pointsOutRect(points: point[]) {
     if (points.length === 0) {
         return [0, 0, 0, 0] as rect;
@@ -1452,6 +1672,39 @@ function pointsOutRect(points: point[]) {
 // 开始操纵框选
 function clipStart(e: MouseEvent, inRect: boolean) {
     const p = src2pXY(e2srcPoint(e));
+    if (captureSelectionMode === "window") {
+        const candidate = windowEdgeAtPoint(
+            selectionEdgesForMode(edgeRect, "window", false),
+            p,
+        );
+        if (!candidate) {
+            captureWorkspace?.showStatus(
+                "캡처할 창 위로 포인터를 이동한 다음 클릭하세요.",
+            );
+            return;
+        }
+        isRect = true;
+        rectSelect = true;
+        finalRect = [
+            candidate.x,
+            candidate.y,
+            candidate.width,
+            candidate.height,
+        ];
+        finalRectFix();
+        drawClip();
+        hisPush();
+        captureWorkspace?.feedback.settle(selectionHandles.el);
+        isShowBars = true;
+        showBars(true);
+        followBar({ x: e.clientX, y: e.clientY });
+        return;
+    }
+    selectionBeforeDrag = {
+        rect: [...finalRect],
+        points: freeSelect.map((point) => ({ ...point })),
+        manual: rectSelect,
+    };
     if (isRect) {
         // 在选区内，则调整，否则新建
         if (inRect) {
@@ -1489,6 +1742,25 @@ function clipStart(e: MouseEvent, inRect: boolean) {
     closeRadial();
 }
 
+function cancelSelectionInteraction() {
+    finishHandleResize(false);
+    if (!down && !selecting && !moving) return;
+    down = moved = selecting = moving = false;
+    oFinalRect = null;
+    oPoly = null;
+    direction = "";
+    if (selectionBeforeDrag) {
+        finalRect = selectionBeforeDrag.rect;
+        freeSelect = selectionBeforeDrag.points;
+        rectSelect = selectionBeforeDrag.manual;
+    }
+    selectionBeforeDrag = null;
+    mouseBarEl.el.classList.add("mouse_bar_hide");
+    drawClip();
+    showBars(isShowBars);
+    followBar();
+}
+
 function pickColor(e: MouseEvent | PointerEvent) {
     rightKey = !rightKey;
     mouseBarEl.el.classList.toggle("mouse_bar_hide", !rightKey);
@@ -1502,11 +1774,40 @@ function pickColor(e: MouseEvent | PointerEvent) {
     }
 }
 
+function requireCaptureSelection() {
+    if (finalRect[2] > 0 && finalRect[3] > 0) return true;
+    captureWorkspace?.showStatus(t("캡처할 영역을 먼저 선택해 주세요."));
+    return false;
+}
+
+async function completeSelectionAction() {
+    if (!requireCaptureSelection()) return;
+    const generation = captureInitSequence;
+    try {
+        if (capturePreferences.defaultPreset === "copy-close") {
+            await runCopy();
+        } else if (capturePreferences.defaultPreset === "stage-pin") {
+            await captureWorkspace?.stage(true);
+            if (generation !== captureInitSequence) return;
+            toolsX.ding.f();
+        } else if (capturePreferences.defaultPreset === "annotate") {
+            setEditType("draw", "free");
+        } else if (autoDo === "copysave") {
+            if ((await runCopy(false)) && generation === captureInitSequence)
+                await runSave();
+        } else if (autoDo !== "no") {
+            await toolsX[autoDo].f();
+        }
+    } catch (error) {
+        captureWorkspace?.showError(error);
+    }
+}
+
 function clipEnd(e: MouseEvent) {
     const p = src2pXY(e2srcPoint(e));
     selecting = false;
     if (isRect) {
-        const r = p2Rect(rectStartE, src2cXY(e2srcPoint(e)));
+        const r = dragRect(e);
         if (rectInRect.length) {
             let nearestL = Number.POSITIVE_INFINITY;
             let nr: rect | null = null;
@@ -1530,7 +1831,7 @@ function clipEnd(e: MouseEvent) {
                     nr = rect;
                 }
             }
-            if (nr && (e.shiftKey || (!moved && down))) {
+            if (nr && ((e.shiftKey && !moved) || (!moved && down))) {
                 rectSelect = true;
                 finalRect = nr;
             } else {
@@ -1545,14 +1846,6 @@ function clipEnd(e: MouseEvent) {
     }
     // 此时 selecting 已为 false，选区已定，直接重绘
     captureWorkspace?.feedback.settle(selectionHandles.el);
-    if (capturePreferences.defaultPreset === "copy-close") void runCopy();
-    else if (capturePreferences.defaultPreset === "stage-pin")
-        void captureWorkspace
-            ?.stage(true)
-            .then(() => toolsX.ding.f())
-            .catch((error) => captureWorkspace?.showError(error));
-    else if (capturePreferences.defaultPreset === "annotate")
-        setEditType("draw", "free");
     drawClip();
     renderClip(e);
     hisPush();
@@ -1640,6 +1933,11 @@ function drawClip() {
 
 function cleanClip() {
     showMask(null);
+    showSaveBar(false);
+    captureHelp.el.hidden = true;
+    showBars(false);
+    whEl.style({ visibility: "hidden" });
+    mouseBarEl.el.classList.add("mouse_bar_hide");
     selectionHandles.el.hidden = true;
     closeRadial();
     toolPopover.el.hidden = true;
@@ -1668,8 +1966,11 @@ function inEdge(p: editor_position) {
     }
 
     rectInRect = [];
-    for (const i of edgeRect) {
-        if (!识别窗口 && i.type === "system") continue;
+    for (const i of selectionEdgesForMode(
+        edgeRect,
+        captureSelectionMode,
+        识别窗口,
+    )) {
         const x0 = i.x;
         const y0 = i.y;
         const x1 = i.x + i.width;
@@ -1708,7 +2009,7 @@ function renderClip(e: MouseEvent) {
     if (selecting) {
         if (isRect) {
             // 画框
-            finalRect = p2Rect(rectStartE, src2cXY(e2srcPoint(e)));
+            finalRect = dragRect(e);
         } else {
             freeSelect.push(src2pXY(e2srcPoint(e)));
             finalRect = pointsOutRect(freeSelect);
@@ -1740,6 +2041,9 @@ function renderClip(e: MouseEvent) {
 
 // 大小栏
 function whBar(finalRect: rect) {
+    whEl.style({
+        visibility: finalRect[2] > 0 && finalRect[3] > 0 ? "visible" : "hidden",
+    });
     const winWidth = window.innerWidth;
     const winHeight = window.innerHeight;
 
@@ -1800,6 +2104,13 @@ function checkWhBarWidth() {
 }
 
 function changeWH(el: ElType<HTMLInputElement>) {
+    if (captureSelectionMode === "window") {
+        whBar(finalRect);
+        captureWorkspace?.showStatus(
+            "창 캡처에서는 시스템 창의 원래 경계를 사용합니다.",
+        );
+        return;
+    }
     const l0 = whL.map((i) => i.el.value);
     const l = l0.map((string) => {
         // 排除（数字运算符空格）之外的非法输入
@@ -1839,6 +2150,71 @@ function changeWH(el: ElType<HTMLInputElement>) {
         finalRect[2] = nw;
         finalRect[3] = nh;
     }
+    finalRectFix();
+    hisPush();
+    drawClipRect();
+    followBar();
+}
+
+let captureSound = localStorage.getItem("oc:capture-sound") === "1";
+const flashEl = view()
+    .style({
+        position: "fixed",
+        inset: "0",
+        background: "#fff",
+        opacity: "0",
+        pointerEvents: "none",
+        zIndex: "9999",
+    })
+    .addInto();
+function flashCapture() {
+    const prefs = captureWorkspace?.preferences();
+    if (prefs && !prefs.feedback.visual) return;
+    const reduced =
+        prefs?.feedback.motion === "reduced" ||
+        ((prefs?.feedback.motion ?? "system") === "system" &&
+            matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (reduced) return;
+    flashEl.el.animate([{ opacity: 0.26 }, { opacity: 0 }], {
+        duration: 170,
+        easing: "ease-out",
+    });
+}
+function playDoneSound() {
+    flashCapture();
+    if (!captureSound) return;
+    try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.09);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+        osc.onended = () => void ctx.close();
+    } catch {}
+}
+
+function applyAspect(r: number) {
+    const [x, y, w, h] = finalRect;
+    if (w < 2 || h < 2) return;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    let nw = w;
+    let nh = nw / r;
+    if (nh > h) {
+        nh = h;
+        nw = nh * r;
+    }
+    nw = Math.max(2, Math.round(nw));
+    nh = Math.max(2, Math.round(nh));
+    finalRect[0] = Math.round(cx - nw / 2);
+    finalRect[1] = Math.round(cy - nh / 2);
+    finalRect[2] = nw;
+    finalRect[3] = nh;
     finalRectFix();
     hisPush();
     drawClipRect();
@@ -1986,7 +2362,7 @@ function clipColorText(l: colorRGBA, type: colorFormat) {
                   .replace("none", "-");
     const minR = 0.6;
     mainEl.style({
-        fontSize: `${Math.max(minR, Math.min((colorSize * colorISize) / (main.length * chPX), 1))}rem`,
+        fontSize: `${Math.max(minR, Math.min(Math.min(colorSize * colorISize, 96) / (main.length * chPX), 1))}rem`,
     });
     mainEl.el.textContent = main;
     const minW = main.length * chPX * minR;
@@ -2024,7 +2400,7 @@ function changeRightBar(v: boolean) {
     );
     if (v) {
         const width = maxW;
-        const height = 32 * (allColorFormat.length + 2);
+        const height = 24 * (allColorFormat.length + 2);
         const winWidth = window.innerWidth;
         const winHeight = window.innerHeight;
 
@@ -2038,7 +2414,7 @@ function changeRightBar(v: boolean) {
         mouseBarColor.el.style.height = "0";
         mouseBarCopy.style({
             width: `${maxW}px`,
-            height: `${32 * (allColorFormat.length + 1)}px`,
+            height: `${24 * (allColorFormat.length + 1)}px`,
         });
         mouseBarCopyI.el.style.top = "0";
         mouseBarEl.el.style.pointerEvents = "auto";
@@ -2051,10 +2427,10 @@ function changeRightBar(v: boolean) {
         }, 400);
         mouseBarColor.el.style.height = "";
         mouseBarCopy.style({
-            width: `${Math.max(colorSize * colorISize, mouseBarColorMinSize)}px`,
-            height: "32px",
+            width: `${Math.max(Math.min(colorSize * colorISize, 96), mouseBarColorMinSize)}px`,
+            height: "24px",
         });
-        mouseBarCopyI.el.style.top = `${-32 * (取色器格式位置 + 1)}px`;
+        mouseBarCopyI.el.style.top = `${-24 * (取色器格式位置 + 1)}px`;
         mouseBarEl.el.style.pointerEvents = "none";
         if (theColor) clipColorText(theColor, 取色器默认格式);
     }
@@ -2074,20 +2450,40 @@ function copy(e: ElType<HTMLElement>) {
  * 工具栏自动跟随
  */
 function followBar(_op?: { x: number; y: number }) {
-    const dock = captureDock(
-        {
-            x: (finalRect[0] + editorP.x) * editorP.zoom,
-            y: (finalRect[1] + editorP.y) * editorP.zoom,
-            width: finalRect[2] * editorP.zoom,
-            height: finalRect[3] * editorP.zoom,
-        },
-        { width: innerWidth, height: innerHeight },
-        { width: toolBar.offsetWidth, height: toolBar.offsetHeight },
+    if (finalRect[2] <= 0 || finalRect[3] <= 0) {
+        toolBar.style.opacity = "0";
+        toolBar.style.pointerEvents = "none";
+        drawBar.style.opacity = "0";
+        drawBar.style.pointerEvents = "none";
+        return;
+    }
+    const pinned = toolbarPinnedPos;
+    toolBar.classList.toggle(
+        "toolbar-horizontal",
+        toolBar.offsetHeight > innerHeight - 24,
     );
-    toolBar.style.left = `${dock.x}px`;
-    toolBar.style.top = `${dock.y}px`;
+    if (pinned) {
+        const w = toolBar.offsetWidth;
+        const h = toolBar.offsetHeight;
+        toolBar.style.left = `${Math.max(0, Math.min(pinned.left, innerWidth - w))}px`;
+        toolBar.style.top = `${Math.max(0, Math.min(pinned.top, innerHeight - h))}px`;
+    } else {
+        const dock = captureDock(
+            {
+                x: (finalRect[0] + editorP.x) * editorP.zoom,
+                y: (finalRect[1] + editorP.y) * editorP.zoom,
+                width: finalRect[2] * editorP.zoom,
+                height: finalRect[3] * editorP.zoom,
+            },
+            { width: innerWidth, height: innerHeight },
+            { width: toolBar.offsetWidth, height: toolBar.offsetHeight },
+        );
+        toolBar.style.left = `${dock.x}px`;
+        toolBar.style.top = `${dock.y}px`;
+    }
     toolBar.style.opacity = "1";
     toolBar.style.pointerEvents = "auto";
+    toolBar.toggleAttribute("data-pinned", Boolean(pinned));
     updateDrawBarVis();
     trackLocation();
     positionToolPopover();
@@ -2096,23 +2492,20 @@ function followBar(_op?: { x: number; y: number }) {
 // 修复final_rect负数
 // 超出屏幕处理
 function finalRectFix() {
+    if (!finalRect.every(Number.isFinite)) {
+        finalRect = [0, 0, 0, 0];
+        return;
+    }
     finalRect = finalRect.map((i) => Math.round(i)) as rect;
     const x0 = finalRect[0];
     const y0 = finalRect[1];
     const x1 = finalRect[0] + finalRect[2];
     const y1 = finalRect[1] + finalRect[3];
-    let x = Math.min(x0, x1);
-    let y = Math.min(y0, y1);
-    let w = Math.max(x0, x1) - x;
-    let h = Math.max(y0, y1) - y;
-    // 移出去移回来保持原来大小
-    if (x < 0) w = x = 0;
-    if (y < 0) h = y = 0;
-    if (x > mainCanvas.width) x = x % mainCanvas.width;
-    if (y > mainCanvas.height) y = y % mainCanvas.height;
-    if (x + w > mainCanvas.width) w = mainCanvas.width - x;
-    if (y + h > mainCanvas.height) h = mainCanvas.height - y;
-    finalRect = [x, y, w, h];
+    const x = Math.max(0, Math.min(mainCanvas.width, Math.min(x0, x1)));
+    const y = Math.max(0, Math.min(mainCanvas.height, Math.min(y0, y1)));
+    const right = Math.max(0, Math.min(mainCanvas.width, Math.max(x0, x1)));
+    const bottom = Math.max(0, Math.min(mainCanvas.height, Math.max(y0, y1)));
+    finalRect = [x, y, right - x, bottom - y];
 }
 
 function inRange(
@@ -2131,6 +2524,11 @@ function inRange(
  * 判断光标位置并更改样式,定义光标位置的移动方向
  */
 function isInClipRect(p: editor_position) {
+    if (finalRect[2] <= 0 || finalRect[3] <= 0) {
+        setClipCursor("crosshair");
+        direction = "";
+        return false;
+    }
     let inRect = false;
 
     const [x0, y0, width, height] = finalRect;
@@ -2276,8 +2674,20 @@ function moveRect(
             break;
         case "move":
             finalRect = [
-                oldFinalRect[0] + dx,
-                oldFinalRect[1] + dy,
+                Math.max(
+                    0,
+                    Math.min(
+                        mainCanvas.width - oldFinalRect[2],
+                        oldFinalRect[0] + dx,
+                    ),
+                ),
+                Math.max(
+                    0,
+                    Math.min(
+                        mainCanvas.height - oldFinalRect[3],
+                        oldFinalRect[1] + dy,
+                    ),
+                ),
                 oldFinalRect[2],
                 oldFinalRect[3],
             ];
@@ -2389,6 +2799,7 @@ function undo(v: boolean) {
     drawClipRect();
     followBar();
     if (fabricCanvas) fabricCanvas.loadFromJSON(c.canvas);
+    updateUndoButtons();
 }
 
 function getShapePro(name: keyof typeof shapePro) {
@@ -2545,9 +2956,12 @@ function showSideBarItem(index: number) {
             if (drawBar.offsetLeft + bSize + bSize * x > window.innerWidth)
                 left = -bSize * x;
             drawSideBar.style.left = `${left}px`;
-            drawSideBar.style.top = `${bSize * Math.min(i, drawMainBar.children.length - y)}px`;
+            const top = bSize * Math.min(i, drawMainBar.children.length - y);
+            drawSideBar.style.top = `${top}px`;
             drawSideBar.style.width = `${bSize * x}px`;
-            drawSideBar.style.height = `${bSize * y}px`;
+            const maxHeight =
+                window.innerHeight - (drawBar.offsetTop + top) - 12;
+            drawSideBar.style.height = `${Math.max(bSize, Math.min(bSize * y, maxHeight))}px`;
         } else {
             el.style({ display: "none" });
         }
@@ -2570,7 +2984,12 @@ function showSideBar(show: boolean) {
 
 function showBars(b: boolean) {
     for (const i of [toolBar, drawBar]) {
-        if (b && (i !== drawBar || drawBarOpen)) {
+        if (
+            b &&
+            finalRect[2] > 0 &&
+            finalRect[3] > 0 &&
+            (i !== drawBar || drawBarOpen)
+        ) {
             i.style.pointerEvents = "";
             i.style.opacity = "";
         } else {
@@ -2869,7 +3288,7 @@ function setDrawMode(m: typeof colorM) {
         colorFillEl.style({ height: "" });
         colorStrokeEl.style({ height: "0" });
         drawStrokeWidth.style({ height: "0" });
-        drawColorSwitchMark.style({ top: 0 }).attr({ title: "当前为填充" });
+        drawColorSwitchMark.style({ top: 0 }).attr({ title: t("当前为填充") });
     } else {
         colorFillEl.style({ height: "0" });
         colorStrokeEl.style({ height: "" });
@@ -3089,6 +3508,11 @@ function getFObjectV() {
     colorFillEl.sv(pro.fc ?? fillColor);
     colorStrokeEl.sv(pro.sc ?? strokeColor);
 
+    const activeObj = fabricCanvas.getActiveObject() as
+        | (FabricObject & { fontSize?: number })
+        | undefined;
+    fontSizeRow.el.hidden = !(activeObj && activeObj.fontSize !== undefined);
+
     ableChangeColor();
 }
 /**
@@ -3232,6 +3656,19 @@ function getFilters() {
                     })
                     .sv(Object.values(f[i])[0]);
                 filterRangeEl.clear().add(range);
+                if (fl.levels) {
+                    const chips = view("x").class("filter-levels");
+                    for (const level of fl.levels) {
+                        button(String(level))
+                            .attr({ type: "button" })
+                            .on("click", () => {
+                                range.sv(level);
+                                range.el.dispatchEvent(new Event("input"));
+                            })
+                            .addInto(chips);
+                    }
+                    filterRangeEl.add(chips);
+                }
                 for (const i of Object.values(drawSideEls.filter)) {
                     i.el.classList.remove("filter_select");
                 }
@@ -3351,10 +3788,10 @@ const hotkeyTipEl = view().attr({ id: "hotkeys_tip" }).class(Class.glassBar);
 
 const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
     close: {
-        el: iconEl("close").attr({ title: "关闭" }),
+        el: iconEl("close").attr({ title: t("关闭") }),
         f: () => closeWin(),
     },
-    screens: { el: view().attr({ title: "屏幕管理" }), f: () => {} },
+    screens: { el: view().attr({ title: t("屏幕管理") }), f: () => {} },
     ocr: {
         el: selectEl(
             iconEl("ocr"),
@@ -3382,13 +3819,13 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         ]),
         f: () => runSearch(),
     },
-    QR: { el: iconEl("scan").attr({ title: "二维码" }), f: () => runQr() },
+    QR: { el: iconEl("scan").attr({ title: t("二维码") }), f: () => runQr() },
     open: {
-        el: iconEl("open").attr({ title: "其他应用打开" }),
+        el: iconEl("open").attr({ title: t("其他应用打开") }),
         f: () => openApp(),
     },
     ding: {
-        el: iconEl("ding").attr({ title: "屏幕贴图" }),
+        el: iconEl("ding").attr({ title: t("屏幕贴图") }),
         f: () => runDing(),
     },
     record: {
@@ -3418,7 +3855,7 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         f: () => translate(),
     },
     editor: {
-        el: iconEl("super_edit").attr({ title: "高级图片编辑" }),
+        el: iconEl("super_edit").attr({ title: t("高级图片编辑") }),
         f: () => {
             const c = getClipPhoto();
             renderSend("clip_editor", [c.toDataURL()]);
@@ -3432,11 +3869,18 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         }),
         f: () => void autoRedact(),
     },
-    copy: { el: iconEl("copy").attr({ title: "复制" }), f: () => runCopy() },
-    save: { el: iconEl("save").attr({ title: "保存" }), f: () => runSave() },
+    copy: { el: iconEl("copy").attr({ title: t("复制") }), f: () => runCopy() },
+    save: { el: iconEl("save").attr({ title: t("保存") }), f: () => runSave() },
 };
 
-for (const [_, { el, f }] of Object.entries(toolsX)) {
+for (const [id, tool] of Object.entries(toolsX)) {
+    const action = tool.f;
+    tool.f = () => {
+        if (id !== "close" && id !== "screens" && !requireCaptureSelection())
+            return;
+        return action();
+    };
+    const { el, f } = tool;
     el.on("pointerup", (e) => {
         if (e.target === el.el)
             if (e.button === 0) {
@@ -3513,17 +3957,20 @@ const drawMainElsx = {
         id: "draw_select",
         title: "选择与控制",
     }),
-    free: iconEl("free_draw").attr({ id: "draw_free", title: "自由绘画" }),
-    shapes: iconEl("shapes").attr({ id: "draw_shapes", title: "形状和文字" }),
-    filters: iconEl("filters").attr({ id: "draw_filters", title: "滤镜" }),
+    free: iconEl("free_draw").attr({ id: "draw_free", title: t("自由绘画") }),
+    shapes: iconEl("shapes").attr({
+        id: "draw_shapes",
+        title: t("形状和文字"),
+    }),
+    filters: iconEl("filters").attr({ id: "draw_filters", title: t("滤镜") }),
     color: view()
-        .attr({ id: "draw_color", title: "颜色和大小" })
+        .attr({ id: "draw_color", title: t("颜色和大小") })
         .add(drawColorEl),
     position: iconEl("position").attr({
         id: "draw_position",
         title: "层叠高度",
     }),
-    操作: iconEl("setting").attr({ id: "draw_操作", title: "操作" }),
+    操作: iconEl("setting").attr({ id: "draw_操作", title: t("操作") }),
 } as const;
 
 const drawBarMainElList = Object.values(drawMainElsx);
@@ -3532,50 +3979,50 @@ for (const el of drawBarMainElList) {
 }
 
 const drawSideSelect = {
-    rect: iconEl("rect_select").attr({ title: "矩形选择" }),
-    free: iconEl("free_select").attr({ title: "自由选择" }),
-    draw: iconEl("draw_select").attr({ title: "移动" }),
+    rect: iconEl("rect_select").attr({ title: t("矩形选择") }),
+    free: iconEl("free_select").attr({ title: t("自由选择") }),
+    draw: iconEl("draw_select").attr({ title: t("移动") }),
 } as const;
 
 const drawSideFree = {
-    pencil: iconEl("draw").attr({ title: "画笔" }),
-    eraser: iconEl("eraser").attr({ title: "橡皮" }),
-    spray: iconEl("spray").attr({ title: "喷刷" }),
-    highlighter: iconEl("highlighter").attr({ title: "荧光笔" }),
+    pencil: iconEl("draw").attr({ title: t("画笔") }),
+    eraser: iconEl("eraser").attr({ title: t("橡皮") }),
+    spray: iconEl("spray").attr({ title: t("喷刷") }),
+    highlighter: iconEl("highlighter").attr({ title: t("荧光笔") }),
 } as const;
 
 const drawShadowBlur = view().attr({ id: "shadow_blur" });
 
 const drawSideShapes = {
-    line: iconEl("line").attr({ title: "线条" }),
-    circle: iconEl("circle").attr({ title: "圆" }),
-    rect: iconEl("rect").attr({ title: "矩形" }),
-    polyline: iconEl("polyline").attr({ title: "折线" }),
-    polygon: iconEl("polygon").attr({ title: "多边形" }),
-    text: iconEl("text").attr({ title: "文字" }),
-    number: iconEl("number").attr({ title: "序号" }),
-    arrow: iconEl("arrow").attr({ title: "箭头" }),
-    mask: iconEl("mask").attr({ title: "遮罩" }),
+    line: iconEl("line").attr({ title: t("线条") }),
+    circle: iconEl("circle").attr({ title: t("圆") }),
+    rect: iconEl("rect").attr({ title: t("矩形") }),
+    polyline: iconEl("polyline").attr({ title: t("折线") }),
+    polygon: iconEl("polygon").attr({ title: t("多边形") }),
+    text: iconEl("text").attr({ title: t("文字") }),
+    number: iconEl("number").attr({ title: t("序号") }),
+    arrow: iconEl("arrow").attr({ title: t("箭头") }),
+    mask: iconEl("mask").attr({ title: t("遮罩") }),
     stamp: iconEl("star").attr({ title: "스탬프" }),
 } as const;
 
 const filterRangeEl = view().class("draw_filters_range");
 
 const drawSideFilters = {
-    pixelate: iconEl("pixelate").attr({ title: "马赛克" }),
-    blur: iconEl("blur").attr({ title: "模糊" }),
-    brightness: iconEl("brightness").attr({ title: "亮度" }),
-    contrast: iconEl("contrast").attr({ title: "对比度" }),
-    saturation: iconEl("saturation").attr({ title: "饱和度" }),
-    hue: iconEl("hue").attr({ title: "色调" }),
-    gamma: view().attr({ title: "伽马" }),
-    noise: view().attr({ title: "噪点" }),
+    pixelate: iconEl("pixelate").attr({ title: t("马赛克") }),
+    blur: iconEl("blur").attr({ title: t("模糊") }),
+    brightness: iconEl("brightness").attr({ title: t("亮度") }),
+    contrast: iconEl("contrast").attr({ title: t("对比度") }),
+    saturation: iconEl("saturation").attr({ title: t("饱和度") }),
+    hue: iconEl("hue").attr({ title: t("色调") }),
+    gamma: view().attr({ title: t("伽马") }),
+    noise: view().attr({ title: t("噪点") }),
 } as const;
 
 const drawSideFiltersMoreGray = {
-    gray_average: view().attr({ title: "平均灰度" }),
-    gray_lightness: view().attr({ title: "亮度" }),
-    gray_luminosity: view().attr({ title: "亮度" }),
+    gray_average: view().attr({ title: t("平均灰度") }),
+    gray_lightness: view().attr({ title: t("亮度") }),
+    gray_luminosity: view().attr({ title: t("亮度") }),
 };
 
 const drawSideFiltersMore = {
@@ -3609,32 +4056,52 @@ const drawColorP = view().attr({ id: "draw_color_p" });
 const drawColorColor = view().attr({ id: "draw_color_color" });
 const drawStrokeWidth = view().attr({ id: "draw_stroke_width" });
 
+const fontSizeRow = view("x").class("font-size-presets");
+for (const size of [12, 16, 24, 32, 48, 72]) {
+    button(String(size))
+        .attr({ type: "button", title: t("글자 크기") })
+        .on("click", () => {
+            const obj = fabricCanvas.getActiveObject() as
+                | (FabricObject & { fontSize?: number; radius?: number })
+                | undefined;
+            if (!obj || obj.fontSize === undefined) return;
+            obj.set("fontSize", size);
+            if (obj.形状 === "number")
+                obj.set("radius", Math.max(12, size * 0.75));
+            fabricCanvas.renderAll();
+            hisPush();
+        })
+        .addInto(fontSizeRow);
+}
+fontSizeRow.el.hidden = true;
+
 const drawColorSide = drawSideGen2("color_size").add([
     drawColorSwitchP,
     drawColorP,
     drawColorColor,
     drawStrokeWidth,
+    fontSizeRow,
 ]);
 
 const drawSidePosition = {
-    front: iconEl("position_front").attr({ title: "移动到最顶端" }),
-    forwards: iconEl("position_forwards").attr({ title: "向上移动一层" }),
-    backwards: iconEl("position_backwards").attr({ title: "向下移动一层" }),
-    back: iconEl("position_back").attr({ title: "移动到最底端" }),
+    front: iconEl("position_front").attr({ title: t("移动到最顶端") }),
+    forwards: iconEl("position_forwards").attr({ title: t("向上移动一层") }),
+    backwards: iconEl("position_backwards").attr({ title: t("向下移动一层") }),
+    back: iconEl("position_back").attr({ title: t("移动到最底端") }),
 } as const;
 
 const drawSide操作 = {
     撤回: iconEl("left")
-        .attr({ title: "撤回" })
+        .attr({ title: t("撤回") })
         .data({ key: showShortKey("Control+Z") }),
     重做: iconEl("right")
-        .attr({ title: "重做" })
+        .attr({ title: t("重做") })
         .data({ key: showShortKey("Control+Y") }),
     复制: iconEl("copy")
-        .attr({ title: "复制" })
+        .attr({ title: t("复制") })
         .data({ key: showShortKey("Control+C") }),
     删除: iconEl("clear")
-        .attr({ title: "删除" })
+        .attr({ title: t("删除") })
         .data({ key: showShortKey("Delete") }),
 } as const;
 
@@ -3728,15 +4195,70 @@ const whLock = button(captureIcon("lock"))
             ratioLockValue = finalRect[2] / finalRect[3];
         whLock.el.setAttribute("aria-pressed", String(ratioLock));
     });
+let rulerImprint = localStorage.getItem("oc:ruler-imprint") === "1";
+const whRuler = button()
+    .attr({
+        title: t("눈금 새기기"),
+        type: "button",
+        ariaPressed: String(rulerImprint),
+    })
+    .class("wh-ruler-toggle", rulerImprint ? "active" : "")
+    .add(txt("‖"))
+    .on("click", () => {
+        rulerImprint = !rulerImprint;
+        localStorage.setItem("oc:ruler-imprint", rulerImprint ? "1" : "0");
+        whRuler.el.setAttribute("aria-pressed", String(rulerImprint));
+        whRuler.el.classList.toggle("active", rulerImprint);
+    });
+const whRatios = view("x").class("capture-ratios");
+for (const [ratioLabel, rw, rh] of [
+    ["1:1", 1, 1],
+    ["3:2", 3, 2],
+    ["4:3", 4, 3],
+    ["16:9", 16, 9],
+    ["9:16", 9, 16],
+] as const) {
+    whRatios.add(
+        button(txt(ratioLabel))
+            .class("wh-ratio-chip")
+            .attr({ type: "button", title: t("비율 맞추기") })
+            .on("click", (e) => {
+                e.stopPropagation();
+                applyAspect(rw / rh);
+            }),
+    );
+}
+whRatios.el.hidden = true;
+const ratioToggle = button(txt("a:b"))
+    .class("wh-ruler-toggle")
+    .attr({ title: t("비율 프리셋"), type: "button", ariaExpanded: "false" })
+    .on("click", () => {
+        whRatios.el.hidden = !whRatios.el.hidden;
+        ratioToggle.el.setAttribute(
+            "aria-expanded",
+            String(!whRatios.el.hidden),
+        );
+        whBar(finalRect);
+    });
 whW.attr({ ariaLabel: t("너비"), inputMode: "numeric" });
 whH.attr({ ariaLabel: t("높이"), inputMode: "numeric" });
 whEl.add([
     whCoordinates,
+    whRatios,
     view("x")
         .class("capture-dimensions")
         .add([whW, txt("×"), whH, txt("px")]),
     whLock,
+    whRuler,
     coordinateToggle,
+    ratioToggle,
+    button(txt("?"))
+        .class("wh-ruler-toggle")
+        .attr({ title: t("제스처 · 단축키 도움말"), type: "button" })
+        .on("click", (e) => {
+            e.stopPropagation();
+            captureHelp.el.hidden = !captureHelp.el.hidden;
+        }),
 ]);
 
 let chPX = 0;
@@ -3754,6 +4276,35 @@ const longTip = frame("long_tip", {
 });
 
 const longPreview = view().style({ position: "fixed" });
+
+const captureHelp = view("y").class("capture-help").addInto();
+captureHelp.el.hidden = true;
+captureHelp.add(ele("strong").attr({ textContent: t("단축키") }));
+for (const [key, desc] of [
+    ["↑ ← ↓ → · WASD", t("선택 영역 이동")],
+    ["Ctrl", t("5픽셀 이동")],
+    ["Shift", t("드래그 시 정사각형 · 10픽셀 이동")],
+    ["Alt", t("중심 기준 확장")],
+    ["휠 클릭 드래그", t("도넛 빠른 동작 · 캔버스 팬")],
+    ["우클릭", t("도넛 메뉴 · 가운데 놓기는 취소")],
+    ["Enter", t("확인 · 저장")],
+    ["Esc", t("취소 · 닫기")],
+    ["Ctrl+Z · Ctrl+Y / Ctrl+Shift+Z", t("실행 취소 · 다시 실행")],
+    ["Delete", t("도형 삭제")],
+    ["?", t("이 도움말 표시")],
+] as const) {
+    captureHelp.add(
+        view("x")
+            .class("capture-help-row")
+            .add([ele("kbd").attr({ textContent: key }), textDesc(desc)]),
+    );
+}
+function textDesc(desc: string) {
+    return ele("span").attr({ textContent: desc });
+}
+captureHelp.el.addEventListener("click", () => {
+    captureHelp.el.hidden = true;
+});
 
 hotkeyTipEl.addInto();
 toolBarEl.addInto();
@@ -3905,10 +4456,17 @@ async function getLiveOcr() {
     return liveOcrPromise;
 }
 
-async function translateCurrentSelection() {
+async function translateCurrentSelection(
+    isCurrent: () => boolean = () => true,
+) {
     if (finalRect[2] < 2 || finalRect[3] < 2) return "";
+    const image = getClipPhoto().toDataURL();
+    const from = store.get("屏幕翻译.语言.from") || "auto";
+    const to = store.get("屏幕翻译.语言.to") || "ko";
     const ocr = await getLiveOcr();
-    const result = await ocr.ocr(getClipPhoto().toDataURL());
+    if (!isCurrent()) return "";
+    const result = await ocr.ocr(image);
+    if (!isCurrent()) return "";
     const texts = result.columns
         .flatMap((column) => column.parragraphs)
         .map((paragraph) => paragraph.parse.text.trim())
@@ -3916,8 +4474,8 @@ async function translateCurrentSelection() {
     if (!texts.length) return "";
     const response = await ipcRenderer.invoke("oc:translate", {
         texts,
-        from: "en",
-        to: "ko",
+        from,
+        to,
     });
     return normalizeTranslatedTexts(response).join("\n");
 }
@@ -3931,7 +4489,18 @@ async function autoRedact() {
 }
 
 function scheduleLiveTranslation() {
-    if (!liveTranslationEnabled || selecting || moving || longRunning) return;
+    if (!liveTranslationEnabled) return;
+    if (
+        selecting ||
+        moving ||
+        longRunning ||
+        finalRect[2] < 2 ||
+        finalRect[3] < 2
+    ) {
+        liveTranslationController.cancel();
+        liveTranslationPreview.el.textContent = "";
+        return;
+    }
     liveTranslationPreview.el.textContent = "번역 중…";
     liveTranslationController.schedule(translateCurrentSelection);
 }
@@ -4030,10 +4599,25 @@ const quickToolbar = view("x")
     .style({ opacity: "0", pointerEvents: "none" })
     .addInto();
 const toolBar = quickToolbar.el;
+let toolbarPinnedPos = store.get("工具栏.快捷位置");
 const toolPopover = view()
     .attr({ id: "capture_tools", role: "group", ariaLabel: t("추가 도구") })
     .addInto();
 toolPopover.el.hidden = true;
+const visiblePopoverTools = () =>
+    Array.from(
+        toolPopover.el.querySelectorAll<HTMLButtonElement>(".capture-tool"),
+    ).filter((b) => b.style.display !== "none");
+toolPopover.el.addEventListener("keydown", (e) => {
+    if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(e.key))
+        return;
+    const tools = visiblePopoverTools();
+    const i = tools.indexOf(e.target as HTMLButtonElement);
+    if (i === -1) return;
+    e.preventDefault();
+    const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
+    tools[(i + step + tools.length) % tools.length].focus();
+});
 const radialMenu = view()
     .attr({ id: "radial_menu", role: "menu", ariaLabel: t("캡처 도구") })
     .addInto();
@@ -4041,6 +4625,7 @@ let drawBarOpen = false;
 let radialOpen = false;
 let radialOrigin = { x: 0, y: 0 };
 let radialPage = 0;
+let renderRecentTools: (() => void) | undefined;
 
 function toolButton(
     item: { id: CaptureTool; title: string },
@@ -4087,6 +4672,10 @@ function toolButton(
                     String(!toolPopover.el.hidden),
                 );
                 positionToolPopover();
+                if (!toolPopover.el.hidden)
+                    toolPopover.el
+                        .querySelector<HTMLInputElement>(".capture-tool-search")
+                        ?.focus();
             }
             return;
         }
@@ -4149,6 +4738,21 @@ let toolbarFixedWidth = 0;
 
 function renderQuickToolbar(ids: readonly CaptureToolId[]) {
     quickToolbar.clear();
+    quickToolbar.add(
+        view()
+            .class("capture-grip")
+            .attr({
+                title: t("이동 · 더블클릭으로 위치 초기화"),
+                ariaLabel: t("이동 · 더블클릭으로 위치 초기화"),
+            })
+            .on("dblclick", (e) => {
+                e.stopPropagation();
+                toolbarPinnedPos = null;
+                store.set("工具栏.快捷位置", null);
+                toolBar.toggleAttribute("data-pinned", false);
+                followBar();
+            }),
+    );
     for (const id of ids) {
         const control = toolButton(experienceTools[id]);
         control.el.dataset.toolbarFavorite = "";
@@ -4192,13 +4796,139 @@ function rebuildCaptureTools() {
         .map((id) => experienceTools[id]);
     captureTools.push({ id: "more", title: "더보기" });
     toolPopover.clear();
+    const toolSearch = input("text")
+        .class("capture-tool-search")
+        .attr({
+            type: "search",
+            placeholder: t("도구 검색"),
+            ariaLabel: t("도구 검색"),
+        })
+        .on("input", (_e, element) => {
+            const q = element.el.value.trim().toLowerCase();
+            for (const b of toolPopover.el.querySelectorAll<HTMLElement>(
+                ".capture-tool",
+            ))
+                b.style.display = (b.textContent ?? "")
+                    .toLowerCase()
+                    .includes(q)
+                    ? ""
+                    : "none";
+        })
+        .on("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                visiblePopoverTools()[0]?.click();
+            } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                visiblePopoverTools()[0]?.focus();
+            } else if (e.key === "Escape") {
+                e.stopPropagation();
+                if (toolSearch.el.value) {
+                    toolSearch.el.value = "";
+                    toolSearch.el.dispatchEvent(new Event("input"));
+                } else {
+                    toolPopover.el.hidden = true;
+                    moreButton.el.focus();
+                }
+            }
+        });
+    toolPopover.add(view("x").class("capture-tool-search-row").add(toolSearch));
     const all = [...Object.values(experienceTools), ...secondaryTools];
+    const byId = new Map(all.map((item) => [item.id, item]));
+    const recentRow = view("x").class("capture-tool-recent");
+    renderRecentTools = () => {
+        recentRow.clear();
+        let recents: string[] = [];
+        try {
+            recents = JSON.parse(
+                localStorage.getItem("oc:recent-tools") ?? "[]",
+            ) as string[];
+        } catch {}
+        const items = recents
+            .map((id) => byId.get(id as CaptureTool))
+            .filter((item): item is (typeof all)[number] => Boolean(item))
+            .slice(0, 4);
+        recentRow.el.hidden = !items.length;
+        for (const item of items) recentRow.add(toolButton(item, true));
+    };
+    renderRecentTools();
+    toolPopover.add(recentRow);
     const seen = new Set<CaptureTool>();
     for (const item of all) {
         if (item.id === "more" || seen.has(item.id)) continue;
         seen.add(item.id);
         toolPopover.add(toolButton(item, true));
     }
+    let saveCopyOn = Boolean(store.get("保存.保存并复制"));
+    const saveCopyToggle = button()
+        .class("capture-toggle", saveCopyOn ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("저장할 때 클립보드에도 복사"),
+            ariaPressed: String(saveCopyOn),
+        })
+        .add(txt(t("저장+복사")))
+        .on("click", () => {
+            saveCopyOn = !saveCopyOn;
+            store.set("保存.保存并复制", saveCopyOn);
+            saveCopyToggle.el.classList.toggle("active", saveCopyOn);
+            saveCopyToggle.el.setAttribute("aria-pressed", String(saveCopyOn));
+        });
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("저장 후")), saveCopyToggle]),
+    );
+    const soundToggle = button()
+        .class("capture-toggle", captureSound ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("완료 시 짧은 소리"),
+            ariaPressed: String(captureSound),
+        })
+        .add(txt(t("완료음")))
+        .on("click", () => {
+            captureSound = !captureSound;
+            localStorage.setItem("oc:capture-sound", captureSound ? "1" : "0");
+            soundToggle.el.classList.toggle("active", captureSound);
+            soundToggle.el.setAttribute("aria-pressed", String(captureSound));
+        });
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("피드백")), soundToggle]),
+    );
+    const delaySteps = [0, 3, 5, 10];
+    let captureDelay = delaySteps.includes(Number(store.get("框选.延迟")))
+        ? Number(store.get("框选.延迟"))
+        : 0;
+    const delayToggle = button()
+        .class("capture-toggle", captureDelay > 0 ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("다음 캡처 전 대기 시간"),
+            ariaPressed: String(captureDelay > 0),
+        })
+        .add(txt(captureDelay > 0 ? `${captureDelay}s` : t("지연 없음")))
+        .on("click", () => {
+            captureDelay =
+                delaySteps[
+                    (delaySteps.indexOf(captureDelay) + 1) % delaySteps.length
+                ];
+            store.set("框选.延迟", captureDelay);
+            delayToggle.el.classList.toggle("active", captureDelay > 0);
+            delayToggle.el.setAttribute(
+                "aria-pressed",
+                String(captureDelay > 0),
+            );
+            delayToggle.el.textContent =
+                captureDelay > 0 ? `${captureDelay}s` : t("지연 없음");
+        });
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("지연 캡처")), delayToggle]),
+    );
     toolPopover.add(
         view("x")
             .class("capture-size-setting")
@@ -4217,15 +4947,22 @@ toolbarResizeObserver.observe(toolBar);
 function positionToolPopover() {
     if (toolPopover.el.hidden) return;
     const bar = toolBar.getBoundingClientRect();
+    toolPopover.el.style.maxHeight = "";
+    const naturalHeight = toolPopover.el.offsetHeight;
+    const belowSpace = innerHeight - bar.bottom - 16;
+    const aboveSpace = bar.top - 16;
+    const below = naturalHeight <= belowSpace || belowSpace >= aboveSpace;
+    toolPopover.el.style.maxHeight = `${Math.max(180, below ? belowSpace : aboveSpace)}px`;
     toolPopover.style({
         left: `${Math.max(12, Math.min(innerWidth - toolPopover.el.offsetWidth - 12, bar.left))}px`,
-        top: `${Math.max(12, bar.bottom + toolPopover.el.offsetHeight + 8 < innerHeight ? bar.bottom + 8 : bar.top - toolPopover.el.offsetHeight - 8)}px`,
+        top: `${below ? bar.bottom + 8 : Math.max(12, bar.top - toolPopover.el.offsetHeight - 8)}px`,
     });
 }
 
 function updateDrawBarVis() {
-    drawBar.style.opacity = drawBarOpen ? "1" : "0";
-    drawBar.style.pointerEvents = drawBarOpen ? "auto" : "none";
+    const visible = drawBarOpen && finalRect[2] > 0 && finalRect[3] > 0;
+    drawBar.style.opacity = visible ? "1" : "0";
+    drawBar.style.pointerEvents = visible ? "auto" : "none";
     toolBar
         .querySelector<HTMLButtonElement>('[data-capture-action="draw"]')
         ?.setAttribute("aria-pressed", String(drawBarOpen));
@@ -4233,12 +4970,30 @@ function updateDrawBarVis() {
 }
 
 function closeRadial() {
+    if (gestureOrigin) suppressContextUntil = Date.now() + 350;
+    gestureOrigin = null;
     radialOpen = false;
     radialMenu.style({ display: "none" });
     radialMenu.el.replaceChildren();
 }
 
 function runCaptureTool(id: CaptureTool, point = radialOrigin) {
+    if (
+        !["close", "screens", "color", "more"].includes(id) &&
+        !requireCaptureSelection()
+    )
+        return;
+    if (id !== "more") {
+        try {
+            const key = "oc:recent-tools";
+            const list = JSON.parse(
+                localStorage.getItem(key) ?? "[]",
+            ) as string[];
+            const next = [id, ...list.filter((i) => i !== id)].slice(0, 4);
+            localStorage.setItem(key, JSON.stringify(next));
+            renderRecentTools?.();
+        } catch {}
+    }
     if (id === "stage") {
         void captureWorkspace
             ?.stage(true)
@@ -4272,6 +5027,7 @@ function runCaptureTool(id: CaptureTool, point = radialOrigin) {
     }
     if (id === "draw") {
         drawBarOpen = !drawBarOpen;
+        if (drawBarOpen) toolPopover.el.hidden = true;
         if (!drawBarOpen) setEditType("select", "rect");
         updateDrawBarVis();
         return;
@@ -4288,12 +5044,14 @@ function runCaptureTool(id: CaptureTool, point = radialOrigin) {
             const index = allScreens.findIndex(
                 (screen) => screen.id === nowScreenId,
             );
-            void setScreen(allScreens[(index + 1) % allScreens.length]);
+            void setScreen(allScreens[(index + 1) % allScreens.length]).catch(
+                (error) => captureWorkspace?.showError(error),
+            );
         }
         return;
     }
     if (id === "more") {
-        openRadial(point.x, point.y, 1);
+        openRadial(point.x, point.y, (radialPage + 1) % radialPageCount());
         return;
     }
     toolsX[id].f();
@@ -4332,6 +5090,7 @@ function openRadial(cx: number, cy: number, page = 0) {
         items.length,
         bSize + 4,
     );
+    radialOrigin = { ...layout.center };
     radialMenu.el.replaceChildren();
     const halo = view()
         .class("radial-halo")
@@ -4467,6 +5226,22 @@ const handleDirections = [
     ["sw", "西南"],
     ["w", "西"],
 ] as const;
+function finishHandleResize(commit: boolean) {
+    const drag = handleDrag;
+    if (!drag) return;
+    handleDrag = null;
+    if (drag.handle.hasPointerCapture(drag.pointerId))
+        drag.handle.releasePointerCapture(drag.pointerId);
+    if (!commit) finalRect = drag.rect;
+    direction = "";
+    finalRectFix();
+    if (commit) {
+        rememberLastRect();
+        hisPush();
+    }
+    drawClip();
+    followBar();
+}
 for (const [position, resizeDirection] of handleDirections) {
     const handle = button()
         .attr({
@@ -4476,35 +5251,53 @@ for (const [position, resizeDirection] of handleDirections) {
         })
         .class("capture-handle", `handle-${position}`)
         .addInto(selectionHandles);
-    let drag: { rect: rect; origin: editor_position } | null = null;
     handle.on("pointerdown", (e) => {
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         closeRadial();
-        drag = { rect: [...finalRect], origin: src2pXY(e2srcPoint(e)) };
+        liveTranslationController.cancel();
+        handleDrag = {
+            handle: handle.el,
+            pointerId: e.pointerId,
+            rect: [...finalRect],
+            origin: src2pXY(e2srcPoint(e)),
+        };
         handle.el.setPointerCapture(e.pointerId);
     });
     handle.on("pointermove", (e) => {
-        if (!drag) return;
+        const drag = handleDrag;
+        if (
+            !drag ||
+            drag.handle !== handle.el ||
+            drag.pointerId !== e.pointerId
+        )
+            return;
         direction = resizeDirection;
         moveRect(drag.rect, drag.origin, src2pXY(e2srcPoint(e)));
         drawClip();
         followBar();
     });
-    const finish = () => {
-        if (!drag) return;
-        drag = null;
-        finalRectFix();
-        hisPush();
-        drawClip();
-        followBar();
-    };
-    handle.on("pointerup", finish).on("pointercancel", finish);
+    handle
+        .on("pointerup", (e) => {
+            if (
+                handleDrag?.handle === handle.el &&
+                handleDrag.pointerId === e.pointerId
+            )
+                finishHandleResize(true);
+        })
+        .on("pointercancel", (e) => {
+            if (
+                handleDrag?.handle === handle.el &&
+                handleDrag.pointerId === e.pointerId
+            )
+                finishHandleResize(false);
+        });
 }
 
 function syncSelectionHandles() {
     selectionHandles.el.hidden =
+        captureSelectionMode === "window" ||
         !isRect ||
         selecting ||
         nowType !== "select" ||
@@ -4528,6 +5321,7 @@ window.addEventListener("resize", () => {
 });
 
 let nowScreenId = 0;
+let captureSelectionMode: CaptureSelectionMode = "region";
 
 let allScreens: Awaited<ReturnType<typeof screenShots>>["screen"];
 let windows: Awaited<ReturnType<typeof screenShots>>["window"];
@@ -4539,13 +5333,7 @@ const editorP = { zoom: 1, x: 0, y: 0 };
 let middleB: PointerEvent | null = null;
 const middleP = { x: 0, y: 0 };
 
-const edgeRect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    type: "system" | "image";
-}[] = [];
+const edgeRect: CaptureSelectionEdge[] = [];
 
 const drawMainEls: { [key in keyof EditType]: ElType<HTMLElement> } = {
     select: drawMainElsx.select,
@@ -4639,7 +5427,7 @@ let autoDo = store.get("框选后默认操作");
 let lastLong = 0;
 
 let uIOhook: typeof import("uiohook-napi")["uIOhook"] | null;
-let longClipTime: NodeJS.Timeout;
+let longClipTime: NodeJS.Timeout | null = null;
 
 const longHide = Array.from(document.body.children).filter(
     (i) => i !== longTip.el.el && i !== longPreview.el,
@@ -4685,6 +5473,21 @@ let undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
     rect: [0, 0, mainCanvas.width, mainCanvas.height] as rect,
     canvas: {},
 });
+function updateUndoButtons() {
+    drawSide操作.撤回.el.classList.toggle(
+        "draw-disabled",
+        undoStack.index <= 0,
+    );
+    drawSide操作.重做.el.classList.toggle(
+        "draw-disabled",
+        undoStack.index >= undoStack.list.length - 1,
+    );
+}
+function watchUndoStack() {
+    undoStack.on("change", updateUndoButtons);
+    updateUndoButtons();
+}
+watchUndoStack();
 let direction:
     | ""
     | "move"
@@ -4783,15 +5586,18 @@ const filtetMap: {
         // biome-ignore lint/suspicious/noExplicitAny: 适配库
         fun: (v?: number) => filters.BaseFilter<string, any>;
         el?: () => ElType<HTMLElement>;
+        levels?: number[];
     };
 } = {
     pixelate: {
         value: { value: 16, max: 20, text: "px" },
         fun: (v) => new Filters.Pixelate({ blocksize: v }),
+        levels: [8, 16, 32],
     },
     blur: {
         value: { value: 1, max: 5, text: "%", step: 0.1 },
         fun: (v) => new Filters.Blur({ blur: v }),
+        levels: [0.5, 1, 2],
     },
     brightness: {
         value: { min: -1, value: 0, max: 1, step: 0.01 },
@@ -4864,17 +5670,29 @@ const clipReady = new Promise<void>((r) => {
 renderOn(
     "clip_init",
     async ([_displays, imgBuffer, mainid, act, project, context]) => {
+        cancelSelectionInteraction();
         const initSequence = ++captureInitSequence;
+        liveTranslationController.cancel();
+        liveTranslationPreview.el.textContent = "";
         const initialize = async () => {
             await clipReady;
             await captureWorkspace?.flush();
             if (initSequence !== captureInitSequence) return;
+            document.documentElement.style.display = "";
+            down = moved = selecting = moving = false;
+            direction = "";
+            selectionBeforeDrag = null;
+            oFinalRect = null;
+            drawBarOpen = false;
+            setEditType("select", "rect");
+            cleanClip();
             captureSourceContext = project?.source ??
                 context?.source ?? {
                     kind: imgBuffer ? "import" : "capture",
                     capturedAt: new Date().toISOString(),
                 };
             immutableSourceData = undefined;
+            captureSelectionMode = context?.selectionMode ?? "region";
             batchRegions = [];
             captureWorkspace?.begin(
                 project?.draftId
@@ -4887,18 +5705,23 @@ renderOn(
             await captureWorkspace?.loadPreferences();
             const wx = await screenShots(_displays, imgBuffer); // 只是截屏 也可能是小图片
             if (initSequence !== captureInitSequence) return;
+            if (
+                captureSelectionMode === "window" &&
+                (wx.type !== "normal" || wx.window.length === 0)
+            )
+                throw new Error(
+                    t(
+                        "현재 캡처 방식은 창 선택을 지원하지 않습니다. 영역 캡처를 사용해 주세요.",
+                    ),
+                );
             screenShotCache.clear();
             fabricCanvas.clear();
             allScreens = wx.screen;
             const mainId = mainid;
             const i = getNowScreen(mainId);
-            windows = wx.window.map((w) => {
-                w.rect.x -= i.bounds?.x ?? 0;
-                w.rect.y -= i.bounds?.y ?? 0;
-                return w;
-            });
+            windows = wx.window;
             console.log(allScreens, windows);
-            await setScreen(i);
+            if (!(await setScreen(i))) return;
             if (initSequence !== captureInitSequence) return;
             const nowScreen =
                 _displays.find((i) => i.id === mainId) || _displays[0]; // 非截屏，是屏幕
@@ -4933,7 +5756,10 @@ renderOn(
 
             document.body.style.opacity = "";
 
-            renderSend("clip_show", [context?.requestId]);
+            renderSend("clip_show", [
+                context?.requestId,
+                wx.type === "normal" ? nowScreenId : mainId,
+            ]);
             const screensEl = toolsX.screens.el;
             if (allScreens.length > 1) {
                 let minX = 0;
@@ -4966,12 +5792,16 @@ renderOn(
                         div.el.classList.add("now_screen");
                     }
                     el.add(div);
-                    div.on("click", () => {
-                        el.query(".now_screen")?.el.classList.remove(
-                            "now_screen",
-                        );
-                        div.class("now_screen");
-                        setScreen(i);
+                    div.on("click", async () => {
+                        try {
+                            if (!(await setScreen(i))) return;
+                            el.query(".now_screen")?.el.classList.remove(
+                                "now_screen",
+                            );
+                            div.class("now_screen");
+                        } catch (error) {
+                            captureWorkspace?.showError(error);
+                        }
                     });
                 }
                 screensEl.clear().add(el);
@@ -4980,8 +5810,6 @@ renderOn(
             }
 
             setDefaultAction(act);
-
-            getWin();
 
             if (project) {
                 const r = project.rect;
@@ -5009,6 +5837,7 @@ renderOn(
                 rect: [...finalRect],
                 canvas: fabricCanvas.toJSON(),
             });
+            watchUndoStack();
             captureWorkspace?.initialized();
             followBar();
             if (context?.requestId) {
@@ -5026,7 +5855,13 @@ renderOn(
         try {
             await captureInitQueue;
         } catch (error) {
+            if (initSequence !== captureInitSequence) return;
+            cleanClip();
             captureWorkspace?.showError(error);
+            renderSend("clip_capture_failed", [
+                context?.requestId,
+                error instanceof Error ? error.message : String(error),
+            ]);
         }
     },
 );
@@ -5088,8 +5923,19 @@ document.onkeyup = (e) => {
     }
 };
 
+const radialTakesWheel = () => {
+    const v = store.get("鼠标快捷键.径向菜单");
+    const trigger = v?.트리거 ?? "both";
+    return Boolean(
+        v?.开启 &&
+            Array.isArray(v?.动作) &&
+            v.动作.length >= 2 &&
+            trigger !== "back",
+    );
+};
 document.addEventListener("pointerdown", (e) => {
     if (e.button === 1) {
+        if (radialTakesWheel()) return;
         middleB = e;
         middleP.x = editorP.x;
         middleP.y = editorP.y;
@@ -5224,7 +6070,13 @@ const lr = longTip.els.rect;
 
 trackPoint(pack(toolBar), {
     start: (e) => {
-        if (e.ctrlKey) {
+        const target = e.target as HTMLElement;
+        if (
+            e.ctrlKey ||
+            target === toolBar ||
+            target.classList.contains("capture-divider") ||
+            target.classList.contains("capture-grip")
+        ) {
             toolBar.style.transition = "none";
             return {
                 x: toolBar.offsetLeft,
@@ -5234,12 +6086,30 @@ trackPoint(pack(toolBar), {
         return null;
     },
     ing: (p) => {
-        toolBar.style.left = `${p.x}px`;
-        toolBar.style.top = `${p.y}px`;
+        const w = toolBar.offsetWidth;
+        const h = toolBar.offsetHeight;
+        const margin = 12;
+        const snap = 14;
+        let x = Math.max(0, Math.min(p.x, window.innerWidth - w));
+        let y = Math.max(0, Math.min(p.y, window.innerHeight - h));
+        if (Math.abs(x - margin) <= snap) x = margin;
+        else if (Math.abs(innerWidth - w - margin - x) <= snap)
+            x = innerWidth - w - margin;
+        if (Math.abs(y - margin) <= snap) y = margin;
+        else if (Math.abs(innerHeight - h - margin - y) <= snap)
+            y = innerHeight - h - margin;
+        toolBar.style.left = `${x}px`;
+        toolBar.style.top = `${y}px`;
         trackLocation();
     },
     end: () => {
         toolBar.style.transition = "";
+        toolbarPinnedPos = {
+            left: toolBar.offsetLeft,
+            top: toolBar.offsetTop,
+        };
+        store.set("工具栏.快捷位置", toolbarPinnedPos);
+        toolBar.toggleAttribute("data-pinned", true);
     },
 });
 
@@ -5255,6 +6125,15 @@ document.body.onkeydown = (e) => {
         tagName === "TEXTAREA"
     )
         return;
+    if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        captureHelp.el.hidden = !captureHelp.el.hidden;
+        return;
+    }
+    if (e.key === "Escape" && !captureHelp.el.hidden) {
+        captureHelp.el.hidden = true;
+        return;
+    }
     if (longRunning) return;
     if (hotkeys.getScope() === "c_bar") return;
     const o: Record<string, "up" | "right" | "down" | "left"> = {
@@ -5269,6 +6148,14 @@ document.body.onkeydown = (e) => {
     };
     const controlKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const isWasd = controlKey.length === 1 && controlKey in o;
+    if (isWasd && (e.ctrlKey || e.metaKey || e.altKey)) return;
+    if (captureSelectionMode === "window" && controlKey in o) {
+        e.preventDefault();
+        captureWorkspace?.showStatus(
+            "창 캡처에서는 시스템 창의 원래 경계를 사용합니다.",
+        );
+        return;
+    }
     if (isWasd && (nowType === "draw" || nowType === "shape" || !direction))
         return;
     if (nowType === "draw" || nowType === "shape") {
@@ -5285,36 +6172,59 @@ document.body.onkeydown = (e) => {
     if (controlKey in o) {
         e.preventDefault();
         if (isWasd) e.stopPropagation();
+        const dx =
+            (o[controlKey] === "right" ? v : 0) -
+            (o[controlKey] === "left" ? v : 0);
+        const dy =
+            (o[controlKey] === "down" ? v : 0) -
+            (o[controlKey] === "up" ? v : 0);
         if (direction) {
-            const op = nowMouseE;
-            let x = op.offsetX;
-            let y = op.offsetY;
-            const d = v;
-            switch (o[controlKey]) {
-                case "up":
-                    y = op.offsetY - d;
-                    break;
-                case "down":
-                    y = op.offsetY + d;
-                    break;
-                case "right":
-                    x = op.offsetX + d;
-                    break;
-                case "left":
-                    x = op.offsetX - d;
-                    break;
-            }
+            const op = nowMouseE ?? { offsetX: 0, offsetY: 0 };
             if (isRect) {
-                moveRect(finalRect, { x: op.offsetX, y: op.offsetY }, { x, y });
+                moveRect(
+                    finalRect,
+                    { x: op.offsetX, y: op.offsetY },
+                    { x: op.offsetX + dx, y: op.offsetY + dy },
+                );
             } else {
                 movePoly(
                     freeSelect,
                     { x: op.offsetX, y: op.offsetY },
-                    { x, y },
+                    { x: op.offsetX + dx, y: op.offsetY + dy },
                 );
             }
             drawClip();
-            ckx(e2srcPoint(nowMouseE));
+            if (nowMouseE) ckx(e2srcPoint(nowMouseE));
+        } else if (rectSelect) {
+            if (isRect) {
+                finalRect[0] += Math.min(
+                    Math.max(dx, -finalRect[0]),
+                    mainCanvas.width - finalRect[0] - finalRect[2],
+                );
+                finalRect[1] += Math.min(
+                    Math.max(dy, -finalRect[1]),
+                    mainCanvas.height - finalRect[1] - finalRect[3],
+                );
+                finalRectFix();
+            } else if (freeSelect.length) {
+                const xs = freeSelect.map((i) => i.x);
+                const ys = freeSelect.map((i) => i.y);
+                const cdx = Math.min(
+                    Math.max(dx, -Math.min(...xs)),
+                    mainCanvas.width - Math.max(...xs),
+                );
+                const cdy = Math.min(
+                    Math.max(dy, -Math.min(...ys)),
+                    mainCanvas.height - Math.max(...ys),
+                );
+                freeSelect = freeSelect.map((i) => ({
+                    x: Math.round(i.x + cdx),
+                    y: Math.round(i.y + cdy),
+                }));
+            }
+            drawClip();
+            followBar();
+            if (nowMouseE) ckx(e2srcPoint(nowMouseE));
         } else {
             let x = editorP.x;
             let y = editorP.y;
@@ -5335,7 +6245,7 @@ document.body.onkeydown = (e) => {
             }
             setEditorP(editorP.zoom, x, y);
             document.body.classList.add("editor_bg");
-            mouseBar(finalRect, e2srcPoint(nowMouseE));
+            if (nowMouseE) mouseBar(finalRect, e2srcPoint(nowMouseE));
         }
     }
 };
@@ -5374,31 +6284,44 @@ document.onmouseup = (e) => {
     if (e.button === 0) {
         if (selecting) {
             clipEnd(e);
+            rememberLastRect();
             // 抬起鼠标后工具栏跟随
             followBar({ x: e.clientX, y: e.clientY });
             // 框选后默认操作
-            if (autoDo !== "no" && e.button === 0) {
-                toolsX[autoDo].f();
-            }
             isShowBars = true;
             showBars(isShowBars);
+            void completeSelectionAction();
         }
         if (moving) {
             moving = false;
             oFinalRect = null;
             if (e.button === 0) followBar({ x: e.clientX, y: e.clientY });
             hisPush();
+            rememberLastRect();
             scheduleLiveTranslation();
         }
     }
-    toolBar.style.pointerEvents = whEl.el.style.pointerEvents = "auto";
-    drawBar.style.pointerEvents = drawBarOpen ? "auto" : "none";
+    const hasSelection = finalRect[2] > 0 && finalRect[3] > 0;
+    toolBar.style.pointerEvents = whEl.el.style.pointerEvents = hasSelection
+        ? "auto"
+        : "none";
+    drawBar.style.pointerEvents = drawBarOpen && hasSelection ? "auto" : "none";
 
     down = false;
     moved = false;
+    selectionBeforeDrag = null;
 };
 
 hotkeys("s", () => {
+    if (captureSelectionMode === "window") {
+        rectSelect = false;
+        finalRect = [0, 0, 0, 0];
+        drawClipRect();
+        captureWorkspace?.showStatus(
+            "창 위로 포인터를 이동한 다음 클릭하세요.",
+        );
+        return;
+    }
     if (autoPhotoSelectRect) {
         console.log("edge");
         edge();
@@ -5472,6 +6395,12 @@ for (const xel of whL) {
 
 // 快捷键全屏选择
 hotkeys("ctrl+a, command+a", () => {
+    if (captureSelectionMode === "window") {
+        captureWorkspace?.showStatus(
+            "창 캡처에서는 시스템 창을 선택해 주세요.",
+        );
+        return;
+    }
     finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
     hisPush();
     setClipCursor("crosshair");
@@ -5495,8 +6424,8 @@ const pointColorCanvasCtx = pointColorCanvas.getContext("2d", {
 })!;
 const pointCenter = document.createElement("div");
 mouseBarColor.add(pointCenter);
-pointCenter.style.left = `${((colorSize - 1) / 2) * colorISize}px`;
-pointCenter.style.top = `${((colorSize - 1) / 2) * colorISize}px`;
+pointCenter.style.left = "calc((var(--color-size) - var(--color-i-size)) / 2)";
+pointCenter.style.top = "calc((var(--color-size) - var(--color-i-size)) / 2)";
 
 if (!store.get("鼠标跟随栏.显示")) mouseBarEl.style({ display: "none" });
 // 鼠标跟随栏
@@ -5602,11 +6531,16 @@ hotkeys("ctrl+z", () => {
 hotkeys("ctrl+y", () => {
     undo(false);
 });
+hotkeys("ctrl+shift+z", () => {
+    undo(false);
+});
 
 drawSide操作.撤回.on("click", () => {
+    if (undoStack.index <= 0) return;
     undo(true);
 });
 drawSide操作.重做.on("click", () => {
+    if (undoStack.index >= undoStack.list.length - 1) return;
     undo(false);
 });
 drawSide操作.复制.on("click", () => {
@@ -6029,6 +6963,27 @@ fabricCanvas.on("object:added", () => captureWorkspace?.changed());
 fabricCanvas.on("object:removed", () => captureWorkspace?.changed());
 fabricCanvas.on("text:changed", () => captureWorkspace?.changed());
 
+function radialGestureTarget(x: number, y: number): CaptureTool | null {
+    let nearest: HTMLButtonElement | null = null;
+    let distance = 48;
+    for (const control of radialMenu.el.querySelectorAll<HTMLButtonElement>(
+        ".radial_item",
+    )) {
+        control.classList.remove("is-gesture-target");
+        if (control.disabled) continue;
+        const d = Math.hypot(
+            x - Number.parseFloat(control.style.left),
+            y - Number.parseFloat(control.style.top),
+        );
+        if (d < distance) {
+            nearest = control;
+            distance = d;
+        }
+    }
+    nearest?.classList.add("is-gesture-target");
+    return (nearest?.dataset.captureAction as CaptureTool) ?? null;
+}
+
 document.addEventListener(
     "pointerdown",
     (event) => {
@@ -6041,6 +6996,8 @@ document.addEventListener(
         )
             return;
         event.preventDefault();
+        nowMouseE = event;
+        suppressContextUntil = 0;
         captureWorkspace?.dismiss();
         rightKey = false;
         changeRightBar(false);
@@ -6049,6 +7006,7 @@ document.addEventListener(
             y: event.clientY,
             moved: false,
             target: null,
+            pointerId: event.pointerId,
         };
         openRadial(event.clientX, event.clientY);
     },
@@ -6057,38 +7015,38 @@ document.addEventListener(
 document.addEventListener(
     "pointermove",
     (event) => {
-        if (!gestureOrigin) return;
+        if (!gestureOrigin || gestureOrigin.pointerId !== event.pointerId)
+            return;
+        if (!(event.buttons & 2)) {
+            closeRadial();
+            return;
+        }
         gestureOrigin.moved ||=
             Math.hypot(
                 event.clientX - gestureOrigin.x,
                 event.clientY - gestureOrigin.y,
             ) > 20;
-        let nearest: HTMLButtonElement | null = null;
-        let distance = 48;
-        for (const control of radialMenu.el.querySelectorAll<HTMLButtonElement>(
-            ".radial_item",
-        )) {
-            control.classList.remove("is-gesture-target");
-            const d = Math.hypot(
-                event.clientX - Number.parseFloat(control.style.left),
-                event.clientY - Number.parseFloat(control.style.top),
-            );
-            if (d < distance) {
-                nearest = control;
-                distance = d;
-            }
-        }
-        nearest?.classList.add("is-gesture-target");
-        gestureOrigin.target =
-            (nearest?.dataset.captureAction as CaptureTool) ?? null;
+        gestureOrigin.target = radialGestureTarget(
+            event.clientX,
+            event.clientY,
+        );
     },
     true,
 );
 document.addEventListener(
     "pointerup",
     (event) => {
-        if (event.button !== 2 || !gestureOrigin) return;
+        if (
+            event.button !== 2 ||
+            !gestureOrigin ||
+            gestureOrigin.pointerId !== event.pointerId
+        )
+            return;
         const gesture = gestureOrigin;
+        gesture.moved ||=
+            Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) >
+            20;
+        gesture.target = radialGestureTarget(event.clientX, event.clientY);
         gestureOrigin = null;
         suppressContextUntil = Date.now() + 350;
         if (gesture.moved) {
@@ -6101,5 +7059,24 @@ document.addEventListener(
     },
     true,
 );
+
+document.addEventListener(
+    "pointercancel",
+    (event) => {
+        if (gestureOrigin?.pointerId === event.pointerId) closeRadial();
+        cancelSelectionInteraction();
+    },
+    true,
+);
+window.addEventListener("blur", () => {
+    closeRadial();
+    cancelSelectionInteraction();
+});
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        closeRadial();
+        cancelSelectionInteraction();
+    }
+});
 
 resolveClipReady();

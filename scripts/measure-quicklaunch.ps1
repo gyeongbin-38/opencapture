@@ -51,6 +51,7 @@ try {
         StartupMilliseconds = [int64]$ready.startupMs
         ToggleHotkey = $ready.toggle
         CaptureHotkey = $ready.capture
+        ChildProcessCount = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId={0}" -f $process.Id)).Count
         Samples = $samples
     } | ConvertTo-Json -Depth 5
 }
@@ -64,5 +65,11 @@ finally {
         $process.Dispose()
     }
     Remove-Item -LiteralPath $diagnosticsPath -Force -ErrorAction SilentlyContinue
+    $resolvedProfilePath = [System.IO.Path]::GetFullPath($profilePath)
+    $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/')
+    if ((Split-Path -Parent $resolvedProfilePath) -ne $resolvedTempRoot -or
+        -not [System.IO.Path]::GetFileName($resolvedProfilePath).StartsWith('OpenCaptureQuick-profile-', [System.StringComparison]::Ordinal)) {
+        throw "Measurement cleanup target is outside its generated temporary profile."
+    }
     Remove-Item -LiteralPath $profilePath -Recurse -Force -ErrorAction SilentlyContinue
 }

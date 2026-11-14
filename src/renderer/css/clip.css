@@ -116,6 +116,12 @@ body input {
         transform: var(--button-active);
     }
 }
+
+#tool_bar.toolbar-horizontal {
+    flex-direction: row;
+    width: auto;
+    height: var(--bar-size);
+}
 #tool_bar > div > .icon {
     width: calc(var(--bar-size) * var(--bar-icon));
 }
@@ -303,7 +309,9 @@ body input {
     position: absolute;
     top: 0;
     transition: var(--transition);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
 .draw_side_hide {
     opacity: 0 !important;
@@ -316,6 +324,40 @@ body input {
 }
 .draw_items > div {
     flex-shrink: 0;
+}
+
+.draw_items > div.font-size-presets,
+.draw_items > div.filter-levels,
+.draw_filters_range > .filter-levels {
+    width: auto;
+    height: auto;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    align-items: center;
+}
+
+.font-size-presets > button,
+.filter-levels > button {
+    min-width: 20px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: var(--fs-xs);
+    line-height: 1;
+    color: inherit;
+    background: transparent;
+    transition: var(--transition);
+}
+
+.font-size-presets > button:hover,
+.filter-levels > button:hover {
+    background-color: var(--hover-color);
+}
+
+.draw_items > div.draw-disabled {
+    opacity: 0.35;
+    pointer-events: none;
 }
 
 #editor {
@@ -358,8 +400,8 @@ body input {
     position: fixed;
     z-index: 100;
     padding: 2px;
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow);
+    border-radius: 0;
+    box-shadow: none;
     overflow: hidden;
     pointer-events: none;
     left: 0;
@@ -374,7 +416,7 @@ body input {
     height: var(--color-size);
     overflow: hidden;
     transition: var(--transition);
-    border-radius: 6px;
+    border-radius: 0;
     position: relative;
 }
 #point_color > canvas {
@@ -393,10 +435,6 @@ body input {
     height: var(--color-i-size);
     box-shadow: #000 0 0 0 1px, #fff 0 0 0 2px;
 }
-#point_color > div:nth-of-type(2),
-#point_color > div:nth-of-type(3) {
-    background: repeating-linear-gradient(45deg, #fff, #fff 2px, #000 4px);
-}
 #clip_xy {
     font-family: var(--monospace);
     cursor: copy;
@@ -407,7 +445,7 @@ body input {
     width: 100%;
     transition: var(--transition);
     overflow: hidden;
-    border-radius: 6px;
+    border-radius: 0;
     cursor: copy;
 }
 #clip_copy > div {
@@ -418,15 +456,15 @@ body input {
 #clip_xy,
 #clip_copy > div > div:nth-child(1),
 #clip_copy > div > div:not(:nth-child(1)) > div {
-    height: 32px;
-    line-height: 32px;
+    height: 24px;
+    line-height: 24px;
     transition: background-color var(--transition);
     text-align: center;
-    border-radius: 6px;
+    border-radius: 0;
     white-space: nowrap;
 }
 #clip_copy > div > div:not(:nth-child(1)) {
-    border-radius: 6px;
+    border-radius: 0;
 }
 #clip_xy:hover,
 #clip_copy > div > div:nth-child(1):hover,

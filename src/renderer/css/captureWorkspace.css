@@ -5,20 +5,20 @@
     bottom: 18px;
     transform: translateX(-50%);
     display: flex;
-    gap: 8px;
+    gap: var(--sp-2);
     align-items: center;
-    padding: 7px 12px;
+    padding: var(--sp-2) var(--sp-3);
     border: 1px solid #ffffff24;
     border-radius: 9px;
     background: #17171bf5;
     color: #f4f4f5;
-    font-size: 11px;
-    box-shadow: 0 5px 18px #0004;
+    font-size: 12px;
+    box-shadow: 0 3px 12px #0004;
 }
 .capture-workspace-status button {
     background: transparent !important;
     height: 24px;
-    font-size: 11px;
+    font-size: var(--fs-xs);
 }
 #capture_inline_shelf {
     position: fixed;
@@ -27,8 +27,8 @@
     bottom: 18px;
     display: flex !important;
     align-items: center;
-    gap: 5px;
-    padding: 5px 8px;
+    gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2);
     background: #17171bf5;
     border: 1px solid #ffffff24;
     border-radius: 11px;
@@ -37,10 +37,10 @@
     box-shadow: 0 6px 20px #0004;
 }
 .capture-shelf-count {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: #a1a1aa;
     white-space: nowrap;
-    padding: 0 5px;
+    padding: 0 var(--sp-1);
 }
 .capture-shelf-thumb {
     padding: 0 !important;
@@ -63,7 +63,7 @@
     z-index: 124;
     padding: 0 !important;
     border: 1px solid #fff9;
-    background: #ffffff12 !important;
+    background: var(--line, rgba(255, 255, 255, 0.08)) !important;
     border-radius: 3px !important;
     cursor: text;
 }
@@ -78,11 +78,11 @@
     align-items: center;
     left: 18px;
     bottom: 18px;
-    padding: 8px;
+    padding: var(--sp-2);
     border: 1px solid #ffffff24;
     border-radius: 10px;
     background: #17171bf5;
-    font-size: 11px;
+    font-size: var(--fs-xs);
 }
 .capture-color-swatch {
     width: 22px !important;
@@ -94,7 +94,7 @@
 #capture_redact_review {
     width: min(400px, 90vw);
     height: auto !important;
-    padding: 16px;
+    padding: var(--sp-4);
     border: 1px solid #ffffff24;
     border-radius: 14px;
     background: #18181c;
@@ -105,16 +105,16 @@
     background: #0007;
 }
 .capture-review-list {
-    margin: 12px 0;
+    margin: var(--sp-3) 0;
     max-height: 280px;
     overflow: auto;
 }
 .capture-review-line {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 8px 0;
-    font-size: 12px;
+    gap: var(--sp-2);
+    margin: var(--sp-2) 0;
+    font-size: var(--fs-sm);
     word-break: break-all;
 }
 .capture-review-line input {
@@ -124,10 +124,10 @@
 }
 .capture-review-actions {
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--sp-2);
 }
 .capture-review-actions button {
-    font-size: 12px;
+    font-size: var(--fs-sm);
     background: #242429 !important;
 }
 #capture_inline_shelf[hidden],

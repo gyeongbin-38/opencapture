@@ -435,7 +435,8 @@ app.whenReady().then(async () => {
         }
 
         if (phase === "board-open-diagnostic") {
-            const before = await run(`Promise.all([window.openCapture.boards.list(),Promise.resolve({
+            const before =
+                await run(`Promise.all([window.openCapture.boards.list(),Promise.resolve({
                 page:document.querySelector(".nav-button.active")?.dataset.page,
                 tabs:[...document.querySelectorAll(".board-tab")].map(node=>({id:node.dataset.boardId,active:node.classList.contains("is-active")})),
                 board:Boolean(document.querySelector(".capture-board"))
@@ -444,7 +445,8 @@ app.whenReady().then(async () => {
                 'document.querySelector(".nav-button[data-page=\\"board\\"]").click()',
             );
             await pause(1_500);
-            const after = await run(`Promise.all([window.openCapture.boards.list(),Promise.resolve({
+            const after =
+                await run(`Promise.all([window.openCapture.boards.list(),Promise.resolve({
                 page:document.querySelector(".nav-button.active")?.dataset.page,
                 tabs:[...document.querySelectorAll(".board-tab")].map(node=>({id:node.dataset.boardId,active:node.classList.contains("is-active")})),
                 board:Boolean(document.querySelector(".capture-board")),
@@ -957,7 +959,7 @@ app.whenReady().then(async () => {
             "document.querySelector('[data-board-command=\"group\"]').click()",
         );
         await pause(650);
-        let grouped = await run(
+        const grouped = await run(
             `window.openCapture.boards.load(${JSON.stringify(board.id)})`,
         );
         assert(
@@ -1927,7 +1929,10 @@ app.whenReady().then(async () => {
             },
         });
         assert(!errors.length, `Renderer errors: ${JSON.stringify(errors)}`);
-        assert(!mainErrors.length, `Main errors: ${JSON.stringify(mainErrors)}`);
+        assert(
+            !mainErrors.length,
+            `Main errors: ${JSON.stringify(mainErrors)}`,
+        );
         fs.writeFileSync(
             planPath,
             JSON.stringify(

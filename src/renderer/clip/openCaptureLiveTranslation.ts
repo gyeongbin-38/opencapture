@@ -1,4 +1,4 @@
-export type LiveTranslationTask<T> = () => Promise<T>;
+export type LiveTranslationTask<T> = (isCurrent: () => boolean) => Promise<T>;
 
 /**
  * Debounces selection changes, permits one expensive OCR/translation task at a
@@ -52,7 +52,9 @@ export class LatestLiveTranslation<T> {
     }) {
         this.running = true;
         try {
-            const value = await next.task();
+            const value = await next.task(
+                () => next.generation === this.generation,
+            );
             if (next.generation === this.generation) this.publish(value);
         } catch (error) {
             if (next.generation === this.generation) this.reportError(error);

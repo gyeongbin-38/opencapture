@@ -5,8 +5,8 @@
 `OpenCapture.exe --broker --native-dispatch --capture`로 전달하므로 일반 앱과
 동일한 선택·주석·임시 보관 흐름을 사용합니다.
 
-- 기본 영역 캡처: **Ctrl+Shift+Space**
-- 기본 시작 화면: **Ctrl+Alt+Space**
+- 기본 영역 캡처: **Ctrl+Shift+A**
+- 기본 시작 화면: **Ctrl+Shift+Space**
 - 앱 설정에서 바꾼 키는 `config.json`의 `起始页快捷键` 값을 읽어
   실행 중에 다시 등록합니다. 빈 문자열은 해당 키를 끕니다.
 - 일반 OpenCapture가 실행되면 도우미는 단축키를 반납합니다. 일반 앱이

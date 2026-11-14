@@ -13,8 +13,8 @@ using System.Windows.Forms;
 
 internal static class QuickLaunch
 {
-    internal const string DefaultCaptureKey = "CommandOrControl+Shift+Space";
-    internal const string DefaultToggleKey = "CommandOrControl+Alt+Space";
+    internal const string DefaultCaptureKey = "CommandOrControl+Shift+A";
+    internal const string DefaultToggleKey = "CommandOrControl+Shift+Space";
 
     [STAThread]
     private static int Main(string[] args)

@@ -829,7 +829,7 @@ app.whenReady().then(async () => {
         await run(
             `window.openCapture.trashItems(${JSON.stringify([secondStage.id])})`,
         );
-        let statuses = await run(`Promise.all([
+        const statuses = await run(`Promise.all([
             window.openCapture.queryItems({scope:"library",sort:"newest",offset:0,limit:200,queryId:"status-library"}),
             window.openCapture.queryItems({scope:"trash",sort:"newest",offset:0,limit:200,queryId:"status-trash"})
         ]).then(([library,trash])=>({library:library.items.map(item=>item.id),trash:trash.items.map(item=>item.id)}))`);

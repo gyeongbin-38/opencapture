@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { nativeImage } from "electron";
-import * as ort from "onnxruntime-node";
+import type * as Ort from "onnxruntime-node";
 
 const MODEL_URL =
     "https://huggingface.co/CoderViking/realesr-general-x4v3-onnx/resolve/main/realesr-general-x4v3.onnx";
@@ -43,7 +43,8 @@ export type SuperResolution = {
 
 export function createSuperResolution(modelDir: string): SuperResolution {
     const modelPath = join(modelDir, MODEL_NAME);
-    let sessionPromise: Promise<ort.InferenceSession> | undefined;
+    let runtime: typeof Ort | undefined;
+    let sessionPromise: Promise<Ort.InferenceSession> | undefined;
     let running = false;
     let activeController: AbortController | undefined;
     let lastPercent = 0;
@@ -106,13 +107,18 @@ export function createSuperResolution(modelDir: string): SuperResolution {
         }
     }
 
-    function session(): Promise<ort.InferenceSession> {
-        sessionPromise ??= ort.InferenceSession.create(modelPath).catch(
-            (error) => {
+    const getRuntime = () => {
+        runtime ??= require("onnxruntime-node") as typeof Ort;
+        return runtime;
+    };
+
+    function session(): Promise<Ort.InferenceSession> {
+        sessionPromise ??= getRuntime()
+            .InferenceSession.create(modelPath)
+            .catch((error) => {
                 sessionPromise = undefined;
                 throw error;
-            },
-        );
+            });
         return sessionPromise;
     }
 
@@ -167,7 +173,7 @@ export function createSuperResolution(modelDir: string): SuperResolution {
                             input[2 * tw * th + d] = bitmap[s] / 255;
                         }
                     }
-                    const tensor = new ort.Tensor("float32", input, [
+                    const tensor = new (getRuntime().Tensor)("float32", input, [
                         1,
                         3,
                         th,

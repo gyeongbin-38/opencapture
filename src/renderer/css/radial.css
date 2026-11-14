@@ -1,0 +1,129 @@
+:root {
+    --radial-bg: color-mix(in srgb, var(--bg) 88%, transparent);
+    --radial-seg-on: var(--m-color-b);
+    --radial-line: color-mix(in srgb, var(--font-color) 9%, transparent);
+    --radial-line-on: color-mix(in srgb, var(--font-color) 28%, transparent);
+}
+
+body {
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: var(--main-font);
+    user-select: none;
+}
+
+.radial-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 68px;
+    height: 68px;
+    margin: -34px 0 0 -34px;
+    border-radius: 50%;
+    background: var(--radial-bg);
+    backdrop-filter: var(--blur);
+    border: 1px solid var(--radial-line);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform var(--dur-fast) var(--ease), border-color
+        var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+    animation: radial-bloom 120ms var(--ease) backwards;
+}
+
+.radial-center-label {
+    font-size: var(--fs-sm);
+    color: var(--font-color);
+    max-width: 60px;
+    text-align: center;
+    line-height: 1.25;
+}
+
+.radial-center.on {
+    border: 1px dashed var(--radial-line-on);
+    transform: scale(1.12);
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+}
+
+.radial-center.on .radial-center-label {
+    color: var(--font-color-emphasis);
+    font-weight: 600;
+}
+
+@keyframes radial-bloom {
+    from {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.radial-seg {
+    position: absolute;
+    width: 60px;
+    height: 56px;
+    margin: -28px 0 0 -30px;
+    border-radius: var(--border-radius);
+    background: var(--radial-bg);
+    backdrop-filter: var(--blur);
+    border: 1px solid var(--radial-line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-1);
+    transition: background var(--dur-fast) var(--ease), transform
+        var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+    box-shadow: var(--shadow);
+    animation: radial-bloom 140ms var(--ease) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .radial-seg,
+    .radial-center,
+    .radial-ring {
+        animation: none;
+    }
+}
+
+.radial-seg .icon {
+    width: 18px;
+    height: 18px;
+    filter: var(--icon-color);
+}
+
+.radial-seg-label {
+    font-size: var(--fs-xs);
+    color: var(--font-color);
+    white-space: nowrap;
+    line-height: 1.2;
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.radial-seg.on {
+    background: var(--radial-seg-on);
+    border-color: var(--radial-line-on);
+    transform: scale(1.08);
+}
+
+.radial-seg.on .radial-seg-label {
+    color: var(--font-color-emphasis);
+}
+
+.radial-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 168px;
+    height: 168px;
+    margin: -84px 0 0 -84px;
+    border-radius: 50%;
+    border: 1px dashed var(--radial-line);
+}
