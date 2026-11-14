@@ -1,5 +1,6 @@
 import { captureDock } from "../lib/captureControls";
 import { createLongPressController } from "../lib/longPress";
+import { lt } from "./i18n";
 
 export type ReferenceWindowsOptions = {
     process: (
@@ -99,14 +100,14 @@ const pngBlob = async (image: HTMLImageElement) => {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext("2d", { alpha: true });
-    if (!context) throw new Error("이미지를 변환할 수 없습니다.");
+    if (!context) throw new Error(lt("이미지를 변환할 수 없습니다."));
     context.drawImage(image, 0, 0);
     return new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
             (blob) =>
                 blob
                     ? resolve(blob)
-                    : reject(new Error("PNG 이미지를 만들 수 없습니다.")),
+                    : reject(new Error(lt("PNG 이미지를 만들 수 없습니다."))),
             "image/png",
         ),
     );
@@ -120,7 +121,7 @@ const waitForImage = (image: HTMLImageElement) =>
         };
         const failed = () => {
             cleanup();
-            reject(new Error("이미지를 열 수 없습니다."));
+            reject(new Error(lt("이미지를 열 수 없습니다.")));
         };
         const cleanup = () => {
             image.removeEventListener("load", loaded);
@@ -171,18 +172,22 @@ export function createReferenceWindows(
     const makeCard = async (dataURL: string, name: string) => {
         const shell = element("article", "reference-window");
         shell.dataset.testid = "reference-window";
-        shell.setAttribute("aria-label", `${name} 참고창`);
+        shell.setAttribute(
+            "aria-label",
+            lt(`${name} 참고창`, `${name} reference window`),
+        );
         const header = element("header", "reference-window__header");
         const caption = element(
             "span",
             "reference-window__caption",
-            "참고창으로 띄우기",
+            lt("참고창으로 띄우기"),
         );
-        caption.title =
-            "이 이미지는 브라우저 탭 안에서만 떠 있습니다. 운영체제의 항상 위 창은 아닙니다.";
+        caption.title = lt(
+            "이 이미지는 브라우저 탭 안에서만 떠 있습니다. 운영체제의 항상 위 창은 아닙니다.",
+        );
         const title = element("span", "reference-window__name", name);
         const close = button(
-            "참고창 닫기",
+            lt("참고창 닫기"),
             "M6 6l12 12M18 6 6 18",
             "reference-close",
             true,
@@ -199,51 +204,54 @@ export function createReferenceWindows(
         const toolbar = element("div", "reference-window__toolbar");
         toolbar.dataset.testid = "reference-toolbar";
         toolbar.setAttribute("role", "toolbar");
-        toolbar.setAttribute("aria-label", `${name} 참고창 도구`);
+        toolbar.setAttribute(
+            "aria-label",
+            lt(`${name} 참고창 도구`, `${name} reference tools`),
+        );
 
         const lock = button(
-            "위치 잠금",
+            lt("위치 잠금"),
             "M7 10V7a5 5 0 0110 0v3m-11 0h12v10H6z",
             "reference-lock",
         );
         lock.setAttribute("aria-pressed", "false");
         const aspect = button(
-            "비율 잠금",
+            lt("비율 잠금"),
             "M9 15l6-6m-8.5 3.5-2 2a3.54 3.54 0 005 5l2-2m1-11 2-2a3.54 3.54 0 015 5l-2 2",
             "reference-aspect",
             true,
         );
         aspect.setAttribute("aria-pressed", "true");
         const undo = button(
-            "되돌리기",
+            lt("되돌리기"),
             "M9 7H4v-5M4 7l5-5m-5 5h10a6 6 0 010 12h-3",
             "reference-undo",
             true,
         );
         undo.disabled = true;
         const restore = button(
-            "원본 복원",
+            lt("원본 복원"),
             "M4 4v6h6M20 20v-6h-6M5.6 17.7A8 8 0 0118.3 6M18.4 6.3A8 8 0 015.7 18",
             "reference-restore",
             true,
         );
         const copy = button(
-            "PNG 복사",
+            lt("PNG 복사"),
             "M8 8h11v11H8zM5 16H4V5h11v1",
             "reference-copy",
         );
         const cutout = button(
-            "배경 제거",
+            lt("배경 제거"),
             "M12 3a9 9 0 100 18 9 9 0 000-18zm0 0v18M3 12h18",
             "reference-cutout",
         );
         const ocr = button(
-            "글자 인식",
+            lt("글자 인식"),
             "M5 4h14v16H5zM8 8h8M8 12h8M8 16h5",
             "reference-ocr",
         );
         const cancel = button(
-            "작업 취소",
+            lt("작업 취소"),
             "M6 6l12 12M18 6 6 18",
             "reference-cancel",
         );
@@ -251,7 +259,7 @@ export function createReferenceWindows(
 
         const controls = element("div", "reference-window__controls");
         const opacityLabel = element("label", "reference-window__field");
-        opacityLabel.append(element("span", undefined, "불투명도"));
+        opacityLabel.append(element("span", undefined, lt("불투명도")));
         const opacity = element("input");
         opacity.type = "range";
         opacity.min = "10";
@@ -261,7 +269,7 @@ export function createReferenceWindows(
         const opacityValue = element("output", undefined, "100%");
         opacityLabel.append(opacity, opacityValue);
         const sizeLabel = element("label", "reference-window__field");
-        sizeLabel.append(element("span", undefined, "크기"));
+        sizeLabel.append(element("span", undefined, lt("크기")));
         const size = element("input");
         size.type = "range";
         size.min = "36";
@@ -275,9 +283,9 @@ export function createReferenceWindows(
         const textPanel = element("section", "reference-window__text");
         textPanel.hidden = true;
         const textHeading = element("div", "reference-window__text-heading");
-        textHeading.append(element("strong", undefined, "인식한 글자"));
+        textHeading.append(element("strong", undefined, lt("인식한 글자")));
         const textClose = button(
-            "인식 결과 닫기",
+            lt("인식 결과 닫기"),
             "M6 6l12 12M18 6 6 18",
             "reference-text-close",
             true,
@@ -286,7 +294,7 @@ export function createReferenceWindows(
         const textOutput = element("textarea", "reference-window__text-output");
         textOutput.readOnly = true;
         textOutput.rows = 5;
-        textOutput.setAttribute("aria-label", "인식한 글자 결과");
+        textOutput.setAttribute("aria-label", lt("인식한 글자 결과"));
         textPanel.append(textHeading, textOutput);
         toolbar.append(
             lock,
@@ -462,25 +470,25 @@ export function createReferenceWindows(
             setBusy(true);
             options.message(
                 operation === "cutout"
-                    ? "배경을 제거하고 있습니다."
-                    : "글자를 인식하고 있습니다.",
+                    ? lt("배경을 제거하고 있습니다.")
+                    : lt("글자를 인식하고 있습니다."),
             );
             try {
                 const result = await options.process(operation, input);
                 if (card.closed || revision !== card.revision) return;
                 if (operation === "cutout") {
                     if (!result.dataURL)
-                        throw new Error("배경 제거 결과가 없습니다.");
+                        throw new Error(lt("배경 제거 결과가 없습니다."));
                     await setImage(result.dataURL);
                     if (card.closed || revision !== card.revision) return;
-                    options.message("배경을 제거했습니다.");
+                    options.message(lt("배경을 제거했습니다."));
                 } else {
                     if (typeof result.text !== "string")
-                        throw new Error("글자 인식 결과가 없습니다.");
+                        throw new Error(lt("글자 인식 결과가 없습니다."));
                     textOutput.value = result.text;
                     textPanel.hidden = false;
                     card.scheduleDock();
-                    options.message("글자를 인식했습니다.");
+                    options.message(lt("글자를 인식했습니다."));
                 }
             } catch (error) {
                 if (card.closed || revision !== card.revision) return;
@@ -494,7 +502,7 @@ export function createReferenceWindows(
             if (!card.busy) return;
             card.revision += 1;
             setBusy(false);
-            options.message("작업을 취소했습니다.");
+            options.message(lt("작업을 취소했습니다."));
         };
 
         let stopInteraction = () => {};
@@ -727,10 +735,10 @@ export function createReferenceWindows(
             lock.classList.toggle("is-active", card.locked);
             lock.setAttribute("aria-pressed", String(card.locked));
             lock.querySelector(".reference-window__button-label")!.textContent =
-                card.locked ? "위치 잠금 해제" : "위치 잠금";
+                card.locked ? lt("위치 잠금 해제") : lt("위치 잠금");
             lock.setAttribute(
                 "aria-label",
-                card.locked ? "위치 잠금 해제" : "위치 잠금",
+                card.locked ? lt("위치 잠금 해제") : lt("위치 잠금"),
             );
             hold.cancel("disabled");
             if (card.locked) stopInteraction();
@@ -747,7 +755,7 @@ export function createReferenceWindows(
             void setImage(previous, false)
                 .then(() => {
                     undo.disabled = card.history.length === 0;
-                    options.message("이전 이미지로 되돌렸습니다.");
+                    options.message(lt("이전 이미지로 되돌렸습니다."));
                 })
                 .catch((error) => {
                     card.history.push(previous);
@@ -757,7 +765,7 @@ export function createReferenceWindows(
         restore.onclick = () => {
             if (card.dataURL === card.originalDataURL) return;
             void setImage(card.originalDataURL)
-                .then(() => options.message("원본 이미지를 복원했습니다."))
+                .then(() => options.message(lt("원본 이미지를 복원했습니다.")))
                 .catch((error) => options.message(errorText(error), true));
         };
         copy.onclick = () => {
@@ -768,12 +776,14 @@ export function createReferenceWindows(
                         typeof ClipboardItem === "undefined"
                     )
                         throw new Error(
-                            "이 브라우저에서는 이미지 복사를 지원하지 않습니다.",
+                            lt(
+                                "이 브라우저에서는 이미지 복사를 지원하지 않습니다.",
+                            ),
                         );
                     await navigator.clipboard.write([
                         new ClipboardItem({ "image/png": pngBlob(image) }),
                     ]);
-                    options.message("PNG 이미지를 복사했습니다.");
+                    options.message(lt("PNG 이미지를 복사했습니다."));
                 } catch (error) {
                     options.message(errorText(error), true);
                 }
@@ -797,10 +807,12 @@ export function createReferenceWindows(
 
     return {
         async open(dataURL, name) {
-            if (destroyed) throw new Error("참고창이 이미 종료되었습니다.");
+            if (destroyed) throw new Error(lt("참고창이 이미 종료되었습니다."));
             if (!dataURL.startsWith("data:image/"))
-                throw new Error("이미지 데이터만 참고창으로 열 수 있습니다.");
-            await makeCard(dataURL, name || "이미지");
+                throw new Error(
+                    lt("이미지 데이터만 참고창으로 열 수 있습니다."),
+                );
+            await makeCard(dataURL, name || lt("이미지"));
         },
         closeAll() {
             for (const card of [...cards]) card.close();

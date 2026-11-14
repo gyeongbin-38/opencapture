@@ -1,3 +1,5 @@
+import { cpSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { defineConfig } from "electron-vite";
@@ -19,6 +21,18 @@ export default defineConfig(({ mode }) => ({
                         __dirname,
                         "src/preload/dashboard.ts",
                     ),
+                    fileShelf: path.resolve(
+                        __dirname,
+                        "src/preload/fileShelf.ts",
+                    ),
+                    rarTools: path.resolve(
+                        __dirname,
+                        "src/preload/rarTools.ts",
+                    ),
+                    pdfTools: path.resolve(
+                        __dirname,
+                        "src/preload/pdfTools.ts",
+                    ),
                 },
                 output: { entryFileNames: "[name].js", format: "cjs" },
             },
@@ -32,6 +46,18 @@ export default defineConfig(({ mode }) => ({
                         __dirname,
                         "src/renderer/dashboard.html",
                     ),
+                    file_shelf: path.resolve(
+                        __dirname,
+                        "src/renderer/file_shelf.html",
+                    ),
+                    rar_tools: path.resolve(
+                        __dirname,
+                        "src/renderer/rar_tools.html",
+                    ),
+                    pdf_tools: path.resolve(
+                        __dirname,
+                        "src/renderer/pdf_tools.html",
+                    ),
                     capture_shelf: path.resolve(
                         __dirname,
                         "src/renderer/capture_shelf.html",
@@ -43,6 +69,7 @@ export default defineConfig(({ mode }) => ({
                         "src/renderer/setting.html",
                     ),
                     ding: path.resolve(__dirname, "src/renderer/ding.html"),
+                    radial: path.resolve(__dirname, "src/renderer/radial.html"),
                     recorder: path.resolve(
                         __dirname,
                         "src/renderer/recorder.html",
@@ -112,6 +139,42 @@ export default defineConfig(({ mode }) => ({
             ],
         },
         plugins: [
+            {
+                name: "local-pdf-assets",
+                writeBundle() {
+                    const source = path.dirname(
+                        createRequire(import.meta.url).resolve(
+                            "pdfjs-dist/package.json",
+                        ),
+                    );
+                    const destination = path.resolve(
+                        __dirname,
+                        "out/renderer/assets/pdfjs",
+                    );
+                    mkdirSync(destination, { recursive: true });
+                    for (const directory of ["cmaps", "standard_fonts", "wasm"])
+                        cpSync(
+                            path.join(source, directory),
+                            path.join(destination, directory),
+                            { recursive: true },
+                        );
+                    cpSync(
+                        path.join(source, "LICENSE"),
+                        path.join(destination, "LICENSE"),
+                    );
+                    cpSync(
+                        path.join(
+                            path.dirname(
+                                createRequire(import.meta.url).resolve(
+                                    "pdf-lib/package.json",
+                                ),
+                            ),
+                            "LICENSE.md",
+                        ),
+                        path.join(destination, "LICENSE.pdf-lib"),
+                    );
+                },
+            },
             ViteImageOptimizer({
                 cache: true,
                 cacheLocation: path.join(tmpdir(), "eSearch_build"),

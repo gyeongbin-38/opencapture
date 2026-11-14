@@ -1,4 +1,5 @@
 import { captureDock, fitCaptureToolbar } from "../lib/captureControls";
+import { lt } from "./i18n";
 
 export type CaptureLabOptions = {
     onImage: (dataURL: string, name: string) => Promise<unknown>;
@@ -23,13 +24,13 @@ type Action = {
 };
 
 const actions: Action[] = [
-    { id: "copy", label: "PNG 복사", icon: "copy" },
-    { id: "edit", label: "편집", icon: "edit" },
-    { id: "save", label: "저장", icon: "save" },
-    { id: "float", label: "레퍼런스 띄우기", icon: "float" },
-    { id: "ocr", label: "텍스트 인식", icon: "ocr" },
-    { id: "cutout", label: "배경 제거", icon: "cutout" },
-    { id: "color", label: "색상 추출", icon: "color" },
+    { id: "copy", label: lt("PNG 복사"), icon: "copy" },
+    { id: "edit", label: lt("편집"), icon: "edit" },
+    { id: "save", label: lt("저장"), icon: "save" },
+    { id: "float", label: lt("레퍼런스 띄우기"), icon: "float" },
+    { id: "ocr", label: lt("텍스트 인식"), icon: "ocr" },
+    { id: "cutout", label: lt("배경 제거"), icon: "cutout" },
+    { id: "color", label: lt("색상 추출"), icon: "color" },
 ];
 
 const iconPaths: Record<string, string> = {
@@ -81,7 +82,9 @@ const waitForVideo = (video: HTMLVideoElement) =>
             () =>
                 finish(
                     new Error(
-                        "공유 화면에서 시간 안에 이미지를 가져오지 못했습니다.",
+                        lt(
+                            "공유 화면에서 시간 안에 이미지를 가져오지 못했습니다.",
+                        ),
                     ),
                 ),
             10_000,
@@ -94,7 +97,7 @@ const waitForVideo = (video: HTMLVideoElement) =>
         };
         video.onloadedmetadata = () => finish();
         video.onerror = () =>
-            finish(new Error("공유 화면을 읽을 수 없습니다."));
+            finish(new Error(lt("공유 화면을 읽을 수 없습니다.")));
     });
 
 function drawSample(kind: "page" | "window" | "scroll") {
@@ -109,7 +112,7 @@ function drawSample(kind: "page" | "window" | "scroll") {
     context.fillStyle = "#ffffff";
     context.font = "700 28px system-ui";
     context.fillText(
-        kind === "window" ? "창 화면 — 샘플" : "Atlas 작업 공간 — 샘플",
+        kind === "window" ? lt("창 화면 — 샘플") : lt("Atlas 작업 공간 — 샘플"),
         42,
         48,
     );
@@ -125,14 +128,16 @@ function drawSample(kind: "page" | "window" | "scroll") {
         context.fillStyle = "#182234";
         context.font = "700 30px system-ui";
         context.fillText(
-            index === 0 ? "일관된 캡처 테스트 영역" : `샘플 영역 ${index + 1}`,
+            index === 0
+                ? lt("일관된 캡처 테스트 영역")
+                : lt(`샘플 영역 ${index + 1}`, `Sample area ${index + 1}`),
             292,
             top + 72,
         );
         context.fillStyle = "#596579";
         context.font = "20px system-ui";
         context.fillText(
-            "OCR과 자르기를 확인할 수 있는 선명한 글자와 색상입니다.",
+            lt("OCR과 자르기를 확인할 수 있는 선명한 글자와 색상입니다."),
             292,
             top + 116,
         );
@@ -158,20 +163,22 @@ export function createCaptureLab(
 
     const heading = element("header", "capture-lab__heading");
     const headingCopy = element("div");
-    const title = element("h2", "capture-lab__title", "캡처 실험실");
+    const title = element("h2", "capture-lab__title", lt("캡처 실험실"));
     const subtitle = element(
         "p",
         "capture-lab__subtitle",
-        "표시된 샘플로 연습하거나 브라우저에서 화면 또는 창을 직접 공유하세요.",
+        lt(
+            "표시된 샘플로 연습하거나 브라우저에서 화면 또는 창을 직접 공유하세요.",
+        ),
     );
     headingCopy.append(title, subtitle);
     const sourceActions = element("div", "capture-lab__source-actions");
     const sourceButtons = [
-        ["share-screen", "화면 또는 창 공유"],
-        ["timer", "3초 후 캡처"],
-        ["window-sample", "창 샘플"],
-        ["scroll-sample", "스크롤 샘플"],
-        ["previous", "이전 소스"],
+        ["share-screen", lt("화면 또는 창 공유")],
+        ["timer", lt("3초 후 캡처")],
+        ["window-sample", lt("창 샘플")],
+        ["scroll-sample", lt("스크롤 샘플")],
+        ["previous", lt("이전 소스")],
     ];
     for (const [id, label] of sourceButtons) {
         const node = element(
@@ -194,16 +201,16 @@ export function createCaptureLab(
     const canvas = element("canvas", "capture-lab__canvas");
     const selection = element("div", "capture-lab__selection");
     selection.tabIndex = 0;
-    selection.setAttribute("aria-label", "선택한 캡처 영역");
+    selection.setAttribute("aria-label", lt("선택한 캡처 영역"));
     const handleLabels: Record<string, string> = {
-        nw: "왼쪽 위",
-        n: "위",
-        ne: "오른쪽 위",
-        e: "오른쪽",
-        se: "오른쪽 아래",
-        s: "아래",
-        sw: "왼쪽 아래",
-        w: "왼쪽",
+        nw: lt("왼쪽 위"),
+        n: lt("위"),
+        ne: lt("오른쪽 위"),
+        e: lt("오른쪽"),
+        se: lt("오른쪽 아래"),
+        s: lt("아래"),
+        sw: lt("왼쪽 아래"),
+        w: lt("왼쪽"),
     };
     for (const handle of ["nw", "n", "ne", "e", "se", "s", "sw", "w"]) {
         const node = element("button", `capture-lab__handle is-${handle}`);
@@ -211,7 +218,10 @@ export function createCaptureLab(
         node.dataset.handle = handle;
         node.setAttribute(
             "aria-label",
-            `선택 영역 ${handleLabels[handle]} 크기 조절`,
+            lt(
+                `선택 영역 ${handleLabels[handle]} 크기 조절`,
+                `Resize selection ${handleLabels[handle]}`,
+            ),
         );
         selection.append(node);
     }
@@ -221,45 +231,45 @@ export function createCaptureLab(
     widthInput.type = "number";
     widthInput.min = "1";
     widthInput.dataset.dimension = "width";
-    widthInput.setAttribute("aria-label", "선택 영역 너비");
+    widthInput.setAttribute("aria-label", lt("선택 영역 너비"));
     const heightInput = element("input");
     heightInput.type = "number";
     heightInput.min = "1";
     heightInput.dataset.dimension = "height";
-    heightInput.setAttribute("aria-label", "선택 영역 높이");
+    heightInput.setAttribute("aria-label", lt("선택 영역 높이"));
     const lock = element("input");
     lock.type = "checkbox";
     lock.dataset.action = "ratio-lock";
-    lock.setAttribute("aria-label", "선택 영역 비율 고정");
-    const lockLabel = element("label", "capture-lab__ratio", "비율 고정");
+    lock.setAttribute("aria-label", lt("선택 영역 비율 고정"));
+    const lockLabel = element("label", "capture-lab__ratio", lt("비율 고정"));
     lockLabel.prepend(lock);
     dimensions.append(
-        element("span", undefined, "너비"),
+        element("span", undefined, lt("너비")),
         widthInput,
-        element("span", undefined, "높이"),
+        element("span", undefined, lt("높이")),
         heightInput,
         lockLabel,
     );
 
     const toolbar = element("div", "capture-lab__toolbar");
     toolbar.setAttribute("role", "toolbar");
-    toolbar.setAttribute("aria-label", "캡처 작업");
+    toolbar.setAttribute("aria-label", lt("캡처 작업"));
     const more = element("div", "capture-lab__more");
     more.hidden = true;
     more.setAttribute("role", "group");
-    more.setAttribute("aria-label", "추가 캡처 작업");
+    more.setAttribute("aria-label", lt("추가 캡처 작업"));
     const radial = element("div", "capture-lab__radial");
     radial.hidden = true;
     radial.setAttribute("role", "menu");
-    radial.setAttribute("aria-label", "빠른 캡처 작업");
+    radial.setAttribute("aria-label", lt("빠른 캡처 작업"));
     const countdown = element("div", "capture-lab__countdown");
     countdown.hidden = true;
     const countdownValue = element("strong", undefined, "3");
-    const cancelTimer = element("button", "capture-lab__button", "취소");
+    const cancelTimer = element("button", "capture-lab__button", lt("취소"));
     cancelTimer.type = "button";
     cancelTimer.dataset.action = "cancel-timer";
     countdown.append(
-        element("span", undefined, "공유 시작까지"),
+        element("span", undefined, lt("공유 시작까지")),
         countdownValue,
         cancelTimer,
     );
@@ -276,7 +286,7 @@ export function createCaptureLab(
     parent.append(root);
 
     const sourceCanvas = document.createElement("canvas");
-    let sourceName = "샘플-페이지.png";
+    let sourceName = lt("샘플-페이지.png");
     let sourceMode: "capture" | "crop" = "capture";
     let sourceIsSample = true;
     let selectionRect: Rect = { x: 120, y: 110, width: 820, height: 520 };
@@ -341,7 +351,7 @@ export function createCaptureLab(
         timer = undefined;
         countdownTick = undefined;
         countdown.hidden = true;
-        if (announce) options.message("예약 캡처를 취소했습니다.");
+        if (announce) options.message(lt("예약 캡처를 취소했습니다."));
     };
 
     const selectedDataURL = () => {
@@ -382,15 +392,11 @@ export function createCaptureLab(
 
     const renderMore = (overflow: readonly Action[]) => {
         more.replaceChildren();
-        const available = [
-            ...overflow,
-            ...actions.filter((item) => !overflow.includes(item)),
-        ];
-        for (const action of available) more.append(actionButton(action, true));
+        for (const action of overflow) more.append(actionButton(action, true));
         const sizeLabel = element(
             "label",
             "capture-lab__size",
-            `도구 크기 ${toolSize}px`,
+            lt(`도구 크기 ${toolSize}px`, `Tool size ${toolSize}px`),
         );
         const size = element("input");
         size.type = "range";
@@ -399,7 +405,7 @@ export function createCaptureLab(
         size.step = "2";
         size.value = String(toolSize);
         size.dataset.action = "tool-size";
-        size.setAttribute("aria-label", "도구 모음 버튼 크기");
+        size.setAttribute("aria-label", lt("도구 모음 버튼 크기"));
         sizeLabel.append(size);
         more.append(sizeLabel);
     };
@@ -413,10 +419,10 @@ export function createCaptureLab(
         }
         toolbar.append(element("span", "capture-lab__divider"));
         toolbar.append(
-            actionButton({ id: "more", label: "더보기", icon: "more" }),
+            actionButton({ id: "more", label: lt("더보기"), icon: "more" }),
             actionButton({
                 id: "close",
-                label: "선택 영역 초기화",
+                label: lt("선택 영역 초기화"),
                 icon: "close",
             }),
         );
@@ -482,7 +488,10 @@ export function createCaptureLab(
         canvas.width = sourceCanvas.width;
         canvas.height = sourceCanvas.height;
         canvas.getContext("2d")!.drawImage(sourceCanvas, 0, 0);
-        sourceStatus.textContent = `${sourceIsSample ? "샘플 소스" : "공유 소스"} · ${sourceName} · ${sourceCanvas.width} × ${sourceCanvas.height}`;
+        sourceStatus.textContent = lt(
+            `${sourceIsSample ? "샘플 소스" : "공유 소스"} · ${sourceName} · ${sourceCanvas.width} × ${sourceCanvas.height}`,
+            `${sourceIsSample ? "Sample source" : "Shared source"} · ${sourceName} · ${sourceCanvas.width} × ${sourceCanvas.height}`,
+        );
         sourceStatus.classList.toggle("is-sample", sourceIsSample);
         requestAnimationFrame(() => {
             fitToolbar();
@@ -543,14 +552,14 @@ export function createCaptureLab(
         };
         image.onerror = () => {
             if (sequence === loadSequence)
-                options.message("캡처 소스를 불러올 수 없습니다.", true);
+                options.message(lt("캡처 소스를 불러올 수 없습니다."), true);
         };
         image.src = dataURL;
     };
 
     const captureSharedScreen = async () => {
         if (!navigator.mediaDevices?.getDisplayMedia)
-            throw new Error("이 브라우저는 화면 공유를 지원하지 않습니다.");
+            throw new Error(lt("이 브라우저는 화면 공유를 지원하지 않습니다."));
         activeStream = await navigator.mediaDevices.getDisplayMedia({
             video: true,
             audio: false,
@@ -569,8 +578,8 @@ export function createCaptureLab(
             next.width = video.videoWidth;
             next.height = video.videoHeight;
             next.getContext("2d")!.drawImage(video, 0, 0);
-            applyCanvas(next, "공유-화면.png", "capture", false);
-            options.message("공유한 소스에서 화면 한 장을 캡처했습니다.");
+            applyCanvas(next, lt("공유-화면.png"), "capture", false);
+            options.message(lt("공유한 소스에서 화면 한 장을 캡처했습니다."));
         } finally {
             if (activeStream)
                 for (const track of activeStream.getTracks()) track.stop();
@@ -627,18 +636,21 @@ export function createCaptureLab(
             const kind = id === "window-sample" ? "window" : "scroll";
             applyCanvas(
                 drawSample(kind),
-                kind === "window" ? "창-샘플.png" : "스크롤-샘플.png",
+                kind === "window" ? lt("창-샘플.png") : lt("스크롤-샘플.png"),
                 "capture",
                 true,
             );
             options.message(
-                `${kind === "window" ? "창" : "스크롤"} 샘플을 불러왔습니다.`,
+                lt(
+                    `${kind === "window" ? "창" : "스크롤"} 샘플을 불러왔습니다.`,
+                    `${kind === "window" ? "Window" : "Scroll"} sample loaded.`,
+                ),
             );
             return;
         }
         if (id === "previous") {
             if (!previousSource) {
-                options.message("아직 이전 소스가 없습니다.", true);
+                options.message(lt("아직 이전 소스가 없습니다."), true);
                 return;
             }
             const previous = previousSource;
@@ -659,23 +671,28 @@ export function createCaptureLab(
             return;
         }
         const dataURL = selectedDataURL();
-        const name = `${stem(sourceName)}-선택.png`;
+        const name = lt(
+            `${stem(sourceName)}-선택.png`,
+            `${stem(sourceName)}-selection.png`,
+        );
         if (id === "copy") {
             if (
                 !navigator.clipboard?.write ||
                 typeof ClipboardItem === "undefined"
             )
                 throw new Error(
-                    "이 브라우저는 PNG 클립보드 복사를 지원하지 않습니다.",
+                    lt("이 브라우저는 PNG 클립보드 복사를 지원하지 않습니다."),
                 );
             await navigator.clipboard.write([
                 new ClipboardItem({ "image/png": dataURLToBlob(dataURL) }),
             ]);
-            options.message("선택 영역의 PNG를 클립보드에 복사했습니다.");
+            options.message(lt("선택 영역의 PNG를 클립보드에 복사했습니다."));
         } else if (id === "edit" || id === "save") {
             await options.onImage(
                 dataURL,
-                id === "edit" ? `${stem(name)}-편집.png` : name,
+                id === "edit"
+                    ? lt(`${stem(name)}-편집.png`, `${stem(name)}-edit.png`)
+                    : name,
             );
         } else if (id === "float") {
             options.onFloat(dataURL, name);
@@ -683,7 +700,9 @@ export function createCaptureLab(
             await options.onProcess("color", dataURL);
             pickerActive = true;
             root.classList.add("is-picking-color");
-            options.message("소스의 픽셀을 클릭하면 HEX 색상을 복사합니다.");
+            options.message(
+                lt("소스의 픽셀을 클릭하면 HEX 색상을 복사합니다."),
+            );
         } else if (id === "ocr" || id === "cutout") {
             await options.onProcess(id, dataURL);
         }
@@ -879,7 +898,13 @@ export function createCaptureLab(
         void navigator.clipboard
             .writeText(hex)
             .then(
-                () => options.message(`${hex} 색상을 클립보드에 복사했습니다.`),
+                () =>
+                    options.message(
+                        lt(
+                            `${hex} 색상을 클립보드에 복사했습니다.`,
+                            `Copied ${hex} to the clipboard.`,
+                        ),
+                    ),
                 reportError,
             );
     });
@@ -913,7 +938,13 @@ export function createCaptureLab(
     root.style.setProperty("--capture-lab-tool-size", `${toolSize}px`);
     renderToolbar([]);
     fitToolbar(true);
-    applyCanvas(drawSample("page"), "샘플-페이지.png", "capture", true, false);
+    applyCanvas(
+        drawSample("page"),
+        lt("샘플-페이지.png"),
+        "capture",
+        true,
+        false,
+    );
 
     return {
         setSource,

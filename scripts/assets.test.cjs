@@ -5,10 +5,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const {
-    normalizeZipEntry,
-    prepareAssets,
-} = require("./prepare-assets.cjs");
+const { normalizeZipEntry, prepareAssets } = require("./prepare-assets.cjs");
 
 function sha256(buffer) {
     return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -56,11 +53,24 @@ test("reports install, ready, and tamper-repair status", async () => {
                     ],
                 };
                 const messages = [];
-                const options = { rootDir, manifest, logger: (message) => messages.push(message) };
-                assert.equal((await prepareAssets(options))[0].status, "installed");
+                const options = {
+                    rootDir,
+                    manifest,
+                    logger: (message) => messages.push(message),
+                };
+                assert.equal(
+                    (await prepareAssets(options))[0].status,
+                    "installed",
+                );
                 assert.equal((await prepareAssets(options))[0].status, "ready");
-                await fsp.writeFile(path.join(rootDir, "assets/fixture.bin"), "tampered");
-                assert.equal((await prepareAssets(options))[0].status, "installed");
+                await fsp.writeFile(
+                    path.join(rootDir, "assets/fixture.bin"),
+                    "tampered",
+                );
+                assert.equal(
+                    (await prepareAssets(options))[0].status,
+                    "installed",
+                );
                 assert.equal(requests, 2);
                 assert(messages.some((message) => message.endsWith(": ready")));
             },
@@ -143,7 +153,10 @@ test("rejects a hash mismatch without installing the file", async () => {
                     }),
                     /SHA-256 mismatch/,
                 );
-                await assert.rejects(fsp.stat(path.join(rootDir, "asset.bin")), /ENOENT/);
+                await assert.rejects(
+                    fsp.stat(path.join(rootDir, "asset.bin")),
+                    /ENOENT/,
+                );
             },
         );
     } finally {
@@ -152,8 +165,16 @@ test("rejects a hash mismatch without installing the file", async () => {
 });
 
 test("rejects ZIP traversal and absolute entry names", () => {
-    for (const entry of ["../escape", "a/../../escape", "/absolute", "C:\\escape"]) {
+    for (const entry of [
+        "../escape",
+        "a/../../escape",
+        "/absolute",
+        "C:\\escape",
+    ]) {
         assert.throws(() => normalizeZipEntry(entry), /escapes/);
     }
-    assert.equal(normalizeZipEntry("models\\korean_rec.onnx"), "models/korean_rec.onnx");
+    assert.equal(
+        normalizeZipEntry("models\\korean_rec.onnx"),
+        "models/korean_rec.onnx",
+    );
 });

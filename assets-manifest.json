@@ -97,12 +97,8 @@
             "license": "GPL-3.0-or-later",
             "licenseUrl": "https://ffmpeg.org/legal.html",
             "sourceUrl": "https://github.com/xushengfeng/eSearch/releases/download/13.0.0-beta.1/ffmpeg-win32-x64.zip",
-            "platforms": [
-                "win32"
-            ],
-            "architectures": [
-                "x64"
-            ],
+            "platforms": ["win32"],
+            "architectures": ["x64"],
             "download": {
                 "sha256": "cea079e7ae3c2c982bece1460513a7768836d7e1ce0431259a0507f325ccdb3b",
                 "size": 142465406,

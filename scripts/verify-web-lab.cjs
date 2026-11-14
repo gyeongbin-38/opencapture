@@ -519,12 +519,12 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 run(
-                    "document.querySelector('textarea[aria-label=\"번역 결과\"]')?.closest('dialog')?.open",
+                    "document.querySelector('textarea[data-testid=\"translate-result\"]')?.closest('dialog')?.open",
                 ),
             "Standalone translate did not open without a selection",
         );
         await run(
-            `document.querySelector('textarea[aria-label="번역 결과"]').closest('dialog').querySelector('.dialog-actions button').click()`,
+            `document.querySelector('textarea[data-testid="translate-result"]').closest('dialog').querySelector('.dialog-actions button').click()`,
         );
         await run(
             `document.querySelectorAll('.library-card__check input')[0].click();document.querySelector('.library-more').open=true;document.querySelector('.library-more button[data-action="crop"]').click()`,

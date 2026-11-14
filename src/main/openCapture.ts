@@ -22,8 +22,10 @@ import {
     isAbsolute,
     join,
     resolve,
+    sep,
 } from "node:path";
 import { fileURLToPath } from "node:url";
+import { encode as bmpEncode } from "bmp-js";
 import {
     BrowserWindow,
     ClipboardItem,
@@ -53,6 +55,7 @@ import {
     parseCaptureWorkflowPreferences,
     planImageCombination,
 } from "../../lib/captureWorkflow";
+import type { DashboardLanguageSettings } from "../../lib/dashboardLanguage";
 import {
     NOTE_MAX_LENGTH,
     OCR_TEXT_LIMIT,
@@ -61,10 +64,15 @@ import {
 } from "../../lib/itemMeta";
 import type {
     CaptureColorSample,
+    CaptureConvertFormat,
+    CaptureConvertOptions,
+    CaptureConvertPreview,
     CaptureDraft,
     CaptureDraftManifest,
+    CaptureDragAcknowledgement,
     CaptureExperiencePreferences,
     CaptureItemsQuery,
+    CaptureRegistrationOutcome,
     CaptureRendererRole,
     NamedBeautifyStyle,
     OcrJobResult,
@@ -80,6 +88,7 @@ import {
     beautifyPng,
     decodeBoundedImageDataURL,
     imagePdf,
+    imagesPdf,
     inspectPng,
 } from "./captureBoardImages";
 import { CaptureBoardStore } from "./captureBoardStore";
@@ -90,6 +99,7 @@ import {
 } from "./captureCatalogQuery";
 import { CaptureDraftStore } from "./captureDraftStore";
 import { copyFilesToWindowsClipboard } from "./captureFileClipboard";
+import { createFileToolsService } from "./fileToolsService";
 import { createSuperResolution } from "./superResolution";
 import { ThumbnailDiskCache } from "./thumbnailDiskCache";
 
@@ -128,6 +138,7 @@ type Item = {
     draftManifestPath?: string;
     source?: OpenCaptureItem["source"];
     thumbnailPath?: string;
+    size?: number;
 };
 type PinSet = { id: string; name: string; itemIds: string[] };
 type Library = {
@@ -362,6 +373,7 @@ type Hooks = {
     quit?: () => void;
     capture: (mode: string) => Promise<void>;
     pin: (path?: string) => Promise<void>;
+    pinStack?: (paths: string[]) => Promise<void>;
     edit: (path: string) => void;
     openProject?: (path: string) => void | Promise<void>;
     openDraft?: (document: CaptureDraft) => void | Promise<void>;
@@ -377,6 +389,8 @@ type Hooks = {
     configureRuntime?: (input: unknown) => object | Promise<object>;
     steps?: () => void;
     language?: () => string;
+    languageSettings?: () => DashboardLanguageSettings;
+    setLanguage?: (input: unknown) => DashboardLanguageSettings;
 };
 
 export function isTrustedPage(pageUrl: string, root: string, devUrl?: string) {
@@ -564,6 +578,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             url: string;
             draftId?: string;
             ownedDraftIds: Set<string>;
+            exportedPaths: Set<string>;
         }
     >();
     const registerRenderer = (
@@ -584,6 +599,10 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             previous?.role === "clip"
                 ? previous.ownedDraftIds
                 : new Set<string>();
+        const exportedPaths =
+            previous?.role === role && previous.url === frame.url
+                ? previous.exportedPaths
+                : new Set<string>();
         if (role === "clip" && draftId) ownedDraftIds.add(draftId);
         const activeDraftId = role === "clip" ? draftId : undefined;
         renderers.set(webContents.id, {
@@ -591,11 +610,20 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             url: frame.url,
             ...(activeDraftId ? { draftId: activeDraftId } : {}),
             ownedDraftIds,
+            exportedPaths,
         });
-        if (!previous)
+        if (!previous) {
+            webContents.on(
+                "did-start-navigation",
+                (_event, _url, isInPlace, isMainFrame) => {
+                    if (isMainFrame && !isInPlace)
+                        renderers.get(webContents.id)?.exportedPaths.clear();
+                },
+            );
             webContents.once("destroyed", () =>
                 renderers.delete(webContents.id),
             );
+        }
     };
     let compact = false;
     const thumbnailCache = new Map<
@@ -687,6 +715,52 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         }
     };
     persistCaptureSettings();
+    /** 보관 기간이 지난 휴지통 항목을 영구 삭제 — 관리 폴더 안의 파일만 지운다 */
+    const purgeExpiredTrash = () => {
+        const days = parseCaptureExperience(
+            library.experience,
+        ).trashRetentionDays;
+        if (!days) return;
+        const cutoff = Date.now() - days * 86_400_000;
+        const expired = library.items.filter(
+            (item) =>
+                item.status === "trash" && Date.parse(item.createdAt) < cutoff,
+        );
+        if (!expired.length) return;
+        const ownedFolders = new Set(
+            [
+                inboxPath,
+                defaultFolder,
+                ...library.collections.map((c) => c.path),
+            ].map(pathKey),
+        );
+        const cacheFolder = pathKey(join(userData, "thumbnail-cache"));
+        const removed = new Set(expired.map((item) => item.id));
+        library.items = library.items.filter((item) => !removed.has(item.id));
+        const stillUsed = new Set(
+            library.items.map((item) => pathKey(item.path)),
+        );
+        for (const item of expired) {
+            try {
+                if (
+                    !stillUsed.has(pathKey(item.path)) &&
+                    ownedFolders.has(pathKey(dirname(item.path)))
+                )
+                    unlinkSync(item.path);
+                if (
+                    item.thumbnailPath &&
+                    pathKey(dirname(item.thumbnailPath)) === cacheFolder
+                )
+                    unlinkSync(item.thumbnailPath);
+            } catch {}
+        }
+        try {
+            touchCatalog();
+        } catch {}
+        notifyLibraryUpdated();
+    };
+    purgeExpiredTrash();
+    setInterval(purgeExpiredTrash, 6 * 60 * 60 * 1000).unref();
     const thumbnailForItem = async (item: Item) => {
         const generation = thumbnailCacheGeneration;
         const missingKey = `${item.path}\0missing`;
@@ -772,7 +846,15 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 const index = next++;
                 const item = items[index];
                 const thumbnail = await thumbnailForItem(item);
-                output[index] = thumbnail ? { ...item, thumbnail } : item;
+                let size: number | undefined;
+                try {
+                    size = statSync(item.path).size;
+                } catch {}
+                output[index] = {
+                    ...item,
+                    ...(thumbnail ? { thumbnail } : {}),
+                    ...(size !== undefined ? { size } : {}),
+                };
             }
         };
         await Promise.all(
@@ -838,6 +920,55 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             throw new Error("파일을 찾을 수 없습니다. 다시 가져와 주세요.");
         return item;
     };
+    const fileTools = createFileToolsService({
+        root,
+        userData,
+        pin: hooks.pin,
+        edit: hooks.edit,
+        language: hooks.language,
+        destinations: () => library.collections,
+    });
+    ipcMain.handle(
+        "oc:file-tools:select",
+        (event, paths: unknown, mode: unknown) => {
+            assertRole(event, ["dashboard"]);
+            return fileTools.select(event.sender, paths, mode);
+        },
+    );
+    ipcMain.handle("oc:file-tools:run", (event, input: unknown) => {
+        assertRole(event, ["dashboard"]);
+        return fileTools.run(event.sender, input);
+    });
+    ipcMain.handle("oc:file-tools:cancel", (event, id: unknown) => {
+        assertRole(event, ["dashboard"]);
+        return fileTools.cancel(event.sender, id);
+    });
+    ipcMain.handle(
+        "oc:file-tools:source-action",
+        (
+            event,
+            ids: unknown,
+            action: unknown,
+            jobId: unknown,
+            destinationId: unknown,
+        ) => {
+            assertRole(event, ["dashboard"]);
+            return fileTools.sourceAction(
+                event.sender,
+                ids,
+                action,
+                jobId,
+                destinationId,
+            );
+        },
+    );
+    ipcMain.handle(
+        "oc:file-tools:output-action",
+        (event, id: unknown, action: unknown) => {
+            assertRole(event, ["dashboard"]);
+            return fileTools.outputAction(event.sender, id, action);
+        },
+    );
     const boardStore = new CaptureBoardStore({
         root: join(userData, "capture-boards"),
         inspect: inspectPng,
@@ -1866,6 +1997,73 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             `Capture inbox watcher could not start: ${error instanceof Error ? error.message : String(error)}`,
         );
     }
+    const collectionWatchers = new Map<string, FSWatcher>();
+    const pendingWatchPaths = new Set<string>();
+    let watchFlushTimer: ReturnType<typeof setTimeout> | undefined;
+    const watchedFileRe =
+        /\.(png|jpe?g|webp|bmp|gif|mp4|webm|mov|mkv|avi|ocap)$/i;
+    const flushWatchedFiles = () => {
+        watchFlushTimer = undefined;
+        const paths = [...pendingWatchPaths];
+        pendingWatchPaths.clear();
+        let added = 0;
+        for (const p of paths.slice(0, 20)) {
+            try {
+                const stats = statSync(p);
+                if (!stats.isFile() || !stats.size) continue;
+                if (!watchedFileRe.test(extname(p))) continue;
+                if (library.items.some((i) => pathKey(i.path) === pathKey(p)))
+                    continue;
+                if (findDuplicate(p)) continue;
+                insertSavedItem(p, undefined, {
+                    kind: "import",
+                    capturedAt: new Date().toISOString(),
+                });
+                added++;
+            } catch {}
+        }
+        if (added) {
+            persist();
+            notifyLibraryUpdated();
+        }
+    };
+    const syncCollectionWatchers = () => {
+        const dirs = new Set(library.collections.map((c) => pathKey(c.path)));
+        for (const [key, watcher] of collectionWatchers)
+            if (!dirs.has(key)) {
+                watcher.close();
+                collectionWatchers.delete(key);
+            }
+        for (const collection of library.collections) {
+            const key = pathKey(collection.path);
+            if (collectionWatchers.has(key)) continue;
+            try {
+                const watcher = watch(
+                    collection.path,
+                    { persistent: false },
+                    (_event, filename) => {
+                        if (!filename) return;
+                        const name = filename.toString();
+                        if (!watchedFileRe.test(extname(name))) return;
+                        pendingWatchPaths.add(join(collection.path, name));
+                        if (watchFlushTimer) clearTimeout(watchFlushTimer);
+                        watchFlushTimer = setTimeout(flushWatchedFiles, 800);
+                        watchFlushTimer.unref();
+                    },
+                );
+                watcher.on("error", () => collectionWatchers.delete(key));
+                collectionWatchers.set(key, watcher);
+            } catch {}
+        }
+    };
+    try {
+        syncCollectionWatchers();
+    } catch {}
+    app.once("will-quit", () => {
+        if (watchFlushTimer) clearTimeout(watchFlushTimer);
+        for (const watcher of collectionWatchers.values()) watcher.close();
+        collectionWatchers.clear();
+    });
     updateClipboardWatch();
     app.once("will-quit", () => {
         if (clipboardWatcher) clearInterval(clipboardWatcher);
@@ -1939,6 +2137,19 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             );
         return state();
     }
+    const dashboardBoundsPath = join(userData, "dashboard-bounds.json");
+    const readDashboardBounds = () => {
+        try {
+            const b = JSON.parse(readFileSync(dashboardBoundsPath, "utf8"));
+            if (
+                [b.x, b.y, b.width, b.height].every(
+                    (v) => typeof v === "number" && Number.isFinite(v),
+                )
+            )
+                return b as Electron.Rectangle;
+        } catch {}
+        return null;
+    };
     function show(inactive = false) {
         if (dashboard && !dashboard.isDestroyed()) {
             if (inactive) dashboard.showInactive();
@@ -1951,10 +2162,12 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         dashboardReady = false;
         boardWindowCloseAllowed = false;
         dashboardCloseInFlight = false;
+        const savedBounds = compact ? null : readDashboardBounds();
         dashboard = new BrowserWindow({
             title: "OpenCapture",
-            width: compact ? 420 : 1180,
-            height: compact ? 560 : 810,
+            width: compact ? 420 : (savedBounds?.width ?? 1180),
+            height: compact ? 560 : (savedBounds?.height ?? 810),
+            ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y } : {}),
             minWidth: compact ? 360 : 850,
             minHeight: compact ? 480 : 640,
             backgroundColor: "#0c0c0e",
@@ -2036,7 +2249,26 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 );
             });
         });
+        let boundsSaveTimer: NodeJS.Timeout | undefined;
+        const saveDashboardBounds = () => {
+            if (!dashboard || dashboard.isDestroyed() || compact) return;
+            try {
+                if (dashboard.isMinimized() || dashboard.isFullScreen()) return;
+                writeFileSync(
+                    dashboardBoundsPath,
+                    JSON.stringify(dashboard.getNormalBounds()),
+                );
+            } catch {}
+        };
+        const queueBoundsSave = () => {
+            clearTimeout(boundsSaveTimer);
+            boundsSaveTimer = setTimeout(saveDashboardBounds, 600);
+        };
+        dashboard.on("resize", queueBoundsSave);
+        dashboard.on("move", queueBoundsSave);
+        dashboard.on("close", saveDashboardBounds);
         dashboard.on("closed", () => {
+            clearTimeout(boundsSaveTimer);
             boardCloseIntent = null;
             for (const [requestId, pending] of pendingBoardFlushes)
                 if (pending.senderId === dashboardSenderId) {
@@ -2156,6 +2388,14 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     };
     const getDraft = (id: string) => draftStore.get(id);
     const queryItems = async (request: CaptureItemsQuery) => {
+        if (request.sort === "size")
+            for (const item of library.items)
+                if (item.size === undefined)
+                    try {
+                        item.size = statSync(item.path).size;
+                    } catch {
+                        item.size = 0;
+                    }
         const result = queryCaptureItems(
             library.items,
             request,
@@ -2452,8 +2692,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     ipcMain.handle("oc:items:repair-draft", (event, id: unknown) => {
         assertRole(event, ["dashboard"]);
         const item = library.items.find((candidate) => candidate.id === id);
-        if (!item?.draftCorrupt)
-            throw new Error("손상된 항목이 아닙니다.");
+        if (!item?.draftCorrupt) throw new Error("손상된 항목이 아닙니다.");
         const draftDir = join(draftStore.root, item.id);
         const candidates = [
             join(draftDir, "source.png"),
@@ -2474,8 +2713,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 existsSync(candidate) &&
                 !nativeImage.createFromPath(candidate).isEmpty(),
         );
-        if (!surviving)
-            throw new Error("복구할 파일이 남아 있지 않습니다.");
+        if (!surviving) throw new Error("복구할 파일이 남아 있지 않습니다.");
         const collection =
             library.collections.find(
                 (candidate) => candidate.id === item.collectionId,
@@ -2560,6 +2798,27 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             return true;
         },
     );
+    ipcMain.handle("oc:conversion:open", (event, ids: unknown) => {
+        const role = assertRole(event, ["dashboard", "shelf"]);
+        if (
+            !Array.isArray(ids) ||
+            !ids.length ||
+            ids.length > 1000 ||
+            ids.some((id) => typeof id !== "string") ||
+            new Set(ids).size !== ids.length
+        )
+            throw new Error("잘못된 변환 요청입니다.");
+        const items = ids.map((id) => {
+            const item = role === "shelf" ? shelfItem(id) : getItem(id);
+            return { id: item.id, path: item.path, name: item.name };
+        });
+        const window = show();
+        const notify = () =>
+            window.webContents.send("oc:conversion:requested", items);
+        if (window.webContents.isLoading())
+            window.webContents.once("did-finish-load", notify);
+        else notify();
+    });
     ipcMain.handle("oc:compare:open", (event, ids: unknown) => {
         const role = assertRole(event, ["dashboard", "clip", "shelf"]);
         if (
@@ -2922,6 +3181,18 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             event.returnValue = "ko";
         }
     });
+    ipcMain.handle("oc:language:get", (event) => {
+        assertRole(event, ["dashboard"]);
+        if (!hooks.languageSettings)
+            throw new Error("언어 설정을 사용할 수 없습니다.");
+        return hooks.languageSettings();
+    });
+    ipcMain.handle("oc:language:set", (event, input: unknown) => {
+        assertRole(event, ["dashboard"]);
+        if (!hooks.setLanguage)
+            throw new Error("언어 설정을 사용할 수 없습니다.");
+        return hooks.setLanguage(input);
+    });
     ipcMain.handle("oc:import-files", (event, paths) => {
         assertSender(event, true);
         try {
@@ -2957,12 +3228,1003 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         return image.toDataURL();
     });
     ipcMain.handle("oc:item-file", (event, id) => {
-        assertSender(event, true);
-        const item = getItem(id);
+        const role = assertRole(event, ["dashboard", "shelf"]);
+        const item = role === "shelf" ? shelfItem(id) : getItem(id);
         const stat = statSync(item.path);
         if (stat.size > 50 * 1024 * 1024)
             throw new Error("파일이 너무 큽니다.");
         return readFileSync(item.path);
+    });
+    const packIco = (entries: { size: number; png: Buffer }[]) => {
+        const header = Buffer.alloc(6);
+        header.writeUInt16LE(0, 0);
+        header.writeUInt16LE(1, 2);
+        header.writeUInt16LE(entries.length, 4);
+        const dir = Buffer.alloc(16 * entries.length);
+        let offset = 6 + dir.length;
+        for (const [index, entry] of entries.entries()) {
+            const at = index * 16;
+            const dim = entry.size >= 256 ? 0 : entry.size;
+            dir.writeUInt8(dim, at);
+            dir.writeUInt8(dim, at + 1);
+            dir.writeUInt16LE(1, at + 4);
+            dir.writeUInt16LE(32, at + 6);
+            dir.writeUInt32LE(entry.png.length, at + 8);
+            dir.writeUInt32LE(offset, at + 12);
+            offset += entry.png.length;
+        }
+        return Buffer.concat([header, dir, ...entries.map((e) => e.png)]);
+    };
+    const flattenImage = (
+        image: Electron.NativeImage,
+        background: string,
+    ): Electron.NativeImage => {
+        const match = /^#?([0-9a-f]{6})$/i.exec(background);
+        const [red, green, blue] = match
+            ? [
+                  Number.parseInt(match[1].slice(0, 2), 16),
+                  Number.parseInt(match[1].slice(2, 4), 16),
+                  Number.parseInt(match[1].slice(4, 6), 16),
+              ]
+            : [255, 255, 255];
+        const size = image.getSize();
+        const bitmap = image.toBitmap();
+        const out = Buffer.alloc(bitmap.length);
+        for (let i = 0; i < bitmap.length; i += 4) {
+            const alpha = bitmap[i + 3] / 255;
+            out[i] = Math.round(bitmap[i] * alpha + blue * (1 - alpha));
+            out[i + 1] = Math.round(
+                bitmap[i + 1] * alpha + green * (1 - alpha),
+            );
+            out[i + 2] = Math.round(bitmap[i + 2] * alpha + red * (1 - alpha));
+            out[i + 3] = 255;
+        }
+        return nativeImage.createFromBitmap(out, {
+            width: size.width,
+            height: size.height,
+        });
+    };
+    type ConvertOptions = CaptureConvertOptions;
+    const prepareConverted = (
+        image: Electron.NativeImage,
+        options: ConvertOptions = {},
+    ): Electron.NativeImage => {
+        if (image.isEmpty()) throw new Error("읽을 수 없는 이미지입니다.");
+        const scale =
+            typeof options.scale === "number" && options.scale > 0
+                ? Math.min(1, options.scale)
+                : 1;
+        let working = image;
+        if (scale < 1) {
+            const s = working.getSize();
+            working = working.resize({
+                width: Math.max(1, Math.round(s.width * scale)),
+                height: Math.max(1, Math.round(s.height * scale)),
+                quality: "best",
+            });
+        }
+        if (
+            typeof options.maxWidth === "number" &&
+            options.maxWidth > 0 &&
+            working.getSize().width > options.maxWidth
+        )
+            working = working.resize({
+                width: Math.round(options.maxWidth),
+                quality: "best",
+            });
+        if (typeof options.background === "string" && options.background.trim())
+            working = flattenImage(working, options.background);
+        const size = working.getSize();
+        if (size.width * size.height > 32_000_000)
+            throw new Error("이미지 해상도가 너무 큽니다.");
+        return working;
+    };
+    // image must be preprocessed by prepareConverted.
+    const encodeConverted = (
+        working: Electron.NativeImage,
+        format: string,
+        options: ConvertOptions = {},
+    ): Buffer => {
+        const size = working.getSize();
+        const quality =
+            typeof options.quality === "number"
+                ? Math.min(100, Math.max(10, Math.round(options.quality * 100)))
+                : 92;
+        switch (format) {
+            case "png":
+                return working.toPNG();
+            case "jpg":
+                return working.toJPEG(quality);
+            case "pdf":
+                return imagePdf(working.toDataURL());
+            case "bmp": {
+                const bitmap = working.toBitmap();
+                const feed = Buffer.alloc(bitmap.length);
+                for (let i = 0; i < bitmap.length; i += 4) {
+                    feed[i] = 255;
+                    feed[i + 1] = bitmap[i];
+                    feed[i + 2] = bitmap[i + 1];
+                    feed[i + 3] = bitmap[i + 2];
+                }
+                return bmpEncode({
+                    data: feed,
+                    width: size.width,
+                    height: size.height,
+                }).data;
+            }
+            case "ico": {
+                const entries = [16, 32, 48].map((dim) => ({
+                    size: dim,
+                    png: working
+                        .resize({ width: dim, height: dim, quality: "best" })
+                        .toPNG(),
+                }));
+                return packIco(entries);
+            }
+            case "gif": {
+                const { GIFEncoder, applyPalette, quantize } =
+                    require("gifenc") as {
+                        GIFEncoder: () => {
+                            writeFrame: (
+                                index: Uint8Array,
+                                width: number,
+                                height: number,
+                                opts?: {
+                                    palette?: [number, number, number][];
+                                },
+                            ) => void;
+                            finish: () => void;
+                            bytes: () => Uint8Array;
+                        };
+                        quantize: (
+                            data: Uint8ClampedArray,
+                            maxColors: number,
+                        ) => [number, number, number][];
+                        applyPalette: (
+                            data: Uint8ClampedArray,
+                            palette: [number, number, number][],
+                        ) => Uint8Array;
+                    };
+                const bitmap = working.toBitmap();
+                const rgba = new Uint8ClampedArray(bitmap.length);
+                for (let i = 0; i < bitmap.length; i += 4) {
+                    rgba[i] = bitmap[i + 2];
+                    rgba[i + 1] = bitmap[i + 1];
+                    rgba[i + 2] = bitmap[i];
+                    rgba[i + 3] = bitmap[i + 3];
+                }
+                const palette = quantize(rgba, 256);
+                const index = applyPalette(rgba, palette);
+                const gif = GIFEncoder();
+                gif.writeFrame(index, size.width, size.height, { palette });
+                gif.finish();
+                return Buffer.from(gif.bytes());
+            }
+            default:
+                throw new Error(`지원하지 않는 형식입니다: ${format}`);
+        }
+    };
+    const isValidEncodedSize = (
+        value: unknown,
+    ): value is { width: number; height: number } => {
+        if (!value || typeof value !== "object") return false;
+        const { width, height } = value as {
+            width?: unknown;
+            height?: unknown;
+        };
+        return (
+            typeof width === "number" &&
+            typeof height === "number" &&
+            Number.isSafeInteger(width) &&
+            Number.isSafeInteger(height) &&
+            width > 0 &&
+            height > 0 &&
+            width <= 32768 &&
+            height <= 32768 &&
+            width * height <= 32_000_000
+        );
+    };
+    const parseConvertArgs = (args: unknown) => {
+        const { format, data, options } = (args ?? {}) as {
+            format?: unknown;
+            data?: unknown;
+            options?: unknown;
+        };
+        if (
+            typeof format !== "string" ||
+            !/^(png|jpg|webp|avif|bmp|ico|gif|pdf)$/.test(format)
+        )
+            throw new Error("잘못된 변환 요청입니다.");
+        const raw = (options ?? {}) as {
+            scale?: unknown;
+            quality?: unknown;
+            background?: unknown;
+            maxWidth?: unknown;
+            pngData?: unknown;
+            encodedSize?: unknown;
+        };
+        const parsed: ConvertOptions = {};
+        if (typeof raw.scale === "number" && raw.scale > 0 && raw.scale <= 1)
+            parsed.scale = raw.scale;
+        if (
+            typeof raw.quality === "number" &&
+            raw.quality > 0 &&
+            raw.quality <= 1
+        )
+            parsed.quality = raw.quality;
+        if (
+            typeof raw.background === "string" &&
+            /^#?[0-9a-f]{6}$/i.test(raw.background)
+        )
+            parsed.background = raw.background;
+        if (
+            typeof raw.maxWidth === "number" &&
+            raw.maxWidth > 0 &&
+            raw.maxWidth <= 32768
+        )
+            parsed.maxWidth = Math.round(raw.maxWidth);
+        if (raw.pngData === true) parsed.pngData = true;
+        if (raw.encodedSize !== undefined) {
+            if (!isValidEncodedSize(raw.encodedSize))
+                throw new Error("출력 이미지 크기가 올바르지 않습니다.");
+            parsed.encodedSize = raw.encodedSize;
+        }
+        const namePattern = (raw as { namePattern?: unknown }).namePattern;
+        if (
+            typeof namePattern === "string" &&
+            namePattern.length > 0 &&
+            namePattern.length <= 120
+        )
+            parsed.namePattern = namePattern;
+        return {
+            format: format as CaptureConvertFormat,
+            data,
+            options: parsed,
+        };
+    };
+    const resolveNamePattern = (
+        stem: string,
+        size: { width: number; height: number },
+        pattern?: string,
+    ) => {
+        const pat = pattern?.trim() || "{name}";
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+        const resolved = pat
+            .replaceAll("{name}", stem)
+            .replaceAll("{wxh}", `${size.width}x${size.height}`)
+            .replaceAll("{date}", stamp);
+        const safe = resolved
+            .replace(/[{}\\/:*?"<>|]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        return safe || stem;
+    };
+    const MAX_OWNED_EXPORTS = 1000;
+    const exportMime = (format: CaptureConvertFormat) =>
+        format === "jpg"
+            ? "image/jpeg"
+            : format === "ico"
+              ? "image/x-icon"
+              : format === "pdf"
+                ? "application/pdf"
+                : `image/${format}`;
+    const convertData = (data: unknown) => {
+        let bytes: Buffer;
+        if (Buffer.isBuffer(data)) bytes = data;
+        else if (data instanceof Uint8Array) bytes = Buffer.from(data);
+        else if (data instanceof ArrayBuffer) bytes = Buffer.from(data);
+        else throw new Error("변환 데이터가 올바르지 않습니다.");
+        if (!bytes.length || bytes.length > 100 * 1024 * 1024)
+            throw new Error("변환 데이터가 올바르지 않습니다.");
+        return bytes;
+    };
+    const inspectWebP = (bytes: Buffer) => {
+        if (
+            bytes.length < 20 ||
+            bytes.toString("ascii", 0, 4) !== "RIFF" ||
+            bytes.toString("ascii", 8, 12) !== "WEBP" ||
+            bytes.readUInt32LE(4) + 8 !== bytes.length
+        )
+            return undefined;
+        let offset = 12;
+        let canvas: { width: number; height: number } | undefined;
+        let frame: { width: number; height: number } | undefined;
+        while (offset + 8 <= bytes.length) {
+            const kind = bytes.toString("ascii", offset, offset + 4);
+            const length = bytes.readUInt32LE(offset + 4);
+            const start = offset + 8;
+            const end = start + length;
+            if (end > bytes.length) return undefined;
+            if (kind === "VP8X" && length >= 10) {
+                const width =
+                    1 +
+                    bytes[start + 4] +
+                    bytes[start + 5] * 256 +
+                    bytes[start + 6] * 65536;
+                const height =
+                    1 +
+                    bytes[start + 7] +
+                    bytes[start + 8] * 256 +
+                    bytes[start + 9] * 65536;
+                if (!isValidEncodedSize({ width, height }) || canvas)
+                    return undefined;
+                canvas = { width, height };
+            } else if (kind === "VP8L" && length > 5 && bytes[start] === 0x2f) {
+                const width =
+                    1 + (((bytes[start + 2] & 0x3f) << 8) | bytes[start + 1]);
+                const height =
+                    1 +
+                    (((bytes[start + 4] & 0x0f) << 10) |
+                        (bytes[start + 3] << 2) |
+                        ((bytes[start + 2] & 0xc0) >> 6));
+                if (!isValidEncodedSize({ width, height }) || frame)
+                    return undefined;
+                frame = { width, height };
+            } else if (
+                kind === "VP8 " &&
+                length > 10 &&
+                (bytes[start] & 1) === 0 &&
+                bytes[start + 3] === 0x9d &&
+                bytes[start + 4] === 0x01 &&
+                bytes[start + 5] === 0x2a
+            ) {
+                const partitionLength =
+                    ((bytes[start] |
+                        (bytes[start + 1] << 8) |
+                        (bytes[start + 2] << 16)) >>
+                        5) >>>
+                    0;
+                if (partitionLength === 0 || partitionLength + 3 > length)
+                    return undefined;
+                const width = bytes.readUInt16LE(start + 6) & 0x3fff;
+                const height = bytes.readUInt16LE(start + 8) & 0x3fff;
+                if (!isValidEncodedSize({ width, height }) || frame)
+                    return undefined;
+                frame = { width, height };
+            }
+            offset = end + (length % 2);
+            if (offset > bytes.length) return undefined;
+        }
+        if (offset !== bytes.length || !frame) return undefined;
+        if (
+            canvas &&
+            (canvas.width !== frame.width || canvas.height !== frame.height)
+        )
+            return undefined;
+        return frame;
+    };
+    type IsoBox = {
+        type: string;
+        start: number;
+        payloadStart: number;
+        end: number;
+    };
+    const readIsoBoxes = (bytes: Buffer, start: number, end: number) => {
+        const boxes: IsoBox[] = [];
+        let offset = start;
+        while (offset + 8 <= end) {
+            const shortSize = bytes.readUInt32BE(offset);
+            const type = bytes.toString("ascii", offset + 4, offset + 8);
+            let headerSize = 8;
+            let size = shortSize;
+            if (shortSize === 1) {
+                if (offset + 16 > end) return undefined;
+                const extended = bytes.readBigUInt64BE(offset + 8);
+                if (extended > BigInt(Number.MAX_SAFE_INTEGER))
+                    return undefined;
+                size = Number(extended);
+                headerSize = 16;
+            } else if (shortSize === 0) size = end - offset;
+            if (size < headerSize || offset + size > end) return undefined;
+            boxes.push({
+                type,
+                start: offset,
+                payloadStart: offset + headerSize,
+                end: offset + size,
+            });
+            offset += size;
+        }
+        return offset === end ? boxes : undefined;
+    };
+    const readSizedUInt = (bytes: Buffer, offset: number, size: number) => {
+        if (size === 0) return 0;
+        if (size < 0 || size > 8 || offset + size > bytes.length)
+            return undefined;
+        let value = 0n;
+        for (let index = 0; index < size; index++)
+            value = (value << 8n) | BigInt(bytes[offset + index]);
+        return value <= BigInt(Number.MAX_SAFE_INTEGER)
+            ? Number(value)
+            : undefined;
+    };
+    const isValidAvifContainer = (bytes: Buffer) => {
+        if (bytes.length < 32) return false;
+        const top = readIsoBoxes(bytes, 0, bytes.length);
+        if (!top?.length || top[0].type !== "ftyp") return false;
+        const ftyp = top[0];
+        if (ftyp.end - ftyp.payloadStart < 8) return false;
+        const brands = bytes.toString("ascii", ftyp.payloadStart, ftyp.end);
+        if (!brands.includes("avif") && !brands.includes("avis")) return false;
+        const meta = top.find((box) => box.type === "meta");
+        const mediaRanges = top
+            .filter((box) => box.type === "mdat" && box.end > box.payloadStart)
+            .map((box) => ({ start: box.payloadStart, end: box.end }));
+        if (!meta || !mediaRanges.length || meta.payloadStart + 4 > meta.end)
+            return false;
+        const metaChildren = readIsoBoxes(
+            bytes,
+            meta.payloadStart + 4,
+            meta.end,
+        );
+        if (!metaChildren) return false;
+        const pitm = metaChildren.find((box) => box.type === "pitm");
+        const iloc = metaChildren.find((box) => box.type === "iloc");
+        const iinf = metaChildren.find((box) => box.type === "iinf");
+        const iprp = metaChildren.find((box) => box.type === "iprp");
+        if (!pitm || !iloc || !iinf || !iprp) return false;
+        const pitmVersion = bytes[pitm.payloadStart];
+        const primaryId = readSizedUInt(
+            bytes,
+            pitm.payloadStart + 4,
+            pitmVersion === 0 ? 2 : 4,
+        );
+        if (!primaryId) return false;
+
+        const iinfVersion = bytes[iinf.payloadStart];
+        const iinfCountSize = iinfVersion === 0 ? 2 : 4;
+        const declaredInfeCount = readSizedUInt(
+            bytes,
+            iinf.payloadStart + 4,
+            iinfCountSize,
+        );
+        const infeBoxes = readIsoBoxes(
+            bytes,
+            iinf.payloadStart + 4 + iinfCountSize,
+            iinf.end,
+        );
+        if (
+            !infeBoxes ||
+            declaredInfeCount === undefined ||
+            declaredInfeCount !== infeBoxes.length
+        )
+            return false;
+        const primaryIsAv1 = infeBoxes.some((box) => {
+            if (box.type !== "infe" || box.payloadStart + 12 > box.end)
+                return false;
+            const version = bytes[box.payloadStart];
+            if (version !== 2 && version !== 3) return false;
+            const idSize = version === 2 ? 2 : 4;
+            const itemId = readSizedUInt(bytes, box.payloadStart + 4, idSize);
+            const itemTypeAt = box.payloadStart + 4 + idSize + 2;
+            return (
+                itemId === primaryId &&
+                itemTypeAt + 4 <= box.end &&
+                bytes.toString("ascii", itemTypeAt, itemTypeAt + 4) === "av01"
+            );
+        });
+        if (!primaryIsAv1) return false;
+
+        const propertyBoxes = readIsoBoxes(bytes, iprp.payloadStart, iprp.end);
+        const ipco = propertyBoxes?.find((box) => box.type === "ipco");
+        const ipma = propertyBoxes?.find((box) => box.type === "ipma");
+        if (!ipco || !ipma || ipma.payloadStart + 8 > ipma.end) return false;
+        const properties = readIsoBoxes(bytes, ipco.payloadStart, ipco.end);
+        if (!properties) return false;
+        const propertyTypes = new Map<number, string>();
+        for (const [index, property] of properties.entries()) {
+            if (property.type === "ispe") {
+                if (property.payloadStart + 12 > property.end) return false;
+                const width = bytes.readUInt32BE(property.payloadStart + 4);
+                const height = bytes.readUInt32BE(property.payloadStart + 8);
+                if (!isValidEncodedSize({ width, height })) return false;
+            }
+            propertyTypes.set(index + 1, property.type);
+        }
+        const ipmaVersion = bytes[ipma.payloadStart];
+        const ipmaFlags = bytes.readUIntBE(ipma.payloadStart + 1, 3);
+        let ipmaOffset = ipma.payloadStart + 8;
+        const ipmaCount = bytes.readUInt32BE(ipma.payloadStart + 4);
+        if (ipmaCount > 10_000) return false;
+        const associated = new Set<string>();
+        for (let entry = 0; entry < ipmaCount; entry++) {
+            const idSize = ipmaVersion < 1 ? 2 : 4;
+            const itemId = readSizedUInt(bytes, ipmaOffset, idSize);
+            ipmaOffset += idSize;
+            if (ipmaOffset >= ipma.end) return false;
+            const associationCount = bytes[ipmaOffset++];
+            for (
+                let association = 0;
+                association < associationCount;
+                association++
+            ) {
+                const associationSize = ipmaFlags & 1 ? 2 : 1;
+                const value = readSizedUInt(bytes, ipmaOffset, associationSize);
+                if (value === undefined) return false;
+                ipmaOffset += associationSize;
+                const index = value & (associationSize === 2 ? 0x7fff : 0x7f);
+                if (itemId === primaryId && index)
+                    associated.add(propertyTypes.get(index) ?? "");
+            }
+        }
+        if (
+            ipmaOffset !== ipma.end ||
+            !associated.has("ispe") ||
+            !associated.has("av1C")
+        )
+            return false;
+
+        const ilocVersion = bytes[iloc.payloadStart];
+        if (ilocVersion > 2 || iloc.payloadStart + 8 > iloc.end) return false;
+        const offsetSize = bytes[iloc.payloadStart + 4] >> 4;
+        const lengthSize = bytes[iloc.payloadStart + 4] & 0x0f;
+        const baseOffsetSize = bytes[iloc.payloadStart + 5] >> 4;
+        const indexSize =
+            ilocVersion > 0 ? bytes[iloc.payloadStart + 5] & 0x0f : 0;
+        let ilocOffset = iloc.payloadStart + 6;
+        const itemCountSize = ilocVersion < 2 ? 2 : 4;
+        const itemCount = readSizedUInt(bytes, ilocOffset, itemCountSize);
+        if (itemCount === undefined || itemCount > 10_000) return false;
+        ilocOffset += itemCountSize;
+        let validExtent = false;
+        for (let item = 0; item < itemCount; item++) {
+            const idSize = ilocVersion < 2 ? 2 : 4;
+            const itemId = readSizedUInt(bytes, ilocOffset, idSize);
+            ilocOffset += idSize;
+            let constructionMethod = 0;
+            if (ilocVersion > 0) {
+                const rawMethod = readSizedUInt(bytes, ilocOffset, 2);
+                if (rawMethod === undefined) return false;
+                constructionMethod = rawMethod & 0x0f;
+                ilocOffset += 2;
+            }
+            const dataReference = readSizedUInt(bytes, ilocOffset, 2);
+            ilocOffset += 2;
+            const baseOffset = readSizedUInt(bytes, ilocOffset, baseOffsetSize);
+            ilocOffset += baseOffsetSize;
+            const extentCount = readSizedUInt(bytes, ilocOffset, 2);
+            ilocOffset += 2;
+            if (
+                dataReference === undefined ||
+                baseOffset === undefined ||
+                extentCount === undefined
+            )
+                return false;
+            if (extentCount > 10_000) return false;
+            for (let extent = 0; extent < extentCount; extent++) {
+                if (indexSize) ilocOffset += indexSize;
+                const extentOffset = readSizedUInt(
+                    bytes,
+                    ilocOffset,
+                    offsetSize,
+                );
+                ilocOffset += offsetSize;
+                const extentLength = readSizedUInt(
+                    bytes,
+                    ilocOffset,
+                    lengthSize,
+                );
+                ilocOffset += lengthSize;
+                if (extentOffset === undefined || extentLength === undefined)
+                    return false;
+                const absoluteStart = baseOffset + extentOffset;
+                if (itemId === primaryId) {
+                    if (
+                        constructionMethod !== 0 ||
+                        dataReference !== 0 ||
+                        extentLength <= 0 ||
+                        !mediaRanges.some(
+                            (range) =>
+                                absoluteStart >= range.start &&
+                                absoluteStart + extentLength <= range.end,
+                        )
+                    )
+                        return false;
+                    validExtent = true;
+                }
+            }
+        }
+        return ilocOffset === iloc.end && validExtent;
+    };
+    const hasEncodedSignature = (
+        bytes: Buffer,
+        format: CaptureConvertFormat,
+    ) => {
+        switch (format) {
+            case "png":
+                return (
+                    bytes.length >= 8 &&
+                    bytes
+                        .subarray(0, 8)
+                        .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+                );
+            case "jpg":
+                return (
+                    bytes.length >= 3 &&
+                    bytes[0] === 0xff &&
+                    bytes[1] === 0xd8 &&
+                    bytes[2] === 0xff
+                );
+            case "webp":
+                return Boolean(inspectWebP(bytes));
+            case "avif":
+                return isValidAvifContainer(bytes);
+            case "bmp":
+                return (
+                    bytes.length >= 2 && bytes.toString("ascii", 0, 2) === "BM"
+                );
+            case "ico":
+                return (
+                    bytes.length >= 6 &&
+                    bytes[0] === 0 &&
+                    bytes[1] === 0 &&
+                    bytes[2] === 1 &&
+                    bytes[3] === 0
+                );
+            case "gif":
+                return (
+                    bytes.length >= 6 &&
+                    /^(GIF87a|GIF89a)$/.test(bytes.toString("ascii", 0, 6))
+                );
+            case "pdf":
+                return (
+                    bytes.length >= 5 &&
+                    bytes.toString("ascii", 0, 5) === "%PDF-"
+                );
+        }
+    };
+    const prepareConvertOutput = (
+        sourcePath: string,
+        format: CaptureConvertFormat,
+        data: unknown,
+        options: ConvertOptions,
+    ) => {
+        let displayImage: Electron.NativeImage | undefined;
+        let output: Buffer;
+        let size: { width: number; height: number };
+        if (data === undefined || data === null || options.pngData) {
+            const sourceImage =
+                data === undefined || data === null
+                    ? nativeImage.createFromPath(sourcePath)
+                    : (() => {
+                          const bytes = convertData(data);
+                          if (!hasEncodedSignature(bytes, "png"))
+                              throw new Error(
+                                  "PNG 중간 데이터가 올바르지 않습니다.",
+                              );
+                          return nativeImage.createFromBuffer(bytes);
+                      })();
+            displayImage = prepareConverted(sourceImage, options);
+            size = displayImage.getSize();
+            output = encodeConverted(displayImage, format, options);
+            if (format === "ico") size = { width: 48, height: 48 };
+        } else {
+            output = convertData(data);
+            if (!hasEncodedSignature(output, format))
+                throw new Error("출력 데이터와 파일 형식이 일치하지 않습니다.");
+            const decoded = nativeImage.createFromBuffer(output);
+            const decodedSize = decoded.isEmpty()
+                ? undefined
+                : decoded.getSize();
+            displayImage = decodedSize ? decoded : undefined;
+            const containerSize =
+                format === "webp" ? inspectWebP(output) : undefined;
+            if (!decodedSize && format !== "webp" && format !== "avif")
+                throw new Error("인코딩된 이미지를 읽을 수 없습니다.");
+            if (
+                decodedSize &&
+                containerSize &&
+                (decodedSize.width !== containerSize.width ||
+                    decodedSize.height !== containerSize.height)
+            )
+                throw new Error(
+                    "출력 이미지 크기가 인코딩 결과와 일치하지 않습니다.",
+                );
+            if (
+                containerSize &&
+                options.encodedSize &&
+                (containerSize.width !== options.encodedSize.width ||
+                    containerSize.height !== options.encodedSize.height)
+            )
+                throw new Error(
+                    "출력 이미지 크기가 인코딩 결과와 일치하지 않습니다.",
+                );
+            if (
+                decodedSize &&
+                options.encodedSize &&
+                (decodedSize.width !== options.encodedSize.width ||
+                    decodedSize.height !== options.encodedSize.height)
+            )
+                throw new Error(
+                    "출력 이미지 크기가 인코딩 결과와 일치하지 않습니다.",
+                );
+            size = decodedSize ??
+                containerSize ??
+                options.encodedSize ?? { width: 0, height: 0 };
+        }
+        if (!hasEncodedSignature(output, format))
+            throw new Error("출력 데이터와 파일 형식이 일치하지 않습니다.");
+        if (!isValidEncodedSize(size))
+            throw new Error("출력 이미지 크기를 확인할 수 없습니다.");
+        return { output, size, displayImage };
+    };
+    const previewConverted = (
+        sourcePath: string,
+        format: CaptureConvertFormat,
+        data: unknown,
+        options: ConvertOptions,
+    ): CaptureConvertPreview => {
+        const prepared = prepareConvertOutput(
+            sourcePath,
+            format,
+            data,
+            options,
+        );
+        const containerPreview = format === "pdf" || format === "ico";
+        const needsPngPreview =
+            containerPreview ||
+            format === "bmp" ||
+            prepared.displayImage?.isEmpty();
+        const previewData = needsPngPreview
+            ? prepared.displayImage?.toPNG()
+            : prepared.output;
+        if (!previewData?.length)
+            throw new Error("미리보기 이미지를 만들 수 없습니다.");
+        return {
+            data: previewData,
+            previewMime: needsPngPreview ? "image/png" : exportMime(format),
+            exportMime: exportMime(format),
+            outputBytes: prepared.output.length,
+            width: prepared.size.width,
+            height: prepared.size.height,
+            approximate: containerPreview,
+        };
+    };
+    const writeConverted = (
+        event: IpcMainInvokeEvent,
+        sourcePath: string,
+        format: CaptureConvertFormat,
+        data: unknown,
+        options: ConvertOptions,
+    ) => {
+        const registration = renderers.get(event.sender.id);
+        if (!registration)
+            throw new Error("등록되지 않은 화면의 변환 요청입니다.");
+        if (registration.exportedPaths.size >= MAX_OWNED_EXPORTS)
+            throw new Error(
+                "이 화면에서 만든 변환 파일이 1,000개에 도달했습니다.",
+            );
+        const prepared = prepareConvertOutput(
+            sourcePath,
+            format,
+            data,
+            options,
+        );
+        const stem = basename(sourcePath, extname(sourcePath));
+        const name = resolveNamePattern(
+            stem,
+            prepared.size,
+            options.namePattern,
+        );
+        const target = uniqueExportPath(
+            dirname(sourcePath),
+            `${name}.${format}`,
+        );
+        writeFileSync(target, prepared.output, { flag: "wx" });
+        registration.exportedPaths.add(resolve(target));
+        return {
+            path: target,
+            bytes: prepared.output.length,
+            width: prepared.size.width,
+            height: prepared.size.height,
+        };
+    };
+    ipcMain.handle("oc:items:convert", (event, args: unknown) => {
+        const role = assertRole(event, ["dashboard", "shelf"]);
+        const { id } = (args ?? {}) as { id?: unknown };
+        const { format, data, options } = parseConvertArgs(args);
+        if (typeof id !== "string") throw new Error("잘못된 변환 요청입니다.");
+        const item = role === "shelf" ? shelfItem(id) : getItem(id);
+        if (!existsSync(item.path))
+            throw new Error("파일이 존재하지 않습니다.");
+        return writeConverted(event, item.path, format, data, options);
+    });
+    ipcMain.handle("oc:paths:convert", (event, args: unknown) => {
+        assertRole(event, ["dashboard"]);
+        const { path: source } = (args ?? {}) as { path?: unknown };
+        const { format, data, options } = parseConvertArgs(args);
+        const hasRendererData = data !== undefined && data !== null;
+        const extOk =
+            /\.(png|jpe?g|webp|bmp|gif|ico|tiff?)$/i.test(source as string) ||
+            (hasRendererData &&
+                /\.(avif|svg|heic|heif)$/i.test(source as string));
+        if (
+            typeof source !== "string" ||
+            !isAbsolute(source) ||
+            !existsSync(source) ||
+            !extOk
+        )
+            throw new Error("변환할 수 있는 이미지 파일이 아닙니다.");
+        if (statSync(source).size > 100 * 1024 * 1024)
+            throw new Error("파일이 너무 큽니다.");
+        return writeConverted(event, source, format, data, options);
+    });
+    ipcMain.handle("oc:items:preview", (event, args: unknown) => {
+        const role = assertRole(event, ["dashboard", "shelf"]);
+        const { id } = (args ?? {}) as { id?: unknown };
+        const { format, data, options } = parseConvertArgs(args);
+        if (typeof id !== "string")
+            throw new Error("잘못된 미리보기 요청입니다.");
+        const item = role === "shelf" ? shelfItem(id) : getItem(id);
+        if (!existsSync(item.path))
+            throw new Error("파일이 존재하지 않습니다.");
+        return previewConverted(item.path, format, data, options);
+    });
+    ipcMain.handle("oc:paths:preview", (event, args: unknown) => {
+        assertRole(event, ["dashboard"]);
+        const { path: source } = (args ?? {}) as { path?: unknown };
+        const { format, data, options } = parseConvertArgs(args);
+        const hasRendererData = data !== undefined && data !== null;
+        const extOk =
+            /\.(png|jpe?g|webp|bmp|gif|ico|tiff?)$/i.test(source as string) ||
+            (hasRendererData &&
+                /\.(avif|svg|heic|heif)$/i.test(source as string));
+        if (
+            typeof source !== "string" ||
+            !isAbsolute(source) ||
+            !existsSync(source) ||
+            !extOk
+        )
+            throw new Error("미리 볼 수 있는 이미지 파일이 아닙니다.");
+        if (statSync(source).size > 100 * 1024 * 1024)
+            throw new Error("파일이 너무 큽니다.");
+        return previewConverted(source, format, data, options);
+    });
+    ipcMain.handle("oc:file:read", (event, target: unknown) => {
+        assertRole(event, ["dashboard", "shelf"]);
+        if (
+            typeof target !== "string" ||
+            !isAbsolute(target) ||
+            !existsSync(target) ||
+            !/\.(png|jpe?g|webp|bmp|gif|ico|tiff?|avif|svg|heic|heif)$/i.test(
+                target,
+            )
+        )
+            throw new Error("읽을 수 있는 이미지 파일이 아닙니다.");
+        if (statSync(target).size > 100 * 1024 * 1024)
+            throw new Error("파일이 너무 큽니다.");
+        return readFileSync(target);
+    });
+    ipcMain.handle("oc:converted:register", (event, paths: unknown) => {
+        assertRole(event, ["dashboard", "shelf"]);
+        if (!Array.isArray(paths))
+            throw new Error("등록할 변환 파일 목록이 올바르지 않습니다.");
+        const owned = renderers.get(event.sender.id)?.exportedPaths;
+        if (!owned) throw new Error("등록되지 않은 화면의 요청입니다.");
+        return paths.map((requested): CaptureRegistrationOutcome => {
+            const path = typeof requested === "string" ? requested : "";
+            try {
+                if (!path || !isAbsolute(path))
+                    throw new Error("파일 경로가 올바르지 않습니다.");
+                const resolved = resolve(path);
+                if (!owned.has(resolved))
+                    throw new Error("이 화면에서 만든 변환 파일이 아닙니다.");
+                if (!existsSync(resolved))
+                    throw new Error("변환 파일이 존재하지 않습니다.");
+                const existing = library.items.find(
+                    (item) => pathKey(item.path) === pathKey(resolved),
+                );
+                if (existing)
+                    return {
+                        path,
+                        status: "duplicate",
+                        itemId: existing.id,
+                    };
+                if (extname(resolved).toLowerCase() === ".pdf")
+                    return {
+                        path,
+                        status: "unsupported",
+                        error: "PDF 파일은 이미지 보관함에 등록할 수 없습니다.",
+                    };
+                const image = nativeImage.createFromPath(resolved);
+                if (image.isEmpty())
+                    return {
+                        path,
+                        status: "unsupported",
+                        error: "이 이미지 형식은 보관함에서 지원하지 않습니다.",
+                    };
+                const duplicate = findDuplicate(resolved);
+                if (duplicate)
+                    return {
+                        path,
+                        status: "duplicate",
+                        itemId: duplicate.id,
+                    };
+                if (
+                    !remember(resolved, undefined, false, false, {
+                        kind: "import",
+                        capturedAt: new Date().toISOString(),
+                    })
+                )
+                    throw new Error("보관함 항목을 만들 수 없습니다.");
+                const item = library.items.find(
+                    (candidate) =>
+                        pathKey(candidate.path) === pathKey(resolved),
+                );
+                if (!item) throw new Error("보관함 항목을 만들 수 없습니다.");
+                return { path, status: "registered", itemId: item.id };
+            } catch (error) {
+                return {
+                    path,
+                    status: "failed",
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                };
+            }
+        });
+    });
+    const startConvertedDrag = (
+        event: IpcMainEvent | IpcMainInvokeEvent,
+        target: unknown,
+    ): CaptureDragAcknowledgement => {
+        try {
+            assertRole(event, ["dashboard", "shelf"]);
+            if (typeof target !== "string" || !isAbsolute(target))
+                throw new Error("드래그할 파일 경로가 올바르지 않습니다.");
+            const resolved = resolve(target);
+            if (!renderers.get(event.sender.id)?.exportedPaths.has(resolved))
+                throw new Error("이 화면에서 만든 변환 파일이 아닙니다.");
+            if (!existsSync(resolved))
+                throw new Error("드래그할 파일이 존재하지 않습니다.");
+            let icon = nativeImage.createFromPath(resolved);
+            if (icon.isEmpty())
+                icon = nativeImage.createFromBitmap(
+                    Buffer.alloc(32 * 32 * 4, 255),
+                    {
+                        width: 32,
+                        height: 32,
+                    },
+                );
+            const size = icon.getSize();
+            const scale = Math.min(1, 128 / Math.max(size.width, size.height));
+            if (scale < 1)
+                icon = icon.resize({
+                    width: Math.max(1, Math.round(size.width * scale)),
+                    height: Math.max(1, Math.round(size.height * scale)),
+                });
+            event.sender.startDrag({ file: resolved, icon });
+            return { started: true };
+        } catch (error) {
+            return {
+                started: false,
+                error: error instanceof Error ? error.message : String(error),
+            };
+        }
+    };
+    ipcMain.handle("oc:converted:drag", (event, target: unknown) =>
+        startConvertedDrag(event, target),
+    );
+    ipcMain.on("oc:drag-path", (event, target: unknown) => {
+        try {
+            startConvertedDrag(event, target);
+        } catch {}
+    });
+    ipcMain.handle("oc:reveal-path", (event, target: unknown) => {
+        assertRole(event, ["dashboard", "shelf"]);
+        if (typeof target !== "string" || !isAbsolute(target)) return false;
+        const resolved = resolve(target);
+        const inside = library.collections.some((collection) => {
+            const root = resolve(collection.path);
+            return resolved === root || resolved.startsWith(`${root}${sep}`);
+        });
+        const owned = renderers
+            .get(event.sender.id)
+            ?.exportedPaths.has(resolved);
+        if (!(inside || owned)) return false;
+        if (!existsSync(resolved)) return false;
+        shell.showItemInFolder(resolved);
+        return true;
     });
     ipcMain.on("oc:drag", (event, id) => {
         try {
@@ -3070,6 +4332,13 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             } else if (name === "pin-items") {
                 for (const item of selectedItems(payload))
                     await hooks.pin(item.path);
+            } else if (name === "pin-stack") {
+                const items = selectedItems(payload, 24);
+                if (items.length < 2)
+                    throw new Error("두 개 이상 선택해 주세요.");
+                if (hooks.pinStack)
+                    await hooks.pinStack(items.map((i) => i.path));
+                else for (const item of items) await hooks.pin(item.path);
             } else if (name === "combine-items") {
                 const items = selectedItems(payload, 20);
                 if (items.length < 2)
@@ -3079,6 +4348,32 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 if (direction !== "vertical" && direction !== "horizontal")
                     throw new Error("Choose a valid combine direction.");
                 saveImage(combineImages(items, direction), "Combined", false);
+            } else if (name === "combine-pdf") {
+                const items = selectedItems(payload, 100);
+                if (items.length < 2)
+                    throw new Error("Select at least two images for a PDF.");
+                const { options } = parseConvertArgs({
+                    format: "pdf",
+                    options: (payload as { options?: unknown })?.options,
+                });
+                const pages = items.map((item) => {
+                    if (!existsSync(item.path))
+                        throw new Error(
+                            `파일이 존재하지 않습니다: ${basename(item.path)}`,
+                        );
+                    return prepareConverted(
+                        nativeImage.createFromPath(item.path),
+                        options,
+                    ).toDataURL();
+                });
+                const first = items[0];
+                const stem = basename(first.path, extname(first.path));
+                const target = uniqueExportPath(
+                    dirname(first.path),
+                    `${stem}-pdf.pdf`,
+                );
+                writeFileSync(target, imagesPdf(pages));
+                return { path: target };
             } else if (name === "add-collection") {
                 if (library.collections.length >= 6)
                     throw new Error(
@@ -3096,6 +4391,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                             path,
                         });
                     persist();
+                    syncCollectionWatchers();
                 }
             } else if (name === "choose-collection") {
                 const collection = library.collections.find(
@@ -3106,6 +4402,46 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 hooks.setSaveFolder(collection.path);
                 persist();
                 persistCaptureSettings();
+            } else if (name === "export-settings") {
+                const picked = await dialog.showSaveDialog({
+                    defaultPath: "opencapture-settings.json",
+                    filters: [{ name: "JSON", extensions: ["json"] }],
+                });
+                if (picked.canceled || !picked.filePath) return null;
+                writeFileSync(
+                    picked.filePath,
+                    JSON.stringify(
+                        {
+                            version: 1,
+                            experience: library.experience,
+                            workflow: library.workflow,
+                        },
+                        null,
+                        2,
+                    ),
+                );
+                return { path: picked.filePath };
+            } else if (name === "import-settings") {
+                const picked = await dialog.showOpenDialog({
+                    properties: ["openFile"],
+                    filters: [{ name: "JSON", extensions: ["json"] }],
+                });
+                if (picked.canceled || !picked.filePaths[0]) return null;
+                const parsed = JSON.parse(
+                    readFileSync(picked.filePaths[0], "utf8"),
+                ) as Record<string, unknown>;
+                if (!parsed || typeof parsed !== "object")
+                    throw new Error("Invalid settings file.");
+                library.experience = parseCaptureExperience(
+                    parsed.experience ?? library.experience,
+                );
+                library.workflow = parseCaptureWorkflowPreferences(
+                    parsed.workflow ?? library.workflow,
+                    library.workflow,
+                );
+                persist();
+                persistCaptureSettings();
+                return state();
             } else if (name === "open-image") {
                 const picked = await dialog.showOpenDialog({
                     properties: ["openFile", "multiSelections"],
@@ -3396,5 +4732,9 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         state,
         importPaths,
         activeFolder: () => active().path,
+        progressBar: (fraction: number) => {
+            if (dashboard && !dashboard.isDestroyed())
+                dashboard.setProgressBar(fraction);
+        },
     };
 }

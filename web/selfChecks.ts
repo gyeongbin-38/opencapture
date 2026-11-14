@@ -8,6 +8,7 @@ import {
     createBrowserBoardApi,
     parseBrowserPortable,
 } from "./boardApi";
+import { lt } from "./i18n";
 import {
     beautifyImage,
     dataURLBlob,
@@ -234,7 +235,7 @@ export async function runLabChecks(
         emit({ id, name, status: "manual", detail, durationMs: 0 });
 
     try {
-        await check("board-write", "격리 보드 저장", async () => {
+        await check("board-write", lt("격리 보드 저장"), async () => {
             const status = await api.status();
             requireCondition(
                 !status.readOnly,
@@ -258,7 +259,7 @@ export async function runLabChecks(
             return `Created revision ${board.revision} with one generated image.`;
         });
 
-        await check("board-cas", "오래된 리비전 거부", async () => {
+        await check("board-cas", lt("오래된 리비전 거부"), async () => {
             requireCondition(board, "Board setup did not complete.");
             let rejected = false;
             try {
@@ -273,7 +274,7 @@ export async function runLabChecks(
             return "Stale revision save rejected with a revision conflict.";
         });
 
-        await check("board-reload", "두 번째 어댑터 재로드", async () => {
+        await check("board-reload", lt("두 번째 어댑터 재로드"), async () => {
             requireCondition(board, "Board setup did not complete.");
             reloadApi = createBrowserBoardApi({ databaseName });
             const loaded = await reloadApi.load(board.id);
@@ -294,7 +295,7 @@ export async function runLabChecks(
 
         await check(
             "owned-asset",
-            "원본 항목 삭제 후 보드 자산 유지",
+            lt("원본 항목 삭제 후 보드 자산 유지"),
             async () => {
                 requireCondition(
                     item && assetId,
@@ -318,50 +319,65 @@ export async function runLabChecks(
             },
         );
 
-        await check("portable-validation", "손상된 포터블 보드 거부", () => {
-            let rejected = false;
-            try {
-                parseBrowserPortable(
-                    JSON.stringify({ version: 1, document: {}, assets: [] }),
+        await check(
+            "portable-validation",
+            lt("손상된 포터블 보드 거부"),
+            () => {
+                let rejected = false;
+                try {
+                    parseBrowserPortable(
+                        JSON.stringify({
+                            version: 1,
+                            document: {},
+                            assets: [],
+                        }),
+                    );
+                } catch {
+                    rejected = true;
+                }
+                requireCondition(
+                    rejected,
+                    "Invalid portable board was accepted.",
                 );
-            } catch {
-                rejected = true;
-            }
-            requireCondition(rejected, "Invalid portable board was accepted.");
-            return "Malformed portable board rejected by the real validator.";
-        });
+                return "Malformed portable board rejected by the real validator.";
+            },
+        );
 
-        await check("image-transform", "이미지 리사이즈·꾸미기", async () => {
-            const resizeFixture = canvasPng(1280, 800, (context) => {
-                context.fillStyle = "#365cd6";
-                context.fillRect(0, 0, 1280, 800);
-            });
-            const resized = await normalizeImage(
-                await resizeImage(resizeFixture),
-            );
-            requireCondition(
-                resized.width === 1024 && resized.height === 640,
-                `Resize returned ${resized.width}×${resized.height}.`,
-            );
-            const beautified = await beautifyImage(fixture, {
-                id: "check",
-                name: "Check",
-                background: "#f3f4f7",
-                padding: 12,
-                shadow: 8,
-                radius: 10,
-                ratio: "auto",
-                align: "center",
-                autoBalance: false,
-            });
-            requireCondition(
-                beautified.width === 152 && beautified.height === 104,
-                `Beautify returned ${beautified.width}×${beautified.height}.`,
-            );
-            return "Resize produced 1024×640; beautify produced 152×104.";
-        });
+        await check(
+            "image-transform",
+            lt("이미지 리사이즈·꾸미기"),
+            async () => {
+                const resizeFixture = canvasPng(1280, 800, (context) => {
+                    context.fillStyle = "#365cd6";
+                    context.fillRect(0, 0, 1280, 800);
+                });
+                const resized = await normalizeImage(
+                    await resizeImage(resizeFixture),
+                );
+                requireCondition(
+                    resized.width === 1024 && resized.height === 640,
+                    `Resize returned ${resized.width}×${resized.height}.`,
+                );
+                const beautified = await beautifyImage(fixture, {
+                    id: "check",
+                    name: "Check",
+                    background: "#f3f4f7",
+                    padding: 12,
+                    shadow: 8,
+                    radius: 10,
+                    ratio: "auto",
+                    align: "center",
+                    autoBalance: false,
+                });
+                requireCondition(
+                    beautified.width === 152 && beautified.height === 104,
+                    `Beautify returned ${beautified.width}×${beautified.height}.`,
+                );
+                return "Resize produced 1024×640; beautify produced 152×104.";
+            },
+        );
 
-        await check("capture-layout", "캡처 도구 위치·오버플로", () => {
+        await check("capture-layout", lt("캡처 도구 위치·오버플로"), () => {
             const tools = ["copy", "stage", "ocr", "redact", "save"];
             const fit = fitCaptureToolbar(tools, {
                 viewportWidth: 260,
@@ -390,7 +406,7 @@ export async function runLabChecks(
             return `${fit.visible.length} visible, ${fit.overflow.length} overflow; dock remained reachable.`;
         });
 
-        await check("long-press", "길게 누르기 임계값", () => {
+        await check("long-press", lt("길게 누르기 임계값"), () => {
             let timer: (() => void) | undefined;
             let held = 0;
             const controller = createLongPressController({
@@ -431,7 +447,7 @@ export async function runLabChecks(
 
         if (options.models) {
             const textFixture = generatedTextImage();
-            await check("model-ocr", "로컬 OCR", async () => {
+            await check("model-ocr", lt("로컬 OCR"), async () => {
                 const result = await processRequest<{
                     text: string;
                     lines: OcrLine[];
@@ -453,7 +469,7 @@ export async function runLabChecks(
                 return `Recognized ${result.lines.length} lines locally.`;
             });
 
-            await check("model-redact", "민감정보만 가리기", async () => {
+            await check("model-redact", lt("민감정보만 가리기"), async () => {
                 const result = await processRequest<{
                     dataURL: string;
                     lines: OcrLine[];
@@ -507,7 +523,7 @@ export async function runLabChecks(
                 return `${result.redacted} sensitive line masked; ${ordinary.length} ordinary line(s) excluded.`;
             });
 
-            await check("model-cutout", "로컬 배경 제거", async () => {
+            await check("model-cutout", lt("로컬 배경 제거"), async () => {
                 const result = await processRequest<{
                     dataURL: string;
                     width: number;
@@ -531,7 +547,7 @@ export async function runLabChecks(
                 return `U2Net alpha range ${minAlpha}–${maxAlpha}.`;
             });
 
-            await check("model-upscale", "로컬 AI 확대", async () => {
+            await check("model-upscale", lt("로컬 AI 확대"), async () => {
                 const tiny = canvasPng(8, 6, (context) => {
                     context.fillStyle = "#365cd6";
                     context.fillRect(0, 0, 8, 6);
@@ -554,7 +570,7 @@ export async function runLabChecks(
                 return "8×6 input produced a real 32×24 image.";
             });
 
-            await check("model-translate", "로컬 번역", async () => {
+            await check("model-translate", lt("로컬 번역"), async () => {
                 const result = await processRequest<{ text: string }>({
                     operation: "translate",
                     text: "Hello, this is a local translation test.",
@@ -571,21 +587,27 @@ export async function runLabChecks(
 
         manual(
             "permission-actions",
-            "브라우저 권한 기능",
-            "화면 공유와 클립보드는 사용자 권한 선택이 필요해 수동 확인 대상입니다.",
+            lt("브라우저 권한 기능"),
+            lt(
+                "화면 공유와 클립보드는 사용자 권한 선택이 필요해 수동 확인 대상입니다.",
+            ),
         );
         manual(
             "native-actions",
-            "데스크톱 전용 기능",
-            "전역 단축키, 다른 앱 캡처, 항상 위 창은 네이티브 앱에서 수동 확인해야 합니다.",
+            lt("데스크톱 전용 기능"),
+            lt(
+                "전역 단축키, 다른 앱 캡처, 항상 위 창은 네이티브 앱에서 수동 확인해야 합니다.",
+            ),
         );
         manual(
             "dom-coverage",
-            "화면 버튼·라우팅",
-            "이 자동점검은 기본 도메인 동작을 확인하며 DOM 버튼과 전체 사용자 흐름은 수동 확인 대상입니다.",
+            lt("화면 버튼·라우팅"),
+            lt(
+                "이 자동점검은 기본 도메인 동작을 확인하며 DOM 버튼과 전체 사용자 흐름은 수동 확인 대상입니다.",
+            ),
         );
     } finally {
-        await check("storage-cleanup", "격리 저장소 정리", async () => {
+        await check("storage-cleanup", lt("격리 저장소 정리"), async () => {
             const disposals = await Promise.allSettled([
                 reloadApi?.dispose() ?? Promise.resolve(),
                 api.dispose(),

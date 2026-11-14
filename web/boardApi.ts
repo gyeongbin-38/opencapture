@@ -8,6 +8,7 @@ import {
     type CaptureBoardApi,
 } from "../lib/captureBoard";
 import type { NamedBeautifyStyle } from "../lib/openCaptureTypes";
+import { lt } from "./i18n";
 import {
     beautifyImage,
     dataURLBlob,
@@ -325,7 +326,7 @@ const emptyDocument = (name: string): BoardDocument => ({
     version: 1,
     id: crypto.randomUUID(),
     revision: 0,
-    name: name.trim().slice(0, 80) || "새 보드",
+    name: name.trim().slice(0, 80) || lt("새 보드"),
     updatedAt: new Date().toISOString(),
     viewport: { x: 0, y: 0, zoom: 1 },
     settings: { autoAdd: true, focusIds: [], preset: "design" },
@@ -538,7 +539,7 @@ export function createBrowserBoardApi(
                 )
                 .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
         },
-        async create(name = "새 보드") {
+        async create(name = lt("새 보드")) {
             const document = emptyDocument(name);
             const transaction = await stores(["boards", "meta"], "readwrite");
             const count = await request<number>(
@@ -917,7 +918,12 @@ export function createBrowserBoardApi(
                     originalId: asset.id,
                     image: await normalizeImage(asset.dataURL),
                 });
-            const board = emptyDocument(`${portable.document.name} 복사본`);
+            const board = emptyDocument(
+                lt(
+                    `${portable.document.name} 복사본`,
+                    `${portable.document.name} copy`,
+                ),
+            );
             board.viewport = clone(portable.document.viewport);
             board.settings = clone(portable.document.settings);
             board.styles = clone(portable.document.styles);

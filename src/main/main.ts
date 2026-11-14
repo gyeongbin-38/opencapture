@@ -31,6 +31,7 @@ import {
     registerShortcuts,
 } from "../../lib/shortcutRegistry";
 import { StartupCommandQueue } from "../../lib/startupCommands";
+import { replaceFileSync } from "./atomicReplace";
 import { removeBackground } from "./backgroundRemoval";
 import { createTranslationService } from "./localTranslation";
 import { installOpenCapture } from "./openCapture";
@@ -40,14 +41,16 @@ import minimist from "minimist";
 import initScreenShots from "../renderer/screenShot/screenShot";
 
 import { exec, execSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
+    copyFileSync,
     cpSync,
     existsSync,
     mkdir,
     mkdirSync,
     readFile,
     readFileSync,
+    readdirSync,
     renameSync,
     rmSync,
     statSync,
@@ -55,12 +58,18 @@ import {
     writeFileSync,
 } from "node:fs";
 import { homedir, release, tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import url from "node:url";
 import main, { matchFitLan } from "xtranslator";
+import { dashboardCaptureSelectionMode } from "../../lib/captureWindowSelection";
+import {
+    dashboardLanguageSettings,
+    validateDashboardLanguage,
+} from "../../lib/dashboardLanguage";
 import { githubMirrorList } from "../../lib/github_mirror";
 import { mainOn, mainOnReflect, mainSend } from "../../lib/ipc";
 import type {
+    CardPinMetadata,
     ClipCaptureContext,
     ClipProject,
     RecordRect,
@@ -72,7 +81,7 @@ import type {
 } from "../../lib/openCaptureTypes";
 import Store from "../../lib/store/store";
 import time_format from "../../lib/time_format";
-import { getLans, lan, t } from "../../lib/translate/translate";
+import { getLanName, getLans, lan, t } from "../../lib/translate/translate";
 import { typedEntries } from "../../lib/utils";
 import type {
     EditToolsType,
@@ -192,11 +201,11 @@ function configuredHelperKeys() {
     return {
         capture:
             custom.capture === undefined
-                ? "CommandOrControl+Shift+Space"
+                ? "CommandOrControl+Shift+A"
                 : custom.capture,
         toggle:
             custom.toggle === undefined
-                ? "CommandOrControl+Alt+Space"
+                ? "CommandOrControl+Shift+Space"
                 : custom.toggle,
     };
 }
@@ -317,13 +326,19 @@ try {
 const store = new Store({
     configPath: join(app.getPath("userData"), "config.json"),
 });
+let activeLanguage = "ko";
+mainOn("active_language", () => activeLanguage);
 
 ipcMain.on("store", (e, x) => {
     if (x.type === "get") {
         e.returnValue = store.get(x.path);
     } else if (x.type === "set") {
         store.set(x.path, x.value);
-        if (x.path === "鼠标快捷键.全局") syncMouseChord();
+        if (
+            x.path === "鼠标快捷键.全局" ||
+            x.path.startsWith("鼠标快捷键.径向菜单")
+        )
+            syncMouseChord();
     } else if (x.type === "path") {
         e.returnValue = store.path();
     } else if (x.type === "getAll") {
@@ -436,6 +451,10 @@ if (!store.get("硬件加速")) {
  * 复制选区，存在变化，回调
  */
 async function copyText(callback: (t: string) => void) {
+    if (process.mas) {
+        callback("");
+        return;
+    }
     const oClipboard = await clipboard.readText();
     if (process.platform === "darwin") {
         exec(
@@ -481,9 +500,10 @@ async function readImageFromClipboard() {
 
 /** 写入图片到剪贴板（Electron 44 移除了 clipboard.writeImage） */
 async function writeImageToClipboard(image: NativeImage) {
+    const png = image.toPNG();
     await clipboard.write([
         new ClipboardItem({
-            "image/png": new Blob([image.toPNG()], { type: "image/png" }),
+            "image/png": new Blob([png], { type: "image/png" }),
         }),
     ]);
 }
@@ -809,6 +829,7 @@ function ocShortcutDefs(): ShortcutRequest[] {
                       id: "toggle",
                       label: "시작 화면 토글",
                       keys: [
+                          "CommandOrControl+Shift+Space",
                           "CommandOrControl+Alt+Space",
                           "CommandOrControl+Shift+O",
                       ],
@@ -820,7 +841,7 @@ function ocShortcutDefs(): ShortcutRequest[] {
                       id: "capture",
                       label: "영역 캡처",
                       keys: [
-                          "CommandOrControl+Shift+Space",
+                          "CommandOrControl+Shift+A",
                           "CommandOrControl+Alt+A",
                       ],
                       run: () => {
@@ -916,7 +937,7 @@ function ocShortcutStatus() {
             active: null,
             available: true,
             custom: keys.capture,
-            default: "CommandOrControl+Shift+Space",
+            default: "CommandOrControl+Alt+A",
             lastUsed: shortcutLastUsed.get("capture") ?? null,
         },
         {
@@ -926,7 +947,7 @@ function ocShortcutStatus() {
             active: null,
             available: true,
             custom: keys.toggle,
-            default: "CommandOrControl+Alt+Space",
+            default: "CommandOrControl+Shift+Space",
             lastUsed: shortcutLastUsed.get("toggle") ?? null,
         },
     ];
@@ -1002,6 +1023,7 @@ function rebindOcShortcut(id: string, key: unknown): boolean {
 // 마우스 좌·우 동시 클릭 트리거
 type UiohookModule = typeof import("uiohook-napi");
 let mouseHook: UiohookModule["uIOhook"] | null = null;
+let mouseHookFailed = false;
 const chordState = { left: false, right: false, fired: false };
 
 function mouseChordRun(): (() => void) | null {
@@ -1025,6 +1047,7 @@ let stepCaptureCount = 0;
 let stepCaptureLastAt = 0;
 
 function toggleStepCapture() {
+    if (process.mas) throw new Error(t("지원하지 않는 동작입니다."));
     stepCaptureActive = !stepCaptureActive;
     if (stepCaptureActive) {
         stepCaptureCount = 0;
@@ -1064,11 +1087,17 @@ async function captureStepAt(x: number, y: number) {
 }
 
 function syncMouseChord() {
-    if (mouseChordRun() || stepCaptureActive) {
+    if (process.mas) {
+        mouseHookFailed = true;
+        return;
+    }
+    if (mouseChordRun() || stepCaptureActive || radialEnabled()) {
         if (mouseHook) return;
         try {
             const { uIOhook } = require("uiohook-napi") as UiohookModule;
             mouseHook = uIOhook;
+            mouseHookFailed = false;
+            uIOhook.removeAllListeners();
             uIOhook.on("mousedown", (e) => {
                 if (stepCaptureActive && e.button === 1) {
                     const now = Date.now();
@@ -1079,7 +1108,17 @@ function syncMouseChord() {
                 }
                 if (e.button === 1) chordState.left = true;
                 else if (e.button === 2) chordState.right = true;
-                else return;
+                else if (radialButton(Number(e.button)) && radialEnabled()) {
+                    // 트리거 유지(220ms) 또는 드래그 시 마킹 메뉴
+                    radialState.down = true;
+                    radialState.x = e.x;
+                    radialState.y = e.y;
+                    radialState.timer = setTimeout(() => {
+                        if (radialState.down && !radialState.shown)
+                            showRadial(radialState.x, radialState.y);
+                    }, 220);
+                    return;
+                } else return;
                 if (!chordState.fired && chordState.left && chordState.right) {
                     chordState.fired = true;
                     const run = mouseChordRun();
@@ -1093,13 +1132,30 @@ function syncMouseChord() {
             uIOhook.on("mouseup", (e) => {
                 if (e.button === 1) chordState.left = false;
                 if (e.button === 2) chordState.right = false;
+                if (radialButton(Number(e.button))) {
+                    radialState.down = false;
+                    if (radialState.timer) clearTimeout(radialState.timer);
+                    if (radialState.shown) hideRadial(radialState.index);
+                }
                 if (!chordState.left && !chordState.right)
                     chordState.fired = false;
+            });
+            uIOhook.on("mousemove", (e) => {
+                if (!radialState.down && !radialState.shown) return;
+                if (
+                    !radialState.shown &&
+                    Math.hypot(e.x - radialState.x, e.y - radialState.y) > 14
+                ) {
+                    if (radialState.timer) clearTimeout(radialState.timer);
+                    showRadial(radialState.x, radialState.y);
+                }
+                if (radialState.shown) radialTrack(e.x, e.y);
             });
             uIOhook.start();
         } catch (error) {
             console.error("마우스 단축키 후킹 실패", error);
             mouseHook = null;
+            mouseHookFailed = true;
         }
     } else if (mouseHook) {
         try {
@@ -1107,10 +1163,234 @@ function syncMouseChord() {
         } catch {}
         mouseHook = null;
         chordState.left = chordState.right = chordState.fired = false;
+        radialState.down = radialState.shown = false;
+        if (radialState.timer) clearTimeout(radialState.timer);
+        hideRadial(-1);
     }
 }
 
+// ————— 마킹 메뉴 —————
+// 휠클릭을 누른 채 드래그하면 커서 주위에 도넛형 빠른 동작이 뜬다.
+// 어느 구간으로 끌어서 놓으면 그 동작이 실행되고, 중앙에서 놓으면 취소.
+const radialDefs: Record<string, () => void> = {
+    screens: () => captureInput.run("radial", () => sendCaptureEvent()),
+    quick: () => quickClip(),
+    ocr: () =>
+        captureInput.run("radial", () => sendCaptureEvent(undefined, "ocr")),
+    ding: () => void dingFromClipBoard(),
+    record: () =>
+        captureInput.run("radial", () => sendCaptureEvent(undefined, "record")),
+    long: () =>
+        captureInput.run("radial", () => sendCaptureEvent(undefined, "long")),
+    translate: () =>
+        captureInput.run("radial", () =>
+            sendCaptureEvent(undefined, "translate"),
+        ),
+    home: () => openCapture?.toggle(),
+    cutout: () => {
+        void (async () => {
+            const img = await readImageFromClipboard();
+            if (img.isEmpty()) return;
+            const result = await removeBackground(img, runPath);
+            if (!result.isEmpty()) {
+                await writeImageToClipboard(result);
+                openCapture?.saveImage(result, "Cutout");
+            }
+        })();
+    },
+    ocrclip: () => {
+        void (async () => {
+            const img = await readImageFromClipboard();
+            if (img.isEmpty()) return;
+            const tmp = join(tmpdir(), `oc-ocr-${randomUUID()}.png`);
+            writeFileSync(tmp, img.toPNG(), { flag: "wx" });
+            try {
+                const text = (await openCapture?.ocrOnce(tmp)) ?? "";
+                if (text.trim()) {
+                    clipboard.writeText(text);
+                    new Notification({
+                        title: "OpenCapture",
+                        body: t("텍스트를 복사했습니다"),
+                    }).show();
+                }
+            } finally {
+                try {
+                    rmSync(tmp, { force: true });
+                } catch {}
+            }
+        })();
+    },
+    recent: () => {
+        openCapture?.show();
+    },
+    repeat: () => {
+        void recaptureLast();
+    },
+    textpin: () => pinClipboardCard("text"),
+    qrpin: () => pinClipboardCard("qrcode"),
+};
+const RADIAL_SIZE = 260;
+function radialEnabled() {
+    const v = store.get("鼠标快捷键.径向菜单");
+    return Boolean(v?.开启) && Array.isArray(v?.动作) && v.动作.length >= 2;
+}
+// uiohook 버튼: 3=휠, 4=X1(뒤로). 캡처 오버레이에서는 clip 렌더러가
+// 미들드래그 팬을 라디얼에 양보하므로 여기서는 억제하지 않는다.
+function radialButton(button: number) {
+    const trigger = store.get("鼠标快捷键.径向菜单")?.트리거 ?? "both";
+    if (button === 3) return trigger !== "back";
+    if (button === 4) return trigger !== "wheel";
+    return false;
+}
+function radialItems() {
+    const v = store.get("鼠标快捷键.径向菜单");
+    return (v?.动作 ?? [])
+        .filter((id) => typeof id === "string" && radialDefs[id])
+        .slice(0, 8);
+}
+const radialState = {
+    down: false,
+    shown: false,
+    shownAt: 0,
+    x: 0,
+    y: 0,
+    centerX: 0,
+    centerY: 0,
+    index: -1,
+    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+};
+let radialWin: BrowserWindow | null = null;
+function ensureRadialWin() {
+    if (radialWin && !radialWin.isDestroyed()) return radialWin;
+    const win = new BrowserWindow({
+        icon: theIcon,
+        transparent: true,
+        frame: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        autoHideMenuBar: true,
+        hasShadow: false,
+        focusable: false,
+        show: false,
+        width: RADIAL_SIZE,
+        height: RADIAL_SIZE,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+        },
+    });
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.setIgnoreMouseEvents(true);
+    rendererPath(win, "radial.html");
+    radialWin = win;
+    return win;
+}
+function showRadial(x: number, y: number) {
+    const items = radialItems();
+    if (items.length < 2) return;
+    const win = ensureRadialWin();
+    radialState.shown = true;
+    radialState.shownAt = Date.now();
+    radialState.index = -1;
+    // uiohook 좌표는 물리 픽셀 — 창 배치는 DIP라 변환 필요
+    const dp = screen.screenToDipPoint({ x, y });
+    const area = screen.getDisplayNearestPoint(dp).bounds;
+    const clamp = (v: number, min: number, max: number) =>
+        Math.min(Math.max(v, min), max);
+    const bounds = {
+        x: Math.round(
+            clamp(
+                dp.x - RADIAL_SIZE / 2,
+                area.x,
+                area.x + area.width - RADIAL_SIZE,
+            ),
+        ),
+        y: Math.round(
+            clamp(
+                dp.y - RADIAL_SIZE / 2,
+                area.y,
+                area.y + area.height - RADIAL_SIZE,
+            ),
+        ),
+        width: RADIAL_SIZE,
+        height: RADIAL_SIZE,
+    };
+    win.setBounds(bounds);
+    radialState.centerX = bounds.x + bounds.width / 2;
+    radialState.centerY = bounds.y + bounds.height / 2;
+    const send = () => {
+        mainSend(win.webContents, "radialShow", [items]);
+        mainSend(win.webContents, "radialHighlight", [radialState.index]);
+    };
+    if (win.webContents.isLoading())
+        win.webContents.once("did-finish-load", send);
+    else send();
+    win.showInactive();
+}
+function radialTrack(x: number, y: number) {
+    const items = radialItems();
+    const point = screen.screenToDipPoint({ x, y });
+    const dx = point.x - radialState.centerX;
+    const dy = point.y - radialState.centerY;
+    let index = -1;
+    if (items.length && Math.hypot(dx, dy) > 34) {
+        // 구간 0은 위쪽(-y)에서 시작해 시계 방향
+        const sector = (Math.PI * 2) / items.length;
+        const rel =
+            (((Math.atan2(dy, dx) + Math.PI / 2) % (Math.PI * 2)) +
+                Math.PI * 2) %
+            (Math.PI * 2);
+        index = Math.round(rel / sector) % items.length;
+    }
+    if (index !== radialState.index) {
+        radialState.index = index;
+        if (radialWin && !radialWin.isDestroyed())
+            mainSend(radialWin.webContents, "radialHighlight", [index]);
+    }
+}
+function hideRadial(run: number) {
+    if (radialWin && !radialWin.isDestroyed()) {
+        if (!radialWin.webContents.isLoading())
+            mainSend(radialWin.webContents, "radialHide", []);
+        radialWin.hide();
+    }
+    radialState.shown = false;
+    const items = radialItems();
+    // 메뉴가 뜬 직후(120ms 미만) 놓으면 오동작으로 간주해 실행하지 않는다 —
+    // 자동스크롤용 짧은 휠드래그가 동작을 발화하지 않게 하는 안전장치.
+    if (
+        run >= 0 &&
+        run < items.length &&
+        Date.now() - radialState.shownAt >= 120
+    ) {
+        const id = items[run];
+        radialDefs[id]?.();
+        try {
+            const stats = store.get("鼠标快捷键.径向菜单统计") ?? {};
+            stats[id] = (stats[id] ?? 0) + 1;
+            store.set("鼠标快捷键.径向菜单统计", stats);
+        } catch {}
+    }
+}
+app.once("will-quit", () => {
+    radialWin?.destroy();
+    radialWin = null;
+});
+// 렌더러 리스너 등록 전에 보낸 메시지가 유실되지 않도록 준비 완료 시 재전송
+mainOn("radialReady", (_data, event) => {
+    if (radialWin && !radialWin.isDestroyed() && radialState.shown) {
+        mainSend(event.sender, "radialShow", [radialItems()]);
+        mainSend(event.sender, "radialHighlight", [radialState.index]);
+    }
+});
+
 let contextMenu: Electron.Menu | null = null;
+let rebuildTrayMenu: (() => Promise<void>) | undefined;
+let trayRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleTrayRefresh() {
+    clearTimeout(trayRefreshTimer);
+    trayRefreshTimer = setTimeout(() => void rebuildTrayMenu?.(), 1200);
+}
 let tray: Tray | null = null;
 const trayIcons: Record<string, NativeImage> = {
     macTem: nativeImage.createFromPath(
@@ -1162,11 +1442,13 @@ app.whenReady().then(async () => {
         `eSearch ${app.getVersion()} 启动\n项目地址：https://github.com/xushengfeng/eSearch`,
     );
 
-    crashReporter.start({ uploadToServer: false });
+    if (!process.mas) crashReporter.start({ uploadToServer: false });
 
     store.setDefaultData(defaultSetting);
 
     fixSettingTree();
+    activeLanguage =
+        matchFitLan(store.get("语言.语言") || "", getLans()) ?? "ko";
 
     try {
         await claimHotkeyOwnership();
@@ -1260,13 +1542,33 @@ app.whenReady().then(async () => {
                 ocr: "ocr",
                 "screen-translate": "translate",
             };
+            if (mode === "window" && process.mas)
+                throw new Error(
+                    "Mac App Store 빌드에서는 창 캡처를 사용할 수 없습니다.",
+                );
             await captureInput.run(`dashboard:${mode}`, () =>
-                sendCaptureEvent(undefined, actions[mode]),
+                sendCaptureEvent(
+                    undefined,
+                    actions[mode],
+                    undefined,
+                    undefined,
+                    dashboardCaptureSelectionMode(mode),
+                ),
             );
         },
         pin: async (path) => {
             if (path) ding(nativeImage.createFromPath(path));
             else await dingFromClipBoard();
+        },
+        pinStack: async (paths) => {
+            const images = paths
+                .map((p) => nativeImage.createFromPath(p))
+                .filter((img) => {
+                    const s = img.getSize();
+                    return s.width > 0 && s.height > 0;
+                });
+            if (images.length >= 2) dingStack(images);
+            else if (images.length === 1) ding(images[0]);
         },
         edit: showPhoto,
         openProject: openClipProject,
@@ -1280,6 +1582,7 @@ app.whenReady().then(async () => {
                 );
                 activeCaptureRequestId = undefined;
             }
+            scheduleTrayRefresh();
             void showCaptureShelf().catch((error) =>
                 console.error("Capture shelf update failed:", error),
             );
@@ -1295,12 +1598,54 @@ app.whenReady().then(async () => {
                 app.getLoginItemSettings(loginTarget()).openAtLogin,
             shortcuts: ocShortcutStatus(),
             mouseChord: store.get("鼠标快捷键.全局"),
+            radialMenu: (() => {
+                const v = store.get("鼠标快捷键.径向菜单");
+                return {
+                    enabled: Boolean(v?.开启),
+                    actions: Array.isArray(v?.动作) ? v.动作 : [],
+                    trigger: v?.트리거 ?? "both",
+                    hookFailed: mouseHookFailed,
+                    stats: store.get("鼠标快捷键.径向菜单统计") ?? {},
+                };
+            })(),
             brokerMode,
             stepCapture: stepCaptureActive,
             captureDiagnostics: [...captureDiagnostics],
         }),
         steps: toggleStepCapture,
-        language: () => store.get("语言.语言") || "ko",
+        language: () => activeLanguage,
+        languageSettings: () => {
+            const supported = getLans();
+            const stored = store.get("语言.语言") || "";
+            const configured = supported.includes(stored)
+                ? stored
+                : activeLanguage;
+            return dashboardLanguageSettings(
+                activeLanguage,
+                configured,
+                supported.map((value) => ({
+                    value,
+                    name: getLanName(value) ?? value,
+                })),
+            );
+        },
+        setLanguage: (input) => {
+            const supported = getLans();
+            const stored = store.get("语言.语言") || "";
+            const configured = supported.includes(stored)
+                ? stored
+                : activeLanguage;
+            const next = validateDashboardLanguage(input, supported);
+            if (next !== configured) store.set("语言.语言", next);
+            return dashboardLanguageSettings(
+                activeLanguage,
+                next,
+                supported.map((value) => ({
+                    value,
+                    name: getLanName(value) ?? value,
+                })),
+            );
+        },
         configureRuntime: (input) => {
             if (!input || typeof input !== "object")
                 throw new Error("올바른 설정이 아닙니다.");
@@ -1308,6 +1653,7 @@ app.whenReady().then(async () => {
                 startAtLogin?: unknown;
                 mouseChord?: unknown;
                 shortcuts?: unknown;
+                radial?: unknown;
             };
             const failures: string[] = [];
             if (data.startAtLogin !== undefined) {
@@ -1327,6 +1673,37 @@ app.whenReady().then(async () => {
                     "鼠标快捷键.全局",
                     data.mouseChord as setting["鼠标快捷键"]["全局"],
                 );
+                syncMouseChord();
+            }
+            if (data.radial && typeof data.radial === "object") {
+                const r = data.radial as {
+                    enabled?: unknown;
+                    actions?: unknown;
+                    trigger?: unknown;
+                };
+                const cur = store.get("鼠标快捷键.径向菜单");
+                const next = {
+                    开启:
+                        typeof r.enabled === "boolean"
+                            ? r.enabled
+                            : Boolean(cur?.开启),
+                    动作: Array.isArray(r.actions)
+                        ? r.actions
+                              .filter(
+                                  (a): a is string =>
+                                      typeof a === "string" && a in radialDefs,
+                              )
+                              .slice(0, 8)
+                        : (cur?.动作 ?? []),
+                    트리거: (["wheel", "back", "both"] as const).includes(
+                        r.trigger as "wheel",
+                    )
+                        ? (r.trigger as "wheel" | "back" | "both")
+                        : (cur?.트리거 ?? "both"),
+                };
+                if (next.动作.length < 2)
+                    throw new Error("두 개 이상의 동작이 필요합니다.");
+                store.set("鼠标快捷键.径向菜单", next);
                 syncMouseChord();
             }
             if (data.shortcuts && typeof data.shortcuts === "object") {
@@ -1365,11 +1742,12 @@ app.whenReady().then(async () => {
             ),
     });
     store.set("保存.保存路径.图片", openCapture.activeFolder());
+    recoverRecordingCrash();
 
     if (dingSessions.size) ensureDingWindows();
 
     // 初始化语言
-    lan(store.get("语言.语言") || "");
+    lan(activeLanguage);
 
     if (!brokerMode && store.get("托盘") !== "无") {
         // 托盘
@@ -1379,57 +1757,136 @@ app.whenReady().then(async () => {
             tray?.setContextMenu(contextMenu);
         }
 
-        contextMenu = Menu.buildFromTemplate([
+        const trayRecentItems = async () => {
+            try {
+                if (!openCapture) return [];
+                const { items } = await openCapture.queryItems({
+                    scope: "all",
+                    sort: "newest",
+                    offset: 0,
+                    limit: 5,
+                    queryId: "tray",
+                });
+                return items.map((item) => {
+                    const video = /\.(webm|mp4|mov|mkv|avi|gif)$/i.test(
+                        item.path,
+                    );
+                    return {
+                        label: item.name || basename(item.path),
+                        submenu: [
+                            {
+                                label: video
+                                    ? t("폴더에서 보기")
+                                    : t("클립보드에 복사"),
+                                click: () => {
+                                    if (video) {
+                                        shell.showItemInFolder(item.path);
+                                        return;
+                                    }
+                                    const img = nativeImage.createFromPath(
+                                        item.path,
+                                    );
+                                    if (!img.isEmpty())
+                                        void writeImageToClipboard(img);
+                                },
+                            },
+                            ...(video
+                                ? []
+                                : ([
+                                      {
+                                          label: t("화면에 고정"),
+                                          click: () => {
+                                              const img =
+                                                  nativeImage.createFromPath(
+                                                      item.path,
+                                                  );
+                                              if (!img.isEmpty()) ding(img);
+                                          },
+                                      },
+                                  ] as Electron.MenuItemConstructorOptions[])),
+                            {
+                                label: t("패널에서 보기"),
+                                click: () => openCapture?.show(),
+                            },
+                        ],
+                    } as Electron.MenuItemConstructorOptions;
+                });
+            } catch {
+                return [];
+            }
+        };
+
+        const trayTemplate = (
+            recents: Electron.MenuItemConstructorOptions[],
+        ): Electron.MenuItemConstructorOptions[] => [
             {
                 label: "OpenCapture 열기",
                 click: () => {
                     openCapture?.show();
                 },
             },
+            ...(recents.length
+                ? ([
+                      {
+                          label: t("최근 캡처"),
+                          submenu: recents,
+                      },
+                      { type: "separator" },
+                  ] as Electron.MenuItemConstructorOptions[])
+                : []),
+            { type: "separator" },
             {
-                label: `${t("自动识别")}`,
+                label: t("截屏"),
                 click: () => {
-                    autoOpen();
+                    captureInput.run("tray", () => sendCaptureEvent());
                 },
             },
             {
-                label: t("截屏搜索"),
+                label: t("快速截屏"),
                 click: () => {
-                    setTimeout(() => {
-                        showPhoto();
-                    }, store.get("主搜索功能.截屏搜索延迟"));
+                    quickClip();
                 },
             },
             {
-                label: t("选中搜索"),
+                label: t("같은 영역 다시 캡처"),
                 click: () => {
-                    openSelection();
+                    void recaptureLast();
                 },
             },
             {
-                label: t("剪贴板搜索"),
+                label: repeatJob
+                    ? `${t("반복 캡처 중지")} (${repeatJob.done}/${repeatJob.total})`
+                    : t("고정 영역 반복 캡처"),
                 click: () => {
-                    openClipBoard();
+                    repeatLastRegion();
                 },
             },
             {
-                type: "separator",
+                label: t("클립보드 텍스트 고정"),
+                click: () => pinClipboardCard("text"),
             },
             {
-                label: t("文字识别（OCR）"),
-                click: () => {
-                    setTimeout(() => {
-                        sendCaptureEvent(undefined, "ocr");
-                    }, store.get("主搜索功能.截屏搜索延迟"));
-                },
+                label: t("클립보드 QR 생성"),
+                click: () => pinClipboardCard("qrcode"),
             },
             {
-                label: t("以图搜图"),
-                click: () => {
-                    setTimeout(() => {
-                        sendCaptureEvent(undefined, "search");
-                    }, store.get("主搜索功能.截屏搜索延迟"));
-                },
+                label: t("영역 선택하여 재캡처"),
+                submenu: (store.get("捕获.历史区域") ?? []).map((s) => ({
+                    label: `${s.w}×${s.h} @ (${s.x}, ${s.y})`,
+                    click: () => {
+                        void captureRegion(s).then((ok) => {
+                            if (ok)
+                                new Notification({
+                                    title: app.name,
+                                    body: t("같은 영역을 다시 캡처했습니다"),
+                                    icon: join(
+                                        runPath,
+                                        "assets/logo/64x64.png",
+                                    ),
+                                }).show();
+                        });
+                    },
+                })),
             },
             {
                 label: t("超级录屏"),
@@ -1438,33 +1895,72 @@ app.whenReady().then(async () => {
                 },
             },
             {
-                type: "separator",
-            },
-            {
-                label: t("浏览器打开"),
-                type: "checkbox",
-                checked: store.get("浏览器中打开"),
-                click: (i) => {
-                    store.set("浏览器中打开", i.checked);
-                    update();
-                },
-            },
-            {
-                type: "separator",
-            },
-            {
                 label: t("从剪贴板贴图"),
                 click: () => {
                     dingFromClipBoard();
                 },
             },
+            { type: "separator" },
             {
-                type: "separator",
-            },
-            {
-                label: t("主页面模式"),
+                label: t("搜索与识别"),
                 type: "submenu",
                 submenu: [
+                    {
+                        label: `${t("自动识别")}`,
+                        click: () => {
+                            autoOpen();
+                        },
+                    },
+                    {
+                        label: t("截屏搜索"),
+                        click: () => {
+                            setTimeout(() => {
+                                showPhoto();
+                            }, store.get("主搜索功能.截屏搜索延迟"));
+                        },
+                    },
+                    {
+                        label: t("选中搜索"),
+                        click: () => {
+                            openSelection();
+                        },
+                    },
+                    {
+                        label: t("剪贴板搜索"),
+                        click: () => {
+                            openClipBoard();
+                        },
+                    },
+                    {
+                        label: t("文字识别（OCR）"),
+                        click: () => {
+                            setTimeout(() => {
+                                sendCaptureEvent(undefined, "ocr");
+                            }, store.get("主搜索功能.截屏搜索延迟"));
+                        },
+                    },
+                    {
+                        label: t("以图搜图"),
+                        click: () => {
+                            setTimeout(() => {
+                                sendCaptureEvent(undefined, "search");
+                            }, store.get("主搜索功能.截屏搜索延迟"));
+                        },
+                    },
+                ],
+            },
+            { type: "separator" },
+            {
+                label: t("主页面"),
+                type: "submenu",
+                submenu: [
+                    {
+                        label: t("主页面"),
+                        click: () => {
+                            createMainWindow({ type: "text", content: "" });
+                        },
+                    },
+                    { type: "separator" },
                     {
                         label: t("自动"),
                         type: "radio",
@@ -1492,24 +1988,27 @@ app.whenReady().then(async () => {
                             update();
                         },
                     },
+                    { type: "separator" },
+                    {
+                        label: t("复用主页面"),
+                        toolTip: t("可加快OCR加载"),
+                        type: "checkbox",
+                        checked: store.get("主页面.复用"),
+                        click: (i) => {
+                            store.set("主页面.复用", i.checked);
+                            update();
+                        },
+                    },
+                    {
+                        label: t("浏览器打开"),
+                        type: "checkbox",
+                        checked: store.get("浏览器中打开"),
+                        click: (i) => {
+                            store.set("浏览器中打开", i.checked);
+                            update();
+                        },
+                    },
                 ],
-            },
-            {
-                label: t("复用主页面"),
-                toolTip: t("可加快OCR加载"),
-                type: "checkbox",
-                checked: store.get("主页面.复用"),
-                click: (i) => {
-                    store.set("主页面.复用", i.checked);
-                    update();
-                },
-            },
-            { type: "separator" },
-            {
-                label: t("主页面"),
-                click: () => {
-                    createMainWindow({ type: "text", content: "" });
-                },
             },
             {
                 label: t("设置"),
@@ -1567,7 +2066,15 @@ app.whenReady().then(async () => {
                     app.quit();
                 },
             },
-        ]);
+        ];
+        rebuildTrayMenu = async () => {
+            contextMenu = Menu.buildFromTemplate(
+                trayTemplate(await trayRecentItems()),
+            );
+            if (contextMenu && !store.get("点击托盘自动截图"))
+                tray?.setContextMenu(contextMenu);
+        };
+        await rebuildTrayMenu();
         tray?.setToolTip(app.getName());
         if (store.get("点击托盘自动截图")) {
             tray?.on("click", () => {
@@ -1828,12 +2335,19 @@ const baseWinConfig: () => Electron.BrowserWindowConstructorOptions = () => {
         icon: theIcon,
         autoHideMenuBar: true,
         backgroundColor: bg,
+        show: false,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
             sandbox: false,
         },
     };
+};
+
+const showWhenReady = (win: BrowserWindow) => {
+    win.once("ready-to-show", () => {
+        if (!win.isDestroyed()) win.show();
+    });
 };
 
 mainOn("dialogMessage", ([arg0]) => {
@@ -1852,8 +2366,10 @@ function pushLog(op: (typeof logs)[0]) {
 let captureShelfWindow: BrowserWindow | null = null;
 let shelfPendingReshow = false;
 let shelfRefreshSequence = 0;
+let shelfVisibilitySequence = 0;
 
 function hideCaptureShelf(reshow = true) {
+    const sequence = ++shelfVisibilitySequence;
     if (reshow && captureShelfWindow && !captureShelfWindow.isDestroyed())
         shelfPendingReshow = true;
     if (
@@ -1862,6 +2378,14 @@ function hideCaptureShelf(reshow = true) {
         captureShelfWindow.isVisible()
     )
         captureShelfWindow.hide();
+    return sequence;
+}
+
+function restoreCaptureShelf(sequence: number) {
+    if (sequence !== shelfVisibilitySequence || !shelfPendingReshow) return;
+    void showCaptureShelf().catch((error) =>
+        console.error("Capture shelf restore failed:", error),
+    );
 }
 
 async function showCaptureShelf() {
@@ -1964,14 +2488,31 @@ async function showCaptureShelf() {
 }
 
 mainOn("capture_shelf_close", () => {
+    shelfVisibilitySequence += 1;
     shelfPendingReshow = false;
     captureShelfWindow?.close();
 });
 
 let clipWindow: BrowserWindow | null = null;
 let clipWindowLoaded = false;
+let clipTeardownTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleClipTeardown() {
+    clearTimeout(clipTeardownTimer);
+    clipTeardownTimer = setTimeout(() => {
+        if (!keepClip && clipWindow && !clipWindow.isDestroyed()) {
+            clipWindow.close();
+            clipWindow = null;
+            clipWindowLoaded = false;
+        }
+    }, 60_000);
+}
+function cancelClipTeardown() {
+    clearTimeout(clipTeardownTimer);
+}
 type PendingClipInit = {
     sequence: number;
+    displayId: number;
+    shelfSequence: number;
     data?: Buffer;
     type?: 功能;
     project?: ClipProject;
@@ -1980,6 +2521,74 @@ type PendingClipInit = {
 let pendingClipInit: PendingClipInit | null = null;
 let captureAcquireSequence = 0;
 let capturePrepareQueue: Promise<void> = Promise.resolve();
+let captureInitWatchdog:
+    | {
+          requestId: string;
+          sequence: number;
+          timer: ReturnType<typeof setTimeout>;
+      }
+    | undefined;
+
+function clearCaptureInitWatchdog(requestId?: string) {
+    if (!captureInitWatchdog) return;
+    if (requestId && captureInitWatchdog.requestId !== requestId) return;
+    clearTimeout(captureInitWatchdog.timer);
+    captureInitWatchdog = undefined;
+}
+
+function failPendingCapture(requestId: string, message: string) {
+    const pending = pendingClipInit;
+    if (
+        !pending ||
+        pending.context.requestId !== requestId ||
+        pending.sequence !== captureAcquireSequence
+    )
+        return false;
+    clearCaptureInitWatchdog(requestId);
+    const detail =
+        message.trim().slice(0, 240) || "Capture initialization failed.";
+    addCaptureDiagnostic(
+        requestId,
+        "failed",
+        diagnosticInput(requestId),
+        detail,
+    );
+    pendingClipInit = null;
+    activeCaptureRequestId = undefined;
+    if (clipWindow && !clipWindow.isDestroyed()) {
+        clipWindow.setSimpleFullScreen(false);
+        clipWindow.hide();
+        scheduleClipTeardown();
+    }
+    restoreCaptureShelf(pending.shelfSequence);
+    new Notification({
+        title: app.name,
+        body: t(detail),
+        icon: join(runPath, "assets/logo/64x64.png"),
+    }).show();
+    return true;
+}
+
+function startCaptureInitWatchdog(pending: PendingClipInit) {
+    clearCaptureInitWatchdog();
+    const { requestId } = pending.context;
+    const { sequence } = pending;
+    captureInitWatchdog = {
+        requestId,
+        sequence,
+        timer: setTimeout(() => {
+            if (
+                pendingClipInit?.context.requestId === requestId &&
+                pendingClipInit.sequence === sequence &&
+                captureAcquireSequence === sequence
+            )
+                failPendingCapture(
+                    requestId,
+                    "Capture initialization timed out.",
+                );
+        }, 15_000),
+    };
+}
 
 function deliverClipInit(window: BrowserWindow, pending: PendingClipInit) {
     if (pending.sequence !== captureAcquireSequence) return;
@@ -1988,16 +2597,25 @@ function deliverClipInit(window: BrowserWindow, pending: PendingClipInit) {
         "clip",
         pending.project?.draftId,
     );
-    mainSend(window.webContents, "clip_init", [
-        screen.getAllDisplays(),
-        pending.data,
-        screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id,
-        pending.type,
-        pending.project,
-        pending.context,
-    ]);
+    startCaptureInitWatchdog(pending);
+    try {
+        mainSend(window.webContents, "clip_init", [
+            screen.getAllDisplays(),
+            pending.data,
+            pending.displayId,
+            pending.type,
+            pending.project,
+            pending.context,
+        ]);
+    } catch (error) {
+        failPendingCapture(
+            pending.context.requestId,
+            error instanceof Error ? error.message : String(error),
+        );
+    }
 }
 const getClipWin = async () => {
+    cancelClipTeardown();
     if (clipWindowLoaded && !clipWindow?.isDestroyed())
         return clipWindow as BrowserWindow;
     if (!clipWindow || clipWindow.isDestroyed())
@@ -2127,8 +2745,17 @@ function createClipWindow() {
     return _clipWindow;
 }
 
-mainOn("clip_show", ([requestId]) => {
-    fullScreen(requestId);
+mainOn("clip_show", ([requestId, nowScreenId]) => {
+    void fullScreen(requestId, nowScreenId);
+});
+mainOn("clip_capture_failed", ([requestId, message]) => {
+    if (!requestId) return;
+    failPendingCapture(
+        requestId,
+        typeof message === "string" && message
+            ? message
+            : "Capture initialization failed.",
+    );
 });
 mainOn("capture_ready", ([requestId]) => {
     if (
@@ -2144,6 +2771,7 @@ mainOn("capture_shown", ([requestId]) => {
         pendingClipInit.sequence !== captureAcquireSequence
     )
         return;
+    clearCaptureInitWatchdog(requestId);
     activeCaptureRequestId = requestId;
     addCaptureDiagnostic(requestId, "shown", diagnosticInput(requestId));
 });
@@ -2183,7 +2811,9 @@ mainOn("clip_qr", ([img]) => {
 mainOn("clip_hide", async () => {
     await hideClip();
 });
-mainOn("clip_save", async ([type]) => {
+mainOn("clip_save", async ([type], event) => {
+    const requestSequence = captureAcquireSequence;
+    const captureContents = event.sender;
     const savedPath = store.get("保存.保存路径.图片") || "";
     const x = await dialog.showSaveDialog({
         title: t("选择要保存的位置"),
@@ -2194,7 +2824,12 @@ mainOn("clip_save", async ([type]) => {
     });
 
     if (x.filePath) {
-    } else {
+    } else if (
+        requestSequence === captureAcquireSequence &&
+        clipWindow &&
+        !clipWindow.isDestroyed() &&
+        clipWindow.webContents === captureContents
+    ) {
         new Notification({
             title: `${app.name} ${t("保存文件失败")}`,
             body: t("用户已取消保存"),
@@ -2207,6 +2842,35 @@ mainOn("clip_save", async ([type]) => {
 });
 mainOn("clip_ding", ([img, type, rect]) => {
     createDingWindow(rect.x, rect.y, rect.w, rect.h, img, type);
+});
+mainOn("clip_last_rect", ([rect]) => {
+    if (
+        !rect ||
+        ![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite) ||
+        rect.w < 2 ||
+        rect.h < 2
+    )
+        return;
+    const slot = {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        w: Math.round(rect.w),
+        h: Math.round(rect.h),
+        displayId: Number.isFinite(rect.displayId) ? rect.displayId : undefined,
+    };
+    store.set("捕获.上次区域", slot);
+    // 최근 영역 슬롯 — 거의 같은 위치는 중복 제거 후 최신순 5개 유지
+    const history = (store.get("捕获.历史区域") ?? []).filter(
+        (s) =>
+            !(
+                Math.abs(s.x - slot.x) < 8 &&
+                Math.abs(s.y - slot.y) < 8 &&
+                Math.abs(s.w - slot.w) < 8 &&
+                Math.abs(s.h - slot.h) < 8
+            ),
+    );
+    history.unshift(slot);
+    store.set("捕获.历史区域", history.slice(0, 5));
 });
 mainOn("clip_mac_app", async () => {
     hideClip();
@@ -2320,20 +2984,47 @@ function currentCaptureSource(
     return source;
 }
 
-async function fullScreen(requestId?: string) {
+async function fullScreen(requestId?: string, nowScreenId?: number) {
+    const pending = pendingClipInit;
+    if (!pending || pending.sequence !== captureAcquireSequence) return;
+    if (requestId && requestId !== pending.context.requestId) return;
+    if (Number.isFinite(nowScreenId) && nowScreenId !== pending.displayId) {
+        failPendingCapture(
+            pending.context.requestId,
+            "Capture display changed during initialization.",
+        );
+        return;
+    }
+    const targetScreen = screen
+        .getAllDisplays()
+        .find((display) => display.id === pending.displayId);
+    if (!targetScreen) {
+        failPendingCapture(
+            pending.context.requestId,
+            "The selected display is no longer available.",
+        );
+        return;
+    }
+    let win: BrowserWindow;
+    try {
+        win = await getClipWin();
+    } catch (error) {
+        if (pendingClipInit === pending)
+            failPendingCapture(
+                pending.context.requestId,
+                error instanceof Error ? error.message : String(error),
+            );
+        return;
+    }
     if (
-        requestId &&
-        (requestId !== pendingClipInit?.context.requestId ||
-            pendingClipInit.sequence !== captureAcquireSequence)
+        pendingClipInit !== pending ||
+        pending.sequence !== captureAcquireSequence ||
+        (requestId && requestId !== pending.context.requestId)
     )
         return;
-    const nearestScreen = screen.getDisplayNearestPoint(
-        screen.getCursorScreenPoint(),
-    );
-    const win = await getClipWin();
     win.setBounds({
-        x: nearestScreen.bounds.x,
-        y: nearestScreen.bounds.y,
+        x: targetScreen.bounds.x,
+        y: targetScreen.bounds.y,
     });
     win.show();
     win.setSimpleFullScreen(true);
@@ -2344,8 +3035,10 @@ async function sendCaptureEvent(
     type?: 功能,
     project?: ClipProject,
     providedContext?: ClipCaptureContext,
+    requestedSelectionMode: ClipCaptureContext["selectionMode"] = "region",
 ) {
     const sequence = ++captureAcquireSequence;
+    clearCaptureInitWatchdog();
     const requestId = providedContext?.requestId ?? randomUUID();
     const input =
         captureInput.getStore() ??
@@ -2356,6 +3049,12 @@ async function sendCaptureEvent(
     addCaptureDiagnostic(requestId, "input", input);
     const operation = capturePrepareQueue.then(async () => {
         const superseded = () => sequence !== captureAcquireSequence;
+        const captureDelay =
+            data || project
+                ? 0
+                : Math.min(15, Number(store.get("框选.延迟")) || 0);
+        if (captureDelay > 0)
+            await new Promise((r) => setTimeout(r, captureDelay * 1000));
         if (superseded()) {
             addCaptureDiagnostic(requestId, "failed", input, "superseded");
             return;
@@ -2384,13 +3083,23 @@ async function sendCaptureEvent(
                 diagnosticInput(previousRequestId),
                 "superseded",
             );
-        hideCaptureShelf();
+        const shelfSequence = hideCaptureShelf();
         addCaptureDiagnostic(requestId, "preparing", input);
-        const context: ClipCaptureContext = { requestId, source };
+        const context: ClipCaptureContext = {
+            requestId,
+            source,
+            selectionMode:
+                providedContext?.selectionMode ?? requestedSelectionMode,
+        };
         const wasLoaded =
             clipWindowLoaded && !!clipWindow && !clipWindow.isDestroyed();
+        const acquiredDisplayId = screen.getDisplayNearestPoint(
+            screen.getCursorScreenPoint(),
+        ).id;
         const nextPending: PendingClipInit = {
             sequence,
+            displayId: acquiredDisplayId,
+            shelfSequence,
             data,
             type,
             project,
@@ -2415,7 +3124,10 @@ async function sendCaptureEvent(
                       ? error.message
                       : String(error),
             );
-            if (!superseded()) throw error;
+            if (!superseded()) {
+                restoreCaptureShelf(shelfSequence);
+                throw error;
+            }
         }
     });
     capturePrepareQueue = operation.then(
@@ -2520,6 +3232,7 @@ async function openCaptureDraft(document: CaptureDraft) {
     const context: ClipCaptureContext = {
         requestId: randomUUID(),
         source: document.source,
+        selectionMode: "region",
     };
     await captureInput.run("draft-reopen", () =>
         sendCaptureEvent(image.toPNG(), undefined, project, context),
@@ -2620,6 +3333,8 @@ mainOn("dropzone_action", async ([action, paths]) => {
 /** 关闭或隐藏截屏 */
 async function exitFullScreen() {
     if (!(await flushCaptureDraft())) return false;
+    const shelfSequence = pendingClipInit?.shelfSequence;
+    clearCaptureInitWatchdog(pendingClipInit?.context.requestId);
     pendingClipInit = null;
     if (keepClip) {
         clipWindow?.setSimpleFullScreen(false);
@@ -2628,50 +3343,113 @@ async function exitFullScreen() {
             clipWindow?.reload();
         } catch {}
     } else {
-        clipWindow?.close();
-        clipWindow = null;
-        clipWindowLoaded = false;
+        // 즉시 닫으면 다음 캡처마다 번들을 다시 파싱 — 유휴 후 파괴로 재사용
+        clipWindow?.setSimpleFullScreen(false);
+        clipWindow?.hide();
+        scheduleClipTeardown();
     }
-    if (shelfPendingReshow)
-        void showCaptureShelf().catch((error) =>
-            console.error("Capture shelf restore failed:", error),
-        );
+    if (shelfSequence !== undefined) restoreCaptureShelf(shelfSequence);
     return true;
 }
 
 /** 隐藏截屏窗口 */
 async function hideClip() {
     if (!(await flushCaptureDraft())) return false;
+    const shelfSequence = pendingClipInit?.shelfSequence;
+    clearCaptureInitWatchdog(pendingClipInit?.context.requestId);
     pendingClipInit = null;
     clipWindow?.setSimpleFullScreen(false);
     clipWindow?.hide();
-    if (shelfPendingReshow)
-        void showCaptureShelf().catch((error) =>
-            console.error("Capture shelf restore failed:", error),
-        );
+    if (shelfSequence !== undefined) restoreCaptureShelf(shelfSequence);
     return true;
 }
 
 /** 快速截屏 */
 async function quickClip() {
-    if (!(await flushCaptureDraft())) return;
-    hideCaptureShelf();
-    const screenShots = initScreenShots(...screenShotArgs);
-    for (const c of (await screenShots()).screen) {
-        const image: NativeImage = (await c.capture()).toNativeImage();
-        if (store.get("快速截屏.模式") === "clip") {
-            await writeImageToClipboard(image);
-        } else if (
-            store.get("快速截屏.模式") === "path" &&
-            store.get("快速截屏.路径")
-        ) {
-            const filename = checkFile(
-                join(store.get("快速截屏.路径"), `${getFileName()}.png`),
+    const observedSequence = captureAcquireSequence;
+    if (!(await flushCaptureDraft())) return false;
+    if (observedSequence !== captureAcquireSequence) return false;
+    const sequence = ++captureAcquireSequence;
+    clearCaptureInitWatchdog();
+    const superseded = () => sequence !== captureAcquireSequence;
+    const previous = pendingClipInit;
+    if (previous && previous.sequence !== sequence) {
+        if (
+            !captureDiagnostics.some(
+                (trace) =>
+                    trace.requestId === previous.context.requestId &&
+                    (trace.phase === "committed" || trace.phase === "failed"),
+            )
+        )
+            addCaptureDiagnostic(
+                previous.context.requestId,
+                "failed",
+                diagnosticInput(previous.context.requestId),
+                "superseded",
             );
-            if (!image) return;
-            writeFileSync(filename, image.toPNG());
-            noti(filename);
+        pendingClipInit = null;
+        activeCaptureRequestId = undefined;
+        if (clipWindow && !clipWindow.isDestroyed()) {
+            clipWindow.setSimpleFullScreen(false);
+            clipWindow.hide();
+            scheduleClipTeardown();
         }
+    }
+    const shelfSequence = hideCaptureShelf();
+    try {
+        const mode = store.get("快速截屏.模式");
+        const quickPath = mode === "path" ? store.get("快速截屏.路径") : "";
+        if (mode === "path" && !quickPath)
+            throw new Error(t("저장 폴더가 설정되지 않았습니다."));
+        const displays = screen.getAllDisplays();
+        const targetDisplayId = screen.getDisplayNearestPoint(
+            screen.getCursorScreenPoint(),
+        ).id;
+        const screenShots = await initScreenShots(...screenShotArgs)(displays);
+        if (superseded()) return false;
+        const captures =
+            mode === "clip"
+                ? [
+                      screenShots.screen.find(
+                          (entry) =>
+                              String(entry.id) === String(targetDisplayId),
+                      ),
+                  ].filter(
+                      (entry): entry is (typeof screenShots.screen)[number] =>
+                          Boolean(entry),
+                  )
+                : screenShots.screen;
+        if (captures.length === 0)
+            throw new Error("No capturable display is available.");
+        for (const capture of captures) {
+            const image: NativeImage = (
+                await capture.capture()
+            ).toNativeImage();
+            if (superseded()) return false;
+            if (image.isEmpty())
+                throw new Error("Capture returned an empty image.");
+            if (mode === "clip") {
+                await writeImageToClipboard(image);
+            } else if (mode === "path") {
+                const filename = checkFile(
+                    join(quickPath, `${getFileName()}.png`),
+                );
+                writeFileSync(filename, image.toPNG());
+                noti(filename);
+            }
+        }
+        return true;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Quick capture failed:", error);
+        new Notification({
+            title: `${app.name} ${t("快速截屏")}`,
+            body: message,
+            icon: join(runPath, "assets/logo/64x64.png"),
+        }).show();
+        return false;
+    } finally {
+        restoreCaptureShelf(shelfSequence);
     }
 }
 function checkFile(name: string, baseName = name, n = 1) {
@@ -2684,31 +3462,253 @@ function checkFile(name: string, baseName = name, n = 1) {
     return name;
 }
 
+/** 저장된 영역을 즉시 캡처해 클립보드+라이브러리에 넣는다 */
+async function captureRegion(r: NonNullable<setting["捕获"]["上次区域"]>) {
+    if (![r.x, r.y, r.w, r.h].every(Number.isFinite) || r.w < 1 || r.h < 1)
+        return false;
+    const displays = screen.getAllDisplays();
+    if (displays.length === 0) return false;
+    const display =
+        displays.find((d) => d.id === r.displayId) ??
+        screen.getDisplayNearestPoint({
+            x: r.x + r.w / 2,
+            y: r.y + r.h / 2,
+        });
+    if (display.bounds.width <= 0 || display.bounds.height <= 0) return false;
+    const screenShots = await initScreenShots(...screenShotArgs)(displays);
+    const target = screenShots.screen.find((s) => s.id === display.id);
+    if (!target) return false;
+    const shot = await target.capture();
+    const full = shot.toNativeImage();
+    if (full.isEmpty()) return false;
+    const size = full.getSize();
+    if (size.width <= 0 || size.height <= 0) return false;
+    const left = Math.max(r.x, display.bounds.x);
+    const top = Math.max(r.y, display.bounds.y);
+    const right = Math.min(r.x + r.w, display.bounds.x + display.bounds.width);
+    const bottom = Math.min(
+        r.y + r.h,
+        display.bounds.y + display.bounds.height,
+    );
+    if (right <= left || bottom <= top) return false;
+    const scaleX = size.width / display.bounds.width;
+    const scaleY = size.height / display.bounds.height;
+    const x = Math.max(0, Math.floor((left - display.bounds.x) * scaleX));
+    const y = Math.max(0, Math.floor((top - display.bounds.y) * scaleY));
+    const pixelRight = Math.min(
+        size.width,
+        Math.ceil((right - display.bounds.x) * scaleX),
+    );
+    const pixelBottom = Math.min(
+        size.height,
+        Math.ceil((bottom - display.bounds.y) * scaleY),
+    );
+    const pix = {
+        x,
+        y,
+        width: pixelRight - x,
+        height: pixelBottom - y,
+    };
+    if (pix.width <= 0 || pix.height <= 0) return false;
+    const cropped = full.crop(pix);
+    if (cropped.isEmpty()) return false;
+    await writeImageToClipboard(cropped);
+    openCapture?.saveImage(cropped, "Recapture");
+    return true;
+}
+
+/** 마지막으로 선택한 영역을 그대로 다시 캡처 — 클립보드+라이브러리 */
+async function recaptureLast() {
+    const r = store.get("捕获.上次区域");
+    if (!r || r.w < 2 || r.h < 2) {
+        await captureInput.run("recapture", () => sendCaptureEvent());
+        return;
+    }
+    try {
+        if (!(await captureRegion(r))) {
+            await captureInput.run("recapture", () => sendCaptureEvent());
+            return;
+        }
+        new Notification({
+            title: app.name,
+            body: t("같은 영역을 다시 캡처했습니다"),
+            icon: join(runPath, "assets/logo/64x64.png"),
+        }).show();
+    } catch (error) {
+        console.error("Saved region recapture failed:", error);
+        await captureInput.run("recapture", () => sendCaptureEvent());
+    }
+}
+
+type RepeatJob = {
+    total: number;
+    done: number;
+    failed: number;
+    cancelled: boolean;
+    cancelWait?: () => void;
+};
+let repeatJob: RepeatJob | null = null;
+
+function updateRepeatUi() {
+    openCapture?.progressBar(repeatJob ? repeatJob.done / repeatJob.total : -1);
+    scheduleTrayRefresh();
+}
+
+/** 반복 캡처 중지 — 실행 중이 아니면 no-op */
+function stopRepeatJob() {
+    const job = repeatJob;
+    if (!job) return;
+    job.cancelled = true;
+    job.cancelWait?.();
+    if (repeatJob === job) {
+        repeatJob = null;
+        updateRepeatUi();
+    }
+}
+
+function waitForRepeat(job: RepeatJob, delay: number) {
+    return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+            job.cancelWait = undefined;
+            resolve(true);
+        }, delay);
+        job.cancelWait = () => {
+            clearTimeout(timer);
+            job.cancelWait = undefined;
+            resolve(false);
+        };
+    });
+}
+
+async function runRepeatJob(
+    job: RepeatJob,
+    r: NonNullable<setting["捕获"]["上次区域"]>,
+    delay: number,
+) {
+    try {
+        for (let i = 0; i < job.total; i++) {
+            if (job.cancelled || repeatJob !== job) break;
+            if (i > 0 && !(await waitForRepeat(job, delay))) break;
+            if (job.cancelled || repeatJob !== job) break;
+            try {
+                if (await captureRegion(r)) job.done += 1;
+                else job.failed += 1;
+            } catch (error) {
+                job.failed += 1;
+                console.error("repeat region capture failed", error);
+            }
+            if (repeatJob === job) updateRepeatUi();
+        }
+    } finally {
+        job.cancelWait?.();
+        if (repeatJob === job) {
+            repeatJob = null;
+            updateRepeatUi();
+        }
+        new Notification({
+            title: app.name,
+            body: job.cancelled
+                ? `${t("반복 캡처 중지됨")} ${job.done}/${job.total}`
+                : job.failed > 0
+                  ? `${t("고정 영역 반복 캡처")} ${job.done}/${job.total} · ${t("실패")} ${job.failed}`
+                  : `${t("고정 영역 반복 캡처")} ${job.done}/${job.total}`,
+            icon: join(runPath, "assets/logo/64x64.png"),
+        }).show();
+    }
+}
+
+/** 마지막 선택 영역을 설정된 연사 간격/횟수로 반복 캡처. 실행 중이면 중지로 동작 */
+function repeatLastRegion() {
+    if (repeatJob) {
+        stopRepeatJob();
+        return;
+    }
+    const r = store.get("捕获.上次区域");
+    if (!r || r.w < 2 || r.h < 2) {
+        captureInput.run("recapture", () => sendCaptureEvent());
+        return;
+    }
+    const d = Math.max(100, store.get("连拍.间隔"));
+    const maxN = Math.min(1000, Math.max(2, store.get("连拍.数")));
+    const job: RepeatJob = {
+        total: maxN,
+        done: 0,
+        failed: 0,
+        cancelled: false,
+    };
+    repeatJob = job;
+    updateRepeatUi();
+    void runRepeatJob(job, r, d);
+}
+
 /** 连拍 */
 function lianPai(d = store.get("连拍.间隔"), maxN = store.get("连拍.数")) {
     const basePath = store.get("快速截屏.路径");
-    if (!basePath) return;
     const screenShots = initScreenShots(...screenShotArgs);
-    const dirPath = checkFile(join(basePath, getFileName()));
-    mkdirSync(dirPath, { recursive: true });
+    const dirPath = basePath
+        ? checkFile(join(basePath, getFileName()))
+        : undefined;
+    if (dirPath) mkdirSync(dirPath, { recursive: true });
     for (let i = 0; i < maxN; i++) {
         setTimeout(async () => {
             const image = (
                 await (await screenShots()).screen[0].capture()
             ).toNativeImage();
-            const buffer = image.toPNG();
-            const filePath = join(dirPath, `${i}.png`);
-            writeFile(filePath, buffer, (err) => {
-                if (err)
-                    console.error(`连拍第 ${i} 张写入失败: ${err.message}`);
-            });
+            if (dirPath) {
+                const filePath = join(dirPath, `${i}.png`);
+                writeFile(filePath, image.toPNG(), (err) => {
+                    if (err)
+                        console.error(`连拍第 ${i} 张写入失败: ${err.message}`);
+                });
+            } else openCapture?.saveImage(image, "Burst");
         }, d * i);
     }
 }
 
+/** 上一会话崩溃留下的录制增量片段恢复到库 */
+function recoverRecordingCrash() {
+    const recoveryRoot = join(app.getPath("userData"), "recording-recovery");
+    mkdirSync(recoveryRoot, { recursive: true });
+    const recoverFrom = (sourceRoot: string, minimumAge = 0) => {
+        let entries: string[] = [];
+        try {
+            entries = readdirSync(sourceRoot);
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            try {
+                const crash = join(sourceRoot, entry, "crash.webm");
+                if (!existsSync(crash)) continue;
+                const stats = statSync(crash);
+                if (
+                    stats.size < 4096 ||
+                    (minimumAge > 0 && Date.now() - stats.mtimeMs < minimumAge)
+                )
+                    continue;
+                const target = join(
+                    recoveryRoot,
+                    `recovered-${entry}-${Date.now()}.webm`,
+                );
+                renameSync(crash, target);
+                if (openCapture?.rememberMedia(target))
+                    new Notification({
+                        title: app.name,
+                        body: t(
+                            "지난 녹화가 비정상 종료되어 일부를 복구했습니다.",
+                        ),
+                        icon: join(runPath, "assets/logo/64x64.png"),
+                    }).show();
+            } catch {}
+        }
+    };
+    recoverFrom(recoveryRoot);
+    recoverFrom(join(tmpdir(), "eSearch"), 24 * 60 * 60 * 1000);
+}
+
 let recording = false;
-const recorderWinW = 264;
-const recorderWinH = 24;
+const recorderWinW = 340;
+const recorderWinH = 40;
 
 let _recorder: BrowserWindow;
 let _recorderTipWin: BrowserWindow;
@@ -2716,7 +3716,20 @@ function createRecorderWindow(
     rect0: [number, number, number, number],
     screenx: { id: string; w: number; h: number; r: number },
 ) {
-    const s = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    if (recording && checkWin(_recorder)) {
+        _recorder.show();
+        _recorder.focus();
+        return;
+    }
+    if (recording) {
+        recording = false;
+        globalShortcut.unregister("Super+R");
+    }
+    const s =
+        screen
+            .getAllDisplays()
+            .find((display) => String(display.id) === screenx.id) ??
+        screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const ratio = screenx.r;
     const p = {
         x: screen.getCursorScreenPoint().x,
@@ -2739,12 +3752,21 @@ function createRecorderWindow(
     y = Math.min(y, sy1 - h);
     x = Math.round(x);
     y = Math.round(y);
-    const recorder = new BrowserWindow(baseWinConfig());
+    const recorder = new BrowserWindow({
+        ...baseWinConfig(),
+        x,
+        y,
+        width: w,
+        height: h,
+    });
     _recorder = recorder;
+    showWhenReady(recorder);
     rendererPath(recorder, "recorder.html");
     if (dev) recorder.webContents.openDevTools();
 
     recorder.on("close", () => {
+        recording = false;
+        globalShortcut.unregister("Super+R");
         store.set("录屏.大小.x", recorder.getBounds().x);
         store.set("录屏.大小.y", recorder.getBounds().y);
         try {
@@ -2759,17 +3781,37 @@ function createRecorderWindow(
         }
     });
 
-    mainOn("recorderReady", () => {
-        desktopCapturer.getSources({ types: ["screen"] }).then((sources) => {
-            let dId = sources.find((s) => s.display_id === screenx.id)?.id;
-            if (!dId) dId = sources[0].id;
+    mainOn("recorderReady", async (_data, event) => {
+        if (recorder.isDestroyed() || event.sender !== recorder.webContents)
+            return;
+        try {
+            const sources = await desktopCapturer.getSources({
+                types: ["screen"],
+            });
+            if (recorder.isDestroyed()) return;
+            const exactSource = sources.find(
+                (item) => item.display_id === screenx.id,
+            );
+            const source =
+                exactSource ??
+                (sources.length === 1 && screen.getAllDisplays().length === 1
+                    ? sources[0]
+                    : undefined);
+            if (!source?.id) {
+                mainSend(recorder.webContents, "recordInitError", []);
+                return;
+            }
             mainSend(recorder.webContents, "recordInit", [
-                dId,
+                source.id,
                 rect0,
                 screenx.w,
                 screenx.h,
             ]);
-        });
+        } catch (error) {
+            console.error("Recorder screen acquisition failed", error);
+            if (!recorder.isDestroyed())
+                mainSend(recorder.webContents, "recordInitError", []);
+        }
     });
 
     globalShortcut.register("Super+R", () => {
@@ -2808,6 +3850,7 @@ function createRecorderTipWindow(
         transparent: true,
         frame: false,
         autoHideMenuBar: true,
+        show: false,
         resizable: process.platform === "linux",
         webPreferences: {
             nodeIntegration: true,
@@ -2816,6 +3859,7 @@ function createRecorderTipWindow(
         },
     });
     _recorderTipWin = recorderTipWin;
+    showWhenReady(recorderTipWin);
     rendererPath(
         recorderTipWin,
         "recorderTip.html",
@@ -2836,6 +3880,7 @@ function checkWin(win: BrowserWindow) {
 mainOn("recordStop", () => {
     if (checkWin(_recorderTipWin)) _recorderTipWin.close();
     recording = false;
+    globalShortcut.unregister("Super+R");
 });
 mainOn("recordStart", () => {
     if (checkWin(_recorder)) _recorder.minimize();
@@ -2853,37 +3898,52 @@ mainOnReflect("recordState", () => {
     return [];
 });
 mainOn("recordSavePath", ([ext]) => {
+    const normalizedExt = ext.trim().replace(/^\.+/, "").toLowerCase();
     const savedPath = store.get("保存.保存路径.视频") || "";
     dialog
         .showSaveDialog({
             title: t("选择要保存的位置"),
             defaultPath: savedPath
-                ? join(savedPath, `${getFileName()}.${ext}`)
+                ? join(savedPath, `${getFileName()}.${normalizedExt}`)
                 : undefined,
-            filters: [{ name: t("视频"), extensions: [ext] }],
+            filters: [{ name: t("视频"), extensions: [normalizedExt] }],
         })
         .then(async (x) => {
             if (x.filePath) {
                 let fpath = x.filePath;
-                if (!fpath.includes(".")) {
-                    fpath += `.${ext}`;
+                if (!extname(fpath) && normalizedExt) {
+                    fpath += `.${normalizedExt}`;
                 }
                 if (checkWin(_recorder))
                     mainSend(_recorder.webContents, "recordSavePathReturn", [
-                        fpath,
+                        { status: "selected", path: fpath },
                     ]);
             } else {
-                new Notification({
-                    title: `${app.name} ${t("保存视频失败")}`,
-                    body: t("用户已取消保存"),
-                    icon: join(runPath, "assets/logo/64x64.png"),
-                }).show();
+                if (checkWin(_recorder))
+                    mainSend(_recorder.webContents, "recordSavePathReturn", [
+                        { status: "cancelled" },
+                    ]);
             }
+        })
+        .catch((error) => {
+            if (checkWin(_recorder))
+                mainSend(_recorder.webContents, "recordSavePathReturn", [
+                    {
+                        status: "error",
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                ]);
         });
 });
 
 function createSuperRecorderWindow(fixed?: RecordRect) {
-    const recorder = new BrowserWindow(baseWinConfig());
+    const recorder = new BrowserWindow({
+        ...baseWinConfig(),
+        show: true,
+    });
     recorder.minimize();
     rendererPath(recorder, "videoEditor.html");
     if (dev) recorder.webContents.openDevTools();
@@ -2917,9 +3977,17 @@ mainOn("reloadMainFromSetting", () => {
     if (clipWindow && !clipWindow.isDestroyed() && !clipWindow.isVisible())
         clipWindow.reload();
     if (contextMenu && tray) {
-        const browserItem = contextMenu.items.find(
-            (i) => i.label === t("浏览器打开"),
-        );
+        const findItem = (
+            menu: Electron.Menu,
+            label: string,
+        ): Electron.MenuItem | undefined => {
+            for (const item of menu.items) {
+                if (item.label === label) return item;
+                const found = item.submenu && findItem(item.submenu, label);
+                if (found) return found;
+            }
+        };
+        const browserItem = findItem(contextMenu, t("浏览器打开"));
         if (browserItem) browserItem.checked = store.get("浏览器中打开");
         tray.popUpContextMenu(contextMenu);
         tray.closeContextMenu();
@@ -3044,7 +4112,7 @@ function dingObj() {
         ) => {
             obj.set(id, v);
             v.win.on("closed", () => {
-                obj.delete(id);
+                if (obj.get(id)?.win === v.win) obj.delete(id);
             });
         },
         delete: (id: number) => {
@@ -3092,6 +4160,81 @@ function ding(img: NativeImage) {
     );
 }
 
+const CARD_TEXT_LIMIT = 200_000;
+const CARD_ERROR_LIMIT = 240;
+
+function retainCardText(text: string, limit = CARD_TEXT_LIMIT) {
+    const retained: string[] = [];
+    let sourceLength = 0;
+    for (const character of text) {
+        if (sourceLength < limit) retained.push(character);
+        sourceLength += 1;
+    }
+    return {
+        text: retained.join(""),
+        sourceLength,
+        retainedLength: Math.min(sourceLength, limit),
+        truncated: sourceLength > limit,
+    };
+}
+
+function sanitizeCardPinMetadata(value: unknown): CardPinMetadata | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const input = value as Partial<CardPinMetadata>;
+    if (
+        (input.kind !== "text" && input.kind !== "qrcode") ||
+        typeof input.text !== "string"
+    )
+        return undefined;
+    const retained = retainCardText(input.text);
+    const declaredSourceLength = Number.isSafeInteger(input.sourceLength)
+        ? Math.max(0, Number(input.sourceLength))
+        : retained.sourceLength;
+    const sourceLength = Math.max(retained.sourceLength, declaredSourceLength);
+    const qrError =
+        input.kind === "qrcode" && typeof input.qrError === "string"
+            ? retainCardText(input.qrError, CARD_ERROR_LIMIT).text || undefined
+            : undefined;
+    return {
+        kind: input.kind,
+        text: retained.text,
+        sourceLength,
+        retainedLength: retained.retainedLength,
+        truncated:
+            retained.truncated ||
+            input.truncated === true ||
+            sourceLength > retained.retainedLength,
+        qrError,
+    };
+}
+
+async function pinClipboardCard(kind: "text" | "qrcode") {
+    const text = await clipboard.readText();
+    if (!text.trim()) return;
+    const retained = retainCardText(text);
+    const card: CardPinMetadata = { kind, ...retained };
+    const nowPoint = screen.getCursorScreenPoint();
+    createDingWindow(nowPoint.x, nowPoint.y, 0, 0, "", kind, {
+        text: retained.text,
+        card,
+    });
+}
+
+function dingStack(images: NativeImage[]) {
+    const nowPoint = screen.getCursorScreenPoint();
+    const size = images[0].getSize();
+    if (!size.width || !size.height) return;
+    createDingWindow(
+        nowPoint.x,
+        nowPoint.y,
+        size.width,
+        size.height,
+        images[0].toDataURL(),
+        "ding",
+        { stack: images.map((img) => img.toDataURL()) },
+    );
+}
+
 const pendingDingMessages: Array<
     (webContents: Electron.WebContents, bounds: Electron.Rectangle) => void
 > = [];
@@ -3106,7 +4249,7 @@ function ensureDingWindows() {
             icon: theIcon,
             transparent: true,
             frame: false,
-            alwaysOnTop: true,
+            alwaysOnTop: !dingBelow,
             skipTaskbar: true,
             autoHideMenuBar: true,
             enableLargerThanScreen: true, // mac
@@ -3115,12 +4258,14 @@ function ensureDingWindows() {
                 nodeIntegration: true,
                 contextIsolation: false,
             },
+            show: false,
             x: i.bounds.x,
             y: i.bounds.y,
             width: i.bounds.width,
             height: i.bounds.height,
         });
         dingwindowList.set(i.id, { win: dingWindow, display: i });
+        showWhenReady(dingWindow);
 
         let pinRegistered = false;
         const registerPin = () => {
@@ -3159,7 +4304,7 @@ function ensureDingWindows() {
         });
         dingWindow.setIgnoreMouseEvents(true);
 
-        dingWindow.setAlwaysOnTop(true, "screen-saver");
+        dingWindow.setAlwaysOnTop(!dingBelow, "screen-saver");
     }
     forceDingThrogh();
 }
@@ -3172,29 +4317,68 @@ type SavedDingPin = {
     src: string;
     opacity: number;
     z: number;
+    collapsed?: boolean;
+    stack?: string[];
+    label?: string;
+    card?: CardPinMetadata;
 };
 
 const dingSessionPath = join(app.getPath("userData"), "ding-session.json");
+const dingCacheDir = join(app.getPath("userData"), "ding-cache");
+// 세션 JSON에 dataURL을 직접 넣으면 수십 MB가 됨 — 파일로 빼고 참조만 저장
+const dingCacheWrite = (url: string) => {
+    try {
+        const m = /^data:image\/(png|jpeg|webp|gif);base64,(.+)$/s.exec(url);
+        if (!m) return url;
+        const buf = Buffer.from(m[2], "base64");
+        const ext = m[1] === "jpeg" ? "jpg" : m[1];
+        const name = `${createHash("sha1").update(buf).digest("hex")}.${ext}`;
+        const file = join(dingCacheDir, name);
+        if (!existsSync(file)) {
+            mkdirSync(dingCacheDir, { recursive: true });
+            writeFileSync(file, buf);
+        }
+        return `dingcache:${name}`;
+    } catch {
+        return url;
+    }
+};
+const dingCacheRead = (v: string) => {
+    if (!v.startsWith("dingcache:")) return v;
+    const name = v.slice(10);
+    if (!/^[\w.-]+$/.test(name)) return "";
+    try {
+        const buf = readFileSync(join(dingCacheDir, name));
+        const ext = name.endsWith(".jpg") ? "jpeg" : name.split(".").pop();
+        return `data:image/${ext};base64,${buf.toString("base64")}`;
+    } catch {
+        return "";
+    }
+};
+const dingSessionPrevPath = `${dingSessionPath}.prev`;
 const dingSessions = (() => {
     const map = new Map<number, SavedDingPin[]>();
-    try {
-        const raw = JSON.parse(readFileSync(dingSessionPath, "utf8"));
-        if (Array.isArray(raw))
+    // 손상 시 직전 백업으로 폴백 — 첫 번째 유효한 세션이 우선
+    for (const path of [dingSessionPath, dingSessionPrevPath]) {
+        try {
+            const raw = JSON.parse(readFileSync(path, "utf8"));
+            if (!Array.isArray(raw)) continue;
             for (const entry of raw)
                 if (
                     Number.isFinite(entry?.displayId) &&
                     Array.isArray(entry.pins)
                 )
                     map.set(entry.displayId, entry.pins);
-    } catch {
-        // no session to restore
+            break;
+        } catch {}
     }
     return map;
 })();
 const persistDingSessions = () => {
     try {
+        const temporary = `${dingSessionPath}.tmp`;
         writeFileSync(
-            dingSessionPath,
+            temporary,
             JSON.stringify(
                 [...dingSessions.entries()].map(([displayId, pins]) => ({
                     displayId,
@@ -3202,6 +4386,12 @@ const persistDingSessions = () => {
                 })),
             ),
         );
+        try {
+            if (existsSync(dingSessionPath))
+                copyFileSync(dingSessionPath, dingSessionPrevPath);
+        } catch {}
+        replaceFileSync(temporary, dingSessionPath);
+        gcDingCache();
     } catch (error) {
         console.error("Ding session persist failed:", error);
     }
@@ -3227,11 +4417,29 @@ ipcMain.handle("ding:session:save", (event, pins: unknown) => {
             y: p.y,
             w: p.w,
             h: p.h,
-            src: p.src,
+            src: dingCacheWrite(p.src),
             opacity: Number.isFinite(p.opacity)
                 ? Math.min(1, Math.max(0.05, p.opacity))
                 : 1,
             z: Number.isFinite(p.z) ? p.z : 0,
+            collapsed: p.collapsed === true || undefined,
+            stack:
+                Array.isArray(p.stack) && p.stack.length > 1
+                    ? p.stack
+                          .filter(
+                              (s) =>
+                                  typeof s === "string" &&
+                                  s.startsWith("data:image/") &&
+                                  s.length <= 12 * 1024 * 1024,
+                          )
+                          .slice(0, 24)
+                          .map(dingCacheWrite)
+                    : undefined,
+            label:
+                typeof p.label === "string" && p.label
+                    ? p.label.slice(0, 80)
+                    : undefined,
+            card: sanitizeCardPinMetadata(p.card),
         }));
     dingSessions.set(displayId, clean);
     persistDingSessions();
@@ -3246,8 +4454,282 @@ ipcMain.handle("ding:session:get", (event) => {
         dingSessions.clear();
     } else dingSessions.delete(displayId);
     persistDingSessions();
-    return pins;
+    return pins
+        .map((p) => ({
+            ...p,
+            src: dingCacheRead(p.src),
+            stack: p.stack
+                ?.map(dingCacheRead)
+                .filter((s): s is string => Boolean(s)),
+            card: sanitizeCardPinMetadata(p.card),
+        }))
+        .filter((p) => p.src);
 });
+
+const pendingPinQueries = new Map<number, (pins: unknown[]) => void>();
+mainOn("dingQueryResult", ([pins], event) => {
+    pendingPinQueries.get(event.sender.id)?.(pins as unknown[]);
+    pendingPinQueries.delete(event.sender.id);
+});
+function queryLivePins(): Promise<unknown[]> {
+    if (dingwindowList.size() === 0) return Promise.resolve([]);
+    return Promise.all(
+        dingwindowList.entries().map(
+            ([, { win }]) =>
+                new Promise<unknown[]>((resolve) => {
+                    const wc = win.webContents;
+                    pendingPinQueries.set(wc.id, resolve);
+                    setTimeout(() => {
+                        if (pendingPinQueries.delete(wc.id)) resolve([]);
+                    }, 800);
+                    mainSend(wc, "dingQuery", []);
+                }),
+        ),
+    ).then((lists) => lists.flat());
+}
+ipcMain.handle("oc:pins:list", () => queryLivePins());
+let dingBelow = false;
+ipcMain.handle("oc:pins:action", (_event, action: unknown, id: unknown) => {
+    const pinId = typeof id === "string" ? id : "";
+    if (action === "closeAll") {
+        dingSessions.clear();
+        persistDingSessions();
+        for (const displayId of dingwindowList.keys())
+            dingwindowList.delete(displayId);
+        return;
+    }
+    if (action === "hideAll") {
+        for (const [, { win }] of dingwindowList.entries()) win.hide();
+        return;
+    }
+    if (action === "toggleBelow") {
+        dingBelow = !dingBelow;
+        for (const [, { win }] of dingwindowList.entries()) {
+            win.setAlwaysOnTop(!dingBelow, "screen-saver");
+            if (dingBelow) win.setIgnoreMouseEvents(true);
+        }
+        if (!dingBelow) forceDingThrogh();
+        return dingBelow;
+    }
+    for (const [, { win }] of dingwindowList.entries()) {
+        if (action === "restore") {
+            if (!win.isVisible()) win.showInactive();
+            win.webContents.send("oc:pins-control", "restore");
+        } else if (action === "close")
+            mainSend(win.webContents, "dingShare", [
+                { type: "close", id: pinId, closeAll: false },
+            ]);
+        else if (action === "blink")
+            mainSend(win.webContents, "dingShare", [
+                { type: "blink", id: pinId },
+            ]);
+    }
+});
+
+type PinWorkspaceEntry = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    src: string;
+    opacity: number;
+    ox: number;
+    oy: number;
+    collapsed?: boolean;
+    stack?: string[];
+    card?: CardPinMetadata;
+};
+const pinWorkspacesPath = join(app.getPath("userData"), "ding-workspaces.json");
+const pinWorkspaces = (() => {
+    const map = new Map<string, PinWorkspaceEntry[]>();
+    try {
+        const raw = JSON.parse(readFileSync(pinWorkspacesPath, "utf8"));
+        if (raw && typeof raw === "object")
+            for (const [name, pins] of Object.entries(raw))
+                if (Array.isArray(pins)) map.set(name, pins);
+    } catch {
+        // no workspaces saved yet
+    }
+    return map;
+})();
+const persistPinWorkspaces = () => {
+    try {
+        writeFileSync(
+            pinWorkspacesPath,
+            JSON.stringify(Object.fromEntries(pinWorkspaces)),
+        );
+        gcDingCache();
+    } catch (error) {
+        console.error("Pin workspaces persist failed:", error);
+    }
+};
+// 세션·워크스페이스 어느 쪽도 참조하지 않는 캐시 파일 제거
+const gcDingCache = () => {
+    try {
+        const used = new Set<string>();
+        const collect = (v: string | undefined) => {
+            if (v?.startsWith("dingcache:")) used.add(v.slice(10));
+        };
+        for (const pins of dingSessions.values())
+            for (const p of pins) {
+                collect(p.src);
+                p.stack?.forEach(collect);
+            }
+        for (const pins of pinWorkspaces.values())
+            for (const p of pins) {
+                collect(p.src);
+                p.stack?.forEach(collect);
+            }
+        for (const f of readdirSync(dingCacheDir))
+            if (!used.has(f)) rmSync(join(dingCacheDir, f), { force: true });
+    } catch {
+        // 캐시 정리 실패는 무시 — 다음 저장 때 재시도
+    }
+};
+ipcMain.handle(
+    "oc:pins:workspace",
+    async (_event, op: unknown, name: unknown, opts: unknown) => {
+        const workspaceName =
+            typeof name === "string" ? name.trim().slice(0, 60) : "";
+        const keepExisting =
+            (opts as { keep?: unknown } | undefined)?.keep === true;
+        const summaries = () =>
+            [...pinWorkspaces.entries()].map(([workspace, entries]) => ({
+                name: workspace,
+                count: entries.length,
+            }));
+        if (op === "save" && workspaceName) {
+            const live = (await queryLivePins()) as Record<string, unknown>[];
+            pinWorkspaces.set(
+                workspaceName,
+                live
+                    .filter(
+                        (p) =>
+                            typeof p?.src === "string" &&
+                            p.src.startsWith("data:image/") &&
+                            p.src.length <= 12 * 1024 * 1024 &&
+                            [p.x, p.y, p.w, p.h].every(Number.isFinite),
+                    )
+                    .slice(0, 24)
+                    .map((p) => ({
+                        x: Number(p.x),
+                        y: Number(p.y),
+                        w: Number(p.w),
+                        h: Number(p.h),
+                        src: dingCacheWrite(String(p.src)),
+                        opacity: Number.isFinite(p.opacity)
+                            ? Number(p.opacity)
+                            : 1,
+                        ox: Number.isFinite(p.ox) ? Number(p.ox) : 0,
+                        oy: Number.isFinite(p.oy) ? Number(p.oy) : 0,
+                        collapsed: p.collapsed === true || undefined,
+                        stack:
+                            Array.isArray(p.urls) && p.urls.length > 1
+                                ? p.urls
+                                      .filter(
+                                          (s: unknown) =>
+                                              typeof s === "string" &&
+                                              s.startsWith("data:image/") &&
+                                              s.length <= 12 * 1024 * 1024,
+                                      )
+                                      .slice(0, 24)
+                                      .map((s: string) => dingCacheWrite(s))
+                                : undefined,
+                        card: sanitizeCardPinMetadata(p.card),
+                    })),
+            );
+            persistPinWorkspaces();
+        } else if (op === "restore" && workspaceName) {
+            const pins = pinWorkspaces.get(workspaceName);
+            if (!pins?.length) return summaries();
+            if (!keepExisting)
+                for (const displayId of dingwindowList.keys())
+                    dingwindowList.delete(displayId);
+            const displays = screen.getAllDisplays();
+            const dingEntries = [...dingwindowList.entries()];
+            const hasWindow = (d: Electron.Display) =>
+                dingEntries.some(
+                    ([, v]) =>
+                        v.display.bounds.x === d.bounds.x &&
+                        v.display.bounds.y === d.bounds.y,
+                );
+            pins.forEach((pin, index) => {
+                let px = pin.ox + pin.x;
+                let py = pin.oy + pin.y;
+                const cx = px + pin.w / 2;
+                const cy = py + pin.h / 2;
+                let target = displays.find(
+                    (d) =>
+                        cx >= d.bounds.x &&
+                        cx < d.bounds.x + d.bounds.width &&
+                        cy >= d.bounds.y &&
+                        cy < d.bounds.y + d.bounds.height,
+                );
+                if (!target || (keepExisting && !hasWindow(target))) {
+                    target = keepExisting
+                        ? (displays.find(hasWindow) ?? displays[0])
+                        : displays[0];
+                    px = Math.min(
+                        Math.max(px, target.bounds.x + 8),
+                        Math.max(
+                            target.bounds.x + 8,
+                            target.bounds.x + target.bounds.width - pin.w - 8,
+                        ),
+                    );
+                    py = Math.min(
+                        Math.max(py, target.bounds.y + 8),
+                        Math.max(
+                            target.bounds.y + 8,
+                            target.bounds.y + target.bounds.height - pin.h - 8,
+                        ),
+                    );
+                }
+                const targetBounds = target.bounds;
+                const deliver = (
+                    webContents: Electron.WebContents,
+                    bounds: Electron.Rectangle,
+                ) => {
+                    if (
+                        bounds.x !== targetBounds.x ||
+                        bounds.y !== targetBounds.y
+                    )
+                        return;
+                    mainSend(webContents, "addDing", [
+                        Date.now() + index,
+                        px - bounds.x,
+                        py - bounds.y,
+                        pin.w,
+                        pin.h,
+                        dingCacheRead(pin.src),
+                        "ding",
+                        {
+                            opacity: pin.opacity,
+                            collapsed: pin.collapsed,
+                            stack: pin.stack
+                                ?.map(dingCacheRead)
+                                .filter((s): s is string => Boolean(s)),
+                            card: sanitizeCardPinMetadata(pin.card),
+                        },
+                    ]);
+                };
+                const direct = keepExisting
+                    ? dingEntries.find(
+                          ([, v]) =>
+                              v.display.bounds.x === targetBounds.x &&
+                              v.display.bounds.y === targetBounds.y,
+                      )
+                    : undefined;
+                if (direct) deliver(direct[1].win.webContents, targetBounds);
+                else pendingDingMessages.push(deliver);
+            });
+            ensureDingWindows();
+        } else if (op === "delete" && workspaceName) {
+            pinWorkspaces.delete(workspaceName);
+            persistPinWorkspaces();
+        }
+        return summaries();
+    },
+);
 
 function createDingWindow(
     x: number,
@@ -3255,9 +4737,18 @@ function createDingWindow(
     w: number,
     h: number,
     img: string,
-    type: "translate" | "ding" = "ding",
+    type: "translate" | "ding" | "text" | "qrcode" = "ding",
+    opts?: {
+        stack?: string[];
+        text?: string;
+        card?: CardPinMetadata;
+    },
 ) {
     const id = Date.now();
+    const dingOpts =
+        opts?.stack?.length || opts?.text || opts?.card
+            ? { stack: opts.stack, text: opts.text, card: opts.card }
+            : undefined;
     if (dingwindowList.size() === 0) {
         pendingDingMessages.push((webContents, bounds) =>
             mainSend(webContents, "addDing", [
@@ -3268,6 +4759,7 @@ function createDingWindow(
                 h,
                 img,
                 type,
+                dingOpts,
             ]),
         );
         ensureDingWindows();
@@ -3281,7 +4773,8 @@ function createDingWindow(
                 w,
                 h,
                 img,
-                "ding",
+                type,
+                dingOpts,
             ]);
         }
     }
@@ -3310,7 +4803,9 @@ function dingClickThrough() {
 let dingThrogh: null | boolean = null;
 mainOn("dingIgnore", ([v]) => {
     for (const [_, win] of dingwindowList.entries()) {
-        win.win.setIgnoreMouseEvents(dingThrogh === null ? v : dingThrogh);
+        win.win.setIgnoreMouseEvents(
+            dingBelow || (dingThrogh === null ? v : dingThrogh),
+        );
     }
 });
 
@@ -3324,6 +4819,35 @@ function forceDingThrogh() {
         });
     }
 }
+
+ipcMain.on("oc:ding-drag", (event, dataUrl: unknown, name: unknown) => {
+    try {
+        if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+            event.returnValue = false;
+            return;
+        }
+        const image = nativeImage.createFromDataURL(dataUrl);
+        if (image.isEmpty()) {
+            event.returnValue = false;
+            return;
+        }
+        const dir = join(app.getPath("temp"), "oc-drag");
+        mkdirSync(dir, { recursive: true });
+        const base =
+            typeof name === "string" && name
+                ? name.replace(/[\\/:*?"<>|]/g, "_")
+                : `pin-${Date.now()}`;
+        const file = join(dir, base.endsWith(".png") ? base : `${base}.png`);
+        writeFileSync(file, image.toPNG());
+        event.sender.startDrag({
+            file,
+            icon: image.resize({ width: 48 }),
+        });
+        event.returnValue = true;
+    } catch {
+        event.returnValue = false;
+    }
+});
 
 mainOnReflect("dingShare", ([data]) => {
     if (data.type === "close" && data.closeAll) {
@@ -3344,12 +4868,14 @@ function createTranslator(op: Omit<translateWinType, "type">) {
         transparent: true,
         frame: false,
         alwaysOnTop: true,
+        show: false,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
         },
         autoHideMenuBar: true,
     });
+    showWhenReady(win);
 
     const screenSize = (
         screen.getAllDisplays().find((i) => i.id === op.displayId) ||
@@ -3412,6 +4938,7 @@ function createTranslator(op: Omit<translateWinType, "type">) {
 function createPhotoEditor(img: string) {
     const win = new BrowserWindow(baseWinConfig());
     win.maximize();
+    showWhenReady(win);
 
     rendererPath(win, "photoEditor.html");
     if (dev) win.webContents.openDevTools();
@@ -3478,6 +5005,7 @@ async function createMainWindow(op: MainWinType) {
     mainToSearchL[windowName] = [];
 
     if (m) mainWindow.maximize();
+    showWhenReady(mainWindow);
 
     rendererPath(mainWindow, "editor.html");
 
@@ -3549,6 +5077,7 @@ async function createSettingWindow() {
         height: 700,
         ...baseWinConfig(),
     });
+    showWhenReady(settingWindow);
 
     rendererPath(settingWindow, "setting.html");
 
@@ -3856,6 +5385,8 @@ mainOn("ok_save", ([arg, isVideo]) => {
     } else if (isVideo) {
         openCapture?.rememberMedia(arg);
         store.set("保存.保存路径.视频", dirname(arg));
+        // 녹화가 저장되면 라이브러리에 바로 보여 후속 작업(재생·변환·이름 변경)으로 이어지게 한다
+        if (openCapture?.getPreferences().shelfEnabled) openCapture?.show();
     } else {
         openCapture?.remember(arg);
         store.set("保存.保存路径.图片", dirname(arg));
@@ -3973,6 +5504,10 @@ const defaultSetting: setting = {
         右键: "取色器",
         双击: "复制",
         全局: "关闭",
+        径向菜单: {
+            开启: false,
+            动作: ["screens", "quick", "ocr", "ding", "record", "home"],
+        },
     },
     起始页快捷键: {},
     截屏编辑快捷键: {
@@ -4081,6 +5616,7 @@ const defaultSetting: setting = {
         按钮大小: 48,
         按钮图标比例: 0.7,
         初始位置: { left: "10px", top: "100px" },
+        快捷位置: null,
         功能: [
             "close",
             "screens",
@@ -4123,8 +5659,8 @@ const defaultSetting: setting = {
             最小阈值: 50,
             最大阈值: 150,
         },
-        识别窗口: true,
-        记忆: { 开启: true, rects: {} },
+        识别窗口: false,
+        记忆: { 开启: false, rects: {} },
         颜色: {
             遮罩: "#0008",
             光标参考线: "#00f",
@@ -4134,6 +5670,7 @@ const defaultSetting: setting = {
             光标: false,
             选区: { x: [], y: [] },
         },
+        延迟: 0,
     },
     图像编辑: {
         默认属性: {
@@ -4240,6 +5777,7 @@ const defaultSetting: setting = {
     保存名称: { 前缀: "OpenCapture-", 时间: "YYYY-MM-DD-HH-mm-ss-S", 后缀: "" },
     框选后默认操作: "no",
     快速截屏: { 模式: "clip", 路径: "" },
+    捕获: { 上次区域: null, 历史区域: [] },
     引擎: {
         记忆: {
             搜索: "必应",

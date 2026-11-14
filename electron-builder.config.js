@@ -1,81 +1,7 @@
 // @ts-check
 const fs = require("node:fs");
 const path = require("node:path");
-const { execSync, execFileSync } = require("node:child_process");
-const yauzl = require("yauzl");
-
-function ensureDir(dir) {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
-
-/**
- * @param {string} url
- */
-async function downloadBuffer(url) {
-    console.log(url);
-    const b = await (await fetch(url)).arrayBuffer();
-    return Buffer.from(b);
-}
-/**
- * @param {string} url
- * @param {string} targetDir
- */
-async function download(url, targetDir) {
-    const b = await downloadBuffer(url);
-    ensureDir(targetDir);
-    const fileName = url.split("/").at(-1);
-    if (fileName) fs.writeFileSync(path.join(targetDir, fileName), b);
-}
-/**
- * @param {string} url
- * @param {string} targetDir
- */
-async function downloadUnzip(url, targetDir) {
-    const b = await downloadBuffer(url);
-    ensureDir(targetDir);
-    const fileName = url.split("/").at(-1);
-    return new Promise((resolve, reject) => {
-        yauzl.fromBuffer(b, { lazyEntries: true }, (err, zipfile) => {
-            if (err) throw err;
-            zipfile.readEntry();
-            console.log(`开始解压 ${fileName} 到 ${targetDir}`);
-            zipfile.on("entry", (entry) => {
-                const filePath = path.join(targetDir, entry.fileName);
-                if (/\/$/.test(entry.fileName)) {
-                    ensureDir(filePath);
-                    zipfile.readEntry();
-                } else {
-                    zipfile.openReadStream(entry, (err, readStream) => {
-                        if (err) throw err;
-                        ensureDir(path.dirname(filePath));
-                        const writeStream = fs.createWriteStream(filePath);
-                        readStream.pipe(writeStream);
-                        writeStream.on("finish", () => {
-                            zipfile.readEntry();
-                        });
-                    });
-                }
-            });
-            zipfile.on("end", () => {
-                zipfile.close();
-                resolve(true);
-            });
-        });
-    });
-}
-
-/**
- * @param {string} dir
- */
-function checkPath(dir) {
-    return (
-        fs.existsSync(dir) &&
-        (fs.statSync(dir).isFile() ||
-            (fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length > 0))
-    );
-}
+const { execFileSync } = require("node:child_process");
 
 const arch =
     (process.env.npm_config_arch || process.env.M_ARCH || process.arch) ===
@@ -83,19 +9,20 @@ const arch =
         ? "arm64"
         : "x64";
 
-const platform = process.platform;
-const platformMap = { linux: "linux", win32: "win", darwin: "mac" };
-/**
- * @type {"linux"|"win"|"mac"}
- */
-const platform2 = platformMap[platform];
-
-// const githubUrl = "https://gh-proxy.com/https://github.com" || true;
-const githubUrl = "https://github.com";
-
 const beforePack = async () => {
     await require("./scripts/prepare-assets.cjs").prepareAssets();
-    if (process.platform === "win32") execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "scripts/build-quicklaunch.ps1")], { stdio: "inherit" });
+    if (process.platform === "win32")
+        execFileSync(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                path.join(__dirname, "scripts/build-quicklaunch.ps1"),
+            ],
+            { stdio: "inherit" },
+        );
 };
 
 /**
@@ -103,7 +30,7 @@ const beforePack = async () => {
  */
 const build = {
     appId: "org.opencapture.desktop",
-    extraFiles: ["LICENSE", "THIRD_PARTY_NOTICES.md", "README_OPENCAPTURE.md", ...(process.platform === "win32" ? [{ from: "native/bin/OpenCaptureQuick.exe", to: "OpenCaptureQuick.exe" }] : [])],
+    extraFiles: ["LICENSE", "THIRD_PARTY_NOTICES.md", "README_OPENCAPTURE.md"],
     executableName: "OpenCapture",
     directories: {
         output: "build",
@@ -170,31 +97,59 @@ const build = {
         depends: ["ffmpeg-free"],
     },
     mac: {
+        category: "public.app-category.utilities",
+        icon: "./assets/logo/icon.icns",
         files: [
+            "!native/**",
+            "!lib/copy.exe",
+            "!lib/ffmpeg/ffmpeg.exe",
+            "!assets/runtime/win32-x64/**",
             "!lib/gtk-open-with",
             "!lib/kde-open-with",
             "!assets/logo/1024x1024.png",
             "!assets/logo/512x512.png",
             "!assets/logo/icon.ico",
-            "!node_modules/onnxruntime-node/bin/napi-v6/win32",
-            "!node_modules/onnxruntime-node/bin/napi-v6/linux",
+            "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+            "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+            "!node_modules/uiohook-napi/prebuilds/win32-*",
+            "!node_modules/uiohook-napi/prebuilds/linux-*",
+            "!node_modules/node-screenshots-win32-*",
+            "!node_modules/node-screenshots-linux-*",
         ],
         target: [
             {
                 target: "dmg",
-                arch: arch,
+                arch: ["arm64", "x64"],
             },
             {
                 target: "zip",
-                arch: arch,
+                arch: ["arm64", "x64"],
             },
         ],
+        entitlements: "entitlements/mac.plist",
+        hardenedRuntime: true,
+        extendInfo: {
+            NSCameraUsageDescription:
+                "OpenCapture uses the camera only when you enable a camera overlay while recording.",
+            NSMicrophoneUsageDescription:
+                "OpenCapture uses the microphone only when you enable microphone audio while recording.",
+            NSAudioCaptureUsageDescription:
+                "OpenCapture captures system audio only when you enable system audio in a recording.",
+            NSScreenCaptureUsageDescription:
+                "OpenCapture needs screen recording access to capture screenshots and recordings you request.",
+        },
     },
     dmg: {
         writeUpdateInfo: false,
     },
     win: {
         icon: "./assets/logo/icon.ico",
+        extraFiles: [
+            {
+                from: "native/bin/OpenCaptureQuick.exe",
+                to: "OpenCaptureQuick.exe",
+            },
+        ],
         target: [
             {
                 target: "nsis",
@@ -222,30 +177,6 @@ const build = {
     },
 };
 
-const archFilter = arch === "arm64" ? "x64" : "arm64";
-const otherPlatform = Object.keys(platformMap).filter((i) => i !== platform);
-
-/** @type {string[]|undefined} */
-// @ts-ignore
-const files = build[platform2]?.files;
-
-// 移除 onnxruntime-node/bin/napi-v6/
-files?.push(
-    `!node_modules/onnxruntime-node/bin/napi-v6/${platform}/${archFilter}`,
-);
-
-// 移除 uiohook-napi/prebuilds
-for (const i of otherPlatform) {
-    files?.push(`!node_modules/uiohook-napi/prebuilds/${i}-arm64`);
-    files?.push(`!node_modules/uiohook-napi/prebuilds/${i}-x64`);
-}
-files?.push(`!node_modules/uiohook-napi/prebuilds/${platform}-${archFilter}`);
-
-if (arch !== process.arch) {
-    execSync("pnpm install --force"); // 安装node-screenshots
-}
-
-// 移除 node-screenshots其他平台架构
 const nodeScreenshotsList = [
     "win32-x64-msvc",
     "win32-ia32-msvc",
@@ -257,16 +188,35 @@ const nodeScreenshotsList = [
     "darwin-x64",
     "darwin-arm64",
 ];
-for (const i of nodeScreenshotsList) {
-    for (const j of otherPlatform) {
-        if (i.startsWith(j)) {
-            files?.push(`!node_modules/node-screenshots-${i}`);
-        }
+const platformFiles = {
+    linux: build.linux?.files,
+    win32: build.win?.files,
+    darwin: build.mac?.files,
+};
+for (const [targetPlatform, patterns] of Object.entries(platformFiles)) {
+    if (!Array.isArray(patterns)) continue;
+    for (const nativePlatform of ["linux", "win32", "darwin"])
+        if (nativePlatform !== targetPlatform)
+            patterns.push(
+                `!node_modules/uiohook-napi/prebuilds/${nativePlatform}-*`,
+            );
+    for (const packageName of nodeScreenshotsList) {
+        const belongsToPlatform = packageName.startsWith(`${targetPlatform}-`);
+        const matchesArchitecture = packageName.startsWith(
+            `${targetPlatform}-${arch}`,
+        );
+        if (
+            !belongsToPlatform ||
+            (targetPlatform !== "darwin" && !matchesArchitecture)
+        )
+            patterns.push(`!node_modules/node-screenshots-${packageName}`);
     }
-    if (i.startsWith(platform)) {
-        if (!i.startsWith(`${platform}-${arch}`)) {
-            files?.push(`!node_modules/node-screenshots-${i}`);
-        }
+    if (targetPlatform !== "darwin") {
+        const otherArch = arch === "arm64" ? "x64" : "arm64";
+        patterns.push(
+            `!node_modules/onnxruntime-node/bin/napi-v6/${targetPlatform}/${otherArch}`,
+            `!node_modules/uiohook-napi/prebuilds/${targetPlatform}-${otherArch}`,
+        );
     }
 }
 
@@ -301,6 +251,8 @@ const ignoreDir = [
     "node_modules/esearch-ocr/dist/esearch-ocr.js",
 ];
 const ignoreModule = [
+    "pdfjs-dist",
+    "@napi-rs/canvas*",
     "qr-scanner-wechat",
     "tar",
     "hotkeys-js",
@@ -335,9 +287,8 @@ const ignoreModule = [
 for (const i of ignoreModule) {
     ignoreDir.push(`node_modules/${i}`);
 }
-for (let i of ignoreDir) {
-    i = `!${i}`;
-    files?.push(i);
-}
+for (const ignored of ignoreDir)
+    for (const patterns of Object.values(platformFiles))
+        if (Array.isArray(patterns)) patterns.push(`!${ignored}`);
 
 module.exports = build;

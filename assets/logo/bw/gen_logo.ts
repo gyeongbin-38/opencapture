@@ -1,6 +1,6 @@
-// biome-ignore format:
-import { createCanvas, loadImage,ImageData } from "canvas";
 import { writeFileSync } from "node:fs";
+// biome-ignore format:
+import { ImageData, createCanvas, loadImage} from "canvas";
 
 const img = await loadImage("./32x32.png");
 

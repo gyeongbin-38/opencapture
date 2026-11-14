@@ -20,6 +20,7 @@ import {
 } from "./boardApi";
 import { type CaptureLab, createCaptureLab } from "./captureLab";
 import { type LabFeature, features } from "./features";
+import { getLabLang, initLabLang, lt, switchLabLang } from "./i18n";
 import { dataURLBlob, downloadBlob, downloadDataURL } from "./imageOps";
 import { createMediaLab } from "./mediaLab";
 import { createReferenceWindows } from "./referenceWindows";
@@ -136,7 +137,9 @@ async function transformImage(
             Math.round((width * image.naturalHeight) / image.naturalWidth),
         );
         if (width * height > 16_000_000)
-            throw new Error("결과 이미지가 너무 큽니다. 너비를 줄여 주세요.");
+            throw new Error(
+                lt("결과 이미지가 너무 큽니다. 너비를 줄여 주세요."),
+            );
         canvas.width = width;
         canvas.height = height;
         context.imageSmoothingEnabled = true;
@@ -147,7 +150,7 @@ async function transformImage(
 }
 
 async function composite(items: BrowserItem[]) {
-    if (!items.length) throw new Error("이미지를 하나 이상 선택해 주세요.");
+    if (!items.length) throw new Error(lt("이미지를 하나 이상 선택해 주세요."));
     const gap = 16;
     const columns = Math.ceil(Math.sqrt(items.length));
     const cellWidth = Math.min(
@@ -166,7 +169,7 @@ async function composite(items: BrowserItem[]) {
     const height =
         rows.reduce((sum, row) => sum + row, 0) + gap * (rows.length - 1);
     if (!Number.isFinite(width * height))
-        throw new Error("이미지 크기를 확인해 주세요.");
+        throw new Error(lt("이미지 크기를 확인해 주세요."));
     const scale = Math.min(
         1,
         Math.sqrt(16_000_000 / (width * height)),
@@ -258,6 +261,7 @@ async function resetDatabaseIfRequested() {
 }
 
 async function start() {
+    initLabLang();
     await resetDatabaseIfRequested();
     const mount = document.querySelector<HTMLElement>("#app");
     if (!mount) throw new Error("Application mount was not found.");
@@ -276,39 +280,39 @@ async function start() {
 
     const shell = element("div", "lab-shell");
     const rail = element("aside", "lab-rail");
-    rail.setAttribute("aria-label", "테스트 공간 탐색");
+    rail.setAttribute("aria-label", lt("테스트 공간 탐색"));
     const brand = element("div", "lab-brand", "OC");
     brand.title = "OpenCapture browser lab";
     const nav = element("nav", "lab-nav");
     const routeLabels: Array<[Route, string, string]> = [
         [
             "editor",
-            "보드",
+            lt("보드"),
             '<rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/>',
         ],
         [
             "capture",
-            "캡처",
+            lt("캡처"),
             '<path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/><circle cx="12" cy="12" r="3"/>',
         ],
         [
             "library",
-            "보관함",
+            lt("보관함"),
             '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="m3 15 5-4 5 5 3-3 5 4"/><circle cx="16" cy="9" r="1"/>',
         ],
         [
             "media",
-            "미디어",
+            lt("미디어"),
             '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 8 6 4-6 4Z"/>',
         ],
         [
             "features",
-            "기능",
+            lt("기능"),
             '<path d="m4 6 2 2 3-4m3 2h8M4 13l2 2 3-4m3 2h8M4 20h5m3 0h8"/>',
         ],
         [
             "settings",
-            "설정",
+            lt("설정"),
             '<path d="M3 6h6m4 0h8M3 12h11m4 0h3M3 18h3m4 0h11"/><circle cx="11" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
         ],
     ];
@@ -333,17 +337,32 @@ async function start() {
     const header = element("header", "lab-header");
     const headingWrap = element("div");
     const eyebrow = element("span", "lab-eyebrow", "Browser feature lab");
-    const pageTitle = element("h1", "lab-title", "보드");
+    const pageTitle = element("h1", "lab-title", lt("보드"));
     headingWrap.append(eyebrow, pageTitle);
     const headerActions = element("div", "lab-header__actions");
     const processorStatus = element(
         "span",
         "capability-status",
-        "로컬 도구 확인 중…",
+        lt("로컬 도구 확인 중…"),
     );
     processorStatus.dataset.testid = "processor-status";
-    const commandButton = button("명령", "commands", true);
-    headerActions.append(processorStatus, commandButton);
+    const langSwitch = element("div", "lang-switch");
+    langSwitch.setAttribute("role", "group");
+    langSwitch.setAttribute("aria-label", lt("표시 언어", "Display language"));
+    for (const [lang, label] of [
+        ["en", "EN"],
+        ["ko", "한국어"],
+    ] as const) {
+        const langButton = element("button", "lang-switch__option", label);
+        langButton.type = "button";
+        langButton.dataset.lang = lang;
+        langButton.dataset.testid = `lang-${lang}`;
+        langButton.dataset.active = String(lang === getLabLang());
+        langButton.onclick = () => switchLabLang(lang);
+        langSwitch.append(langButton);
+    }
+    const commandButton = button(lt("명령"), "commands", true);
+    headerActions.append(processorStatus, langSwitch, commandButton);
     header.append(headingWrap, headerActions);
     const content = element("main", "lab-content");
     const notice = element("div", "lab-notice");
@@ -380,12 +399,15 @@ async function start() {
     const run = async <T>(
         label: string,
         task: () => Promise<T>,
+        done?: string,
     ): Promise<T | undefined> => {
         busyCount += 1;
         shell.setAttribute("aria-busy", "true");
         message(label);
         try {
-            return await task();
+            const result = await task();
+            if (done) message(done);
+            return result;
         } catch (error) {
             message(errorText(error), true);
             return undefined;
@@ -492,6 +514,12 @@ async function start() {
             onImage: async (dataURL, name) => {
                 await api.importImage(dataURL, name);
                 await refreshLibrary();
+                message(
+                    lt(
+                        "이미지를 보관함에 저장했습니다. 보관함에서 확인할 수 있습니다.",
+                        "Image saved — find it in the Library.",
+                    ),
+                );
             },
             onFloat: (dataURL, name) =>
                 void references
@@ -500,14 +528,23 @@ async function start() {
             onProcess: async (operation, dataURL) => {
                 if (operation === "color") return undefined;
                 const result = await process(operation, { dataURL });
-                if (result.dataURL)
+                if (result.dataURL) {
                     await api.importImage(
                         result.dataURL,
                         `${operation}-result.png`,
                     );
+                    message(
+                        lt(
+                            "처리 결과를 보관함에 저장했습니다.",
+                            "Saved the processed result to the Library.",
+                        ),
+                    );
+                }
                 if (result.text)
                     openTextResult(
-                        operation === "ocr" ? "Recognized text" : "Result",
+                        operation === "ocr"
+                            ? lt("인식한 텍스트", "Recognized text")
+                            : lt("결과", "Result"),
                         result.text,
                     );
                 await refreshLibrary();
@@ -529,14 +566,14 @@ async function start() {
     const libraryHeader = element("div", "page-heading");
     const libraryCopy = element("div");
     libraryCopy.append(
-        element("h2", "page-heading__title", "이미지 보관함"),
+        element("h2", "page-heading__title", lt("이미지 보관함")),
         element(
             "p",
             "page-heading__copy",
-            "가져오거나 처리한 이미지는 이 브라우저에 저장됩니다.",
+            lt("가져오거나 처리한 이미지는 이 브라우저에 저장됩니다."),
         ),
     );
-    const importButton = button("이미지 가져오기", "import");
+    const importButton = button(lt("이미지 가져오기"), "import");
     const fileInput = element("input");
     fileInput.type = "file";
     fileInput.accept = "image/*";
@@ -546,33 +583,33 @@ async function start() {
     libraryHeader.append(libraryCopy, importButton, fileInput);
     const libraryTools = element("div", "library-tools");
     const searchLabel = element("label", "field");
-    searchLabel.append(element("span", "field__label", "이름으로 찾기"));
+    searchLabel.append(element("span", "field__label", lt("이름으로 찾기")));
     const search = element("input");
     search.type = "search";
-    search.placeholder = "이미지 검색";
+    search.placeholder = lt("이미지 검색");
     search.dataset.testid = "library-search";
     searchLabel.append(search);
-    const selectionCount = element("span", "selection-count", "0개 선택");
+    const selectionCount = element("span", "selection-count", lt("0개 선택"));
     const libraryActions = element("div", "action-row");
     const actionSpecs = [
-        ["add-board", "보드에 추가"],
-        ["compare", "비교"],
-        ["float", "참고창"],
-        ["copy", "PNG 복사"],
-        ["composite", "합친 PNG 복사"],
-        ["download", "다운로드"],
-        ["crop", "자르기"],
-        ["rotate", "90° 회전"],
-        ["flip", "좌우 반전"],
-        ["resize", "크기 변경"],
+        ["add-board", lt("보드에 추가")],
+        ["compare", lt("비교")],
+        ["float", lt("참고창")],
+        ["copy", lt("PNG 복사")],
+        ["composite", lt("합친 PNG 복사")],
+        ["download", lt("다운로드")],
+        ["crop", lt("자르기")],
+        ["rotate", lt("90° 회전")],
+        ["flip", lt("좌우 반전")],
+        ["resize", lt("크기 변경")],
         ["ocr", "OCR"],
-        ["translate", "번역"],
-        ["cutout", "배경 제거"],
-        ["upscale", "업스케일"],
-        ["redact", "민감 정보 가리기"],
+        ["translate", lt("번역")],
+        ["cutout", lt("배경 제거")],
+        ["upscale", lt("업스케일")],
+        ["redact", lt("민감 정보 가리기")],
     ] as const;
     const libraryMore = element("details", "library-more");
-    libraryMore.append(element("summary", "button secondary", "편집 도구"));
+    libraryMore.append(element("summary", "button secondary", lt("편집 도구")));
     const libraryMoreActions = element("div", "library-more-actions");
     const primaryActions = new Set(["add-board", "compare", "float", "copy"]);
     for (const [action, label] of actionSpecs)
@@ -586,7 +623,7 @@ async function start() {
     const dropzone = element(
         "div",
         "library-dropzone",
-        "이미지를 놓거나 붙여넣으세요",
+        lt("이미지를 놓거나 붙여넣으세요"),
     );
     dropzone.tabIndex = 0;
     dropzone.dataset.testid = "library-dropzone";
@@ -598,26 +635,72 @@ async function start() {
     const featureHeading = element("div", "page-heading");
     const featureCopy = element("div");
     featureCopy.append(
-        element("h2", "page-heading__title", "기능 목록"),
+        element("h2", "page-heading__title", lt("기능 목록")),
         element(
             "p",
             "page-heading__copy",
-            "브라우저 기능을 실행하고 수동 확인 상태를 따로 기록합니다.",
+            lt("브라우저 기능을 실행하고 수동 확인 상태를 따로 기록합니다."),
         ),
     );
-    const bugButton = button("버그 기록", "bugs", true);
+    const bugButton = button(lt("버그 기록"), "bugs", true);
     featureHeading.append(featureCopy, bugButton);
     const featureSearchLabel = element("label", "field feature-filter");
-    featureSearchLabel.append(element("span", "field__label", "기능 검색"));
+    featureSearchLabel.append(element("span", "field__label", lt("기능 검색")));
     const featureSearch = element("input");
     featureSearch.type = "search";
-    featureSearch.placeholder = "이름, 설명 또는 실행 환경";
+    featureSearch.placeholder = lt("이름, 설명 또는 실행 환경");
     featureSearchLabel.append(featureSearch);
+    let kindFilter = "all";
+    let uncheckedOnly = false;
+    const featureFilters = element("div", "feature-filters");
+    const kindOptions: Array<[string, string]> = [
+        ["all", lt("전체", "All")],
+        ["web", lt("웹", "Web")],
+        ["local", lt("로컬 도구", "Local")],
+        ["permission", lt("권한 필요", "Permission")],
+        ["native", lt("앱 전용", "App only")],
+    ];
+    const filterChips: HTMLButtonElement[] = [];
+    const syncFilterChips = () => {
+        for (const chip of filterChips)
+            chip.dataset.active = String(
+                chip.dataset.kind
+                    ? chip.dataset.kind === kindFilter
+                    : uncheckedOnly,
+            );
+    };
+    for (const [kind, label] of kindOptions) {
+        const chip = element("button", "feature-filter-chip", label);
+        chip.type = "button";
+        chip.dataset.kind = kind;
+        chip.onclick = () => {
+            kindFilter = kind;
+            syncFilterChips();
+            renderFeatures();
+        };
+        filterChips.push(chip);
+        featureFilters.append(chip);
+    }
+    const uncheckedChip = element(
+        "button",
+        "feature-filter-chip",
+        lt("미확인만", "Unchecked only"),
+    );
+    uncheckedChip.type = "button";
+    uncheckedChip.onclick = () => {
+        uncheckedOnly = !uncheckedOnly;
+        syncFilterChips();
+        renderFeatures();
+    };
+    filterChips.push(uncheckedChip);
+    featureFilters.append(uncheckedChip);
+    syncFilterChips();
     const capabilityList = element("div", "capability-list");
     const featureGroups = element("div", "feature-groups");
     featurePage.append(
         featureHeading,
         featureSearchLabel,
+        featureFilters,
         capabilityList,
         featureGroups,
     );
@@ -626,14 +709,16 @@ async function start() {
     const checksHeader = element("div", "self-check-header");
     const checksDescription = element("div");
     checksDescription.append(
-        element("h2", undefined, "자동 기본 점검"),
+        element("h2", undefined, lt("자동 기본 점검")),
         element(
             "p",
             undefined,
-            "별도 테스트 데이터로 저장·복구·이미지 처리 결과를 확인합니다. 화면 조작과 권한은 직접 확인 항목으로 남깁니다.",
+            lt(
+                "별도 테스트 데이터로 저장·복구·이미지 처리 결과를 확인합니다. 화면 조작과 권한은 직접 확인 항목으로 남깁니다.",
+            ),
         ),
     );
-    const runChecksButton = button("자동점검 실행", "run-checks", true);
+    const runChecksButton = button(lt("자동점검 실행"), "run-checks", true);
     checksHeader.append(checksDescription, runChecksButton);
     const deepChecksLabel = element("label", "toggle-row");
     const deepChecks = element("input");
@@ -642,18 +727,20 @@ async function start() {
     deepChecksLabel.append(
         deepChecks,
         document.createTextNode(
-            "실제 OCR·누끼·번역·AI 확대도 점검 (첫 사용 시 약 5MB 모델 다운로드)",
+            lt(
+                "실제 OCR·누끼·번역·AI 확대도 점검 (첫 사용 시 약 5MB 모델 다운로드)",
+            ),
         ),
     );
     const checksSummary = element(
         "p",
         "self-check-summary",
-        "아직 실행하지 않았습니다.",
+        lt("아직 실행하지 않았습니다."),
     );
     checksSummary.setAttribute("role", "status");
     const checksList = element("ol", "self-check-results");
     checksList.dataset.testid = "self-check-results";
-    const exportChecks = button("점검 결과 다운로드", "export-checks");
+    const exportChecks = button(lt("점검 결과 다운로드"), "export-checks");
     exportChecks.disabled = true;
     checksPanel.append(
         checksHeader,
@@ -669,7 +756,7 @@ async function start() {
         deepChecks.disabled = true;
         checkResults = [];
         checksList.replaceChildren();
-        checksSummary.textContent = "점검 중…";
+        checksSummary.textContent = lt("점검 중…");
         void runLabChecks({
             models: deepChecks.checked,
             onResult(result) {
@@ -681,12 +768,18 @@ async function start() {
                     element(
                         "strong",
                         undefined,
-                        `${result.status === "pass" ? "통과" : result.status === "fail" ? "실패" : "직접 확인"} · ${result.name}`,
+                        lt(
+                            `${result.status === "pass" ? "통과" : result.status === "fail" ? "실패" : "직접 확인"} · ${result.name}`,
+                            `${result.status === "pass" ? "Pass" : result.status === "fail" ? "Fail" : "Manual"} · ${result.name}`,
+                        ),
                     ),
                     element("span", undefined, result.detail),
                 );
                 checksList.append(row);
-                checksSummary.textContent = `${checkResults.filter((item) => item.status === "pass").length}개 통과 · ${checkResults.filter((item) => item.status === "fail").length}개 실패 · ${checkResults.filter((item) => item.status === "manual").length}개 직접 확인`;
+                checksSummary.textContent = lt(
+                    `${checkResults.filter((item) => item.status === "pass").length}개 통과 · ${checkResults.filter((item) => item.status === "fail").length}개 실패 · ${checkResults.filter((item) => item.status === "manual").length}개 직접 확인`,
+                    `${checkResults.filter((item) => item.status === "pass").length} passed · ${checkResults.filter((item) => item.status === "fail").length} failed · ${checkResults.filter((item) => item.status === "manual").length} manual`,
+                );
             },
         })
             .then(() => {
@@ -722,17 +815,19 @@ async function start() {
 
     const settingsPage = routes.get("settings") as HTMLElement;
     const settingsPanel = element("div", "settings-panel");
-    settingsPanel.append(element("h2", "page-heading__title", "실험실 설정"));
+    settingsPanel.append(
+        element("h2", "page-heading__title", lt("실험실 설정")),
+    );
     const motionLabel = element("label", "toggle-row");
     const motionInput = element("input");
     motionInput.type = "checkbox";
     motionInput.checked = settings.reducedMotion;
     motionLabel.append(
         motionInput,
-        element("span", "toggle-row__copy", "움직임 줄이기"),
+        element("span", "toggle-row__copy", lt("움직임 줄이기")),
     );
     const sizeLabel = element("label", "field");
-    sizeLabel.append(element("span", "field__label", "컨트롤 크기"));
+    sizeLabel.append(element("span", "field__label", lt("컨트롤 크기")));
     const sizeInput = element("input");
     sizeInput.type = "range";
     sizeInput.min = "40";
@@ -745,17 +840,44 @@ async function start() {
         `${settings.controlSize}px`,
     );
     sizeLabel.append(sizeInput, sizeOutput);
-    const resetButton = button("데모 데이터 초기화", "reset-data", true);
-    settingsPanel.append(motionLabel, sizeLabel, resetButton);
+    const displayLanguageRow = element("div", "field");
+    displayLanguageRow.append(
+        element("span", "field__label", lt("표시 언어", "Display language")),
+    );
+    const languageButtons = element("div", "lang-switch");
+    languageButtons.setAttribute("role", "group");
+    languageButtons.setAttribute(
+        "aria-label",
+        lt("표시 언어", "Display language"),
+    );
+    for (const [lang, label] of [
+        ["en", "EN"],
+        ["ko", "한국어"],
+    ] as const) {
+        const option = element("button", "lang-switch__option", label);
+        option.type = "button";
+        option.dataset.lang = lang;
+        option.dataset.active = String(lang === getLabLang());
+        option.onclick = () => switchLabLang(lang);
+        languageButtons.append(option);
+    }
+    displayLanguageRow.append(languageButtons);
+    const resetButton = button(lt("데모 데이터 초기화"), "reset-data", true);
+    settingsPanel.append(
+        motionLabel,
+        sizeLabel,
+        displayLanguageRow,
+        resetButton,
+    );
     settingsPage.append(settingsPanel);
 
     const textDialog = element("dialog", "lab-dialog");
-    const textDialogTitle = element("h2", "lab-dialog__title", "결과");
+    const textDialogTitle = element("h2", "lab-dialog__title", lt("결과"));
     const textArea = element("textarea");
     textArea.rows = 12;
     textArea.readOnly = true;
-    textArea.setAttribute("aria-label", "결과 텍스트");
-    const textDialogClose = button("닫기", undefined, true);
+    textArea.setAttribute("aria-label", lt("결과 텍스트"));
+    const textDialogClose = button(lt("닫기"), undefined, true);
     textDialogClose.onclick = () => textDialog.close();
     textDialog.append(textDialogTitle, textArea, textDialogClose);
     document.body.append(textDialog);
@@ -766,15 +888,15 @@ async function start() {
     }
 
     const translateDialog = element("dialog", "lab-dialog");
-    const translateTitle = element("h2", "lab-dialog__title", "로컬 번역");
+    const translateTitle = element("h2", "lab-dialog__title", lt("로컬 번역"));
     const translateSourceLabel = element("label", "field");
-    translateSourceLabel.append(element("span", "field__label", "원문"));
+    translateSourceLabel.append(element("span", "field__label", lt("원문")));
     const translateSource = element("textarea");
     translateSource.rows = 7;
     translateSourceLabel.append(translateSource);
     const languageRow = element("div", "form-row");
     const fromLabel = element("label", "field");
-    fromLabel.append(element("span", "field__label", "원본 언어"));
+    fromLabel.append(element("span", "field__label", lt("원본 언어")));
     const fromSelect = element("select");
     fromSelect.append(
         new Option("Auto", "auto"),
@@ -783,7 +905,7 @@ async function start() {
     );
     fromLabel.append(fromSelect);
     const toLabel = element("label", "field");
-    toLabel.append(element("span", "field__label", "번역 언어"));
+    toLabel.append(element("span", "field__label", lt("번역 언어")));
     const toSelect = element("select");
     toSelect.append(new Option("Korean", "ko"), new Option("English", "en"));
     toLabel.append(toSelect);
@@ -791,10 +913,11 @@ async function start() {
     const translateResult = element("textarea");
     translateResult.rows = 7;
     translateResult.readOnly = true;
-    translateResult.setAttribute("aria-label", "번역 결과");
+    translateResult.dataset.testid = "translate-result";
+    translateResult.setAttribute("aria-label", lt("번역 결과"));
     const translateActions = element("div", "dialog-actions");
-    const translateRun = button("번역");
-    const translateClose = button("닫기", undefined, true);
+    const translateRun = button(lt("번역"));
+    const translateClose = button(lt("닫기"), undefined, true);
     translateClose.onclick = () => translateDialog.close();
     translateActions.append(translateClose, translateRun);
     translateDialog.append(
@@ -806,51 +929,54 @@ async function start() {
     );
     document.body.append(translateDialog);
     translateRun.onclick = () =>
-        void run("Translating locally…", async () => {
-            const result = await process("translate", {
-                text: translateSource.value,
-                from: fromSelect.value,
-                to: toSelect.value,
-            });
-            translateResult.value = result.text ?? "";
-        });
+        void run(
+            lt("로컬로 번역하는 중…", "Translating locally…"),
+            async () => {
+                const result = await process("translate", {
+                    text: translateSource.value,
+                    from: fromSelect.value,
+                    to: toSelect.value,
+                });
+                translateResult.value = result.text ?? "";
+            },
+        );
 
     const bugsDialog = element("dialog", "lab-dialog lab-dialog--wide");
-    const bugsTitle = element("h2", "lab-dialog__title", "버그 기록");
+    const bugsTitle = element("h2", "lab-dialog__title", lt("버그 기록"));
     const bugForm = element("form", "bug-form");
     const bugTitleLabel = element("label", "field");
-    bugTitleLabel.append(element("span", "field__label", "제목"));
+    bugTitleLabel.append(element("span", "field__label", lt("제목")));
     const bugTitleInput = element("input");
     bugTitleInput.required = true;
     bugTitleLabel.append(bugTitleInput);
     const bugDetailLabel = element("label", "field");
     bugDetailLabel.append(
-        element("span", "field__label", "재현 단계와 실제 결과"),
+        element("span", "field__label", lt("재현 단계와 실제 결과")),
     );
     const bugDetailInput = element("textarea");
     bugDetailInput.rows = 5;
     bugDetailInput.required = true;
     bugDetailLabel.append(bugDetailInput);
-    const bugSubmit = button("기록 저장");
+    const bugSubmit = button(lt("기록 저장"));
     bugSubmit.type = "submit";
     bugForm.append(bugTitleLabel, bugDetailLabel, bugSubmit);
     const bugList = element("div", "bug-list");
     const bugDialogActions = element("div", "dialog-actions");
-    const exportBugs = button("JSON 내보내기", undefined, true);
-    const closeBugs = button("닫기", undefined, true);
+    const exportBugs = button(lt("JSON 내보내기"), undefined, true);
+    const closeBugs = button(lt("닫기"), undefined, true);
     closeBugs.onclick = () => bugsDialog.close();
     bugDialogActions.append(exportBugs, closeBugs);
     bugsDialog.append(bugsTitle, bugForm, bugList, bugDialogActions);
     document.body.append(bugsDialog);
 
     const commandsDialog = element("dialog", "lab-dialog command-dialog");
-    commandsDialog.append(element("h2", "lab-dialog__title", "명령"));
+    commandsDialog.append(element("h2", "lab-dialog__title", lt("명령")));
     const commandSearch = element("input");
     commandSearch.type = "search";
-    commandSearch.placeholder = "페이지 이동 또는 기능 실행";
-    commandSearch.setAttribute("aria-label", "명령 검색");
+    commandSearch.placeholder = lt("페이지 이동 또는 기능 실행");
+    commandSearch.setAttribute("aria-label", lt("명령 검색"));
     const commandList = element("div", "command-list");
-    const commandClose = button("닫기", undefined, true);
+    const commandClose = button(lt("닫기"), undefined, true);
     commandClose.onclick = () => commandsDialog.close();
     commandsDialog.append(commandSearch, commandList, commandClose);
     document.body.append(commandsDialog);
@@ -885,7 +1011,10 @@ async function start() {
         const referencesToOpen: ReferenceComparisonItem[] = [];
         for (const id of ids ?? selectedItems().map((item) => item.id)) {
             if (id.startsWith("board:")) {
-                referencesToOpen.push({ id, name: "Board asset" });
+                referencesToOpen.push({
+                    id,
+                    name: lt("보드 자산", "Board asset"),
+                });
                 continue;
             }
             const item =
@@ -902,7 +1031,10 @@ async function start() {
             item.name.toLocaleLowerCase().includes(query),
         );
         libraryGrid.replaceChildren();
-        selectionCount.textContent = `${selectedIds.size}개 선택`;
+        selectionCount.textContent = lt(
+            `${selectedIds.size}개 선택`,
+            `${selectedIds.size} selected`,
+        );
         for (const control of libraryActions.querySelectorAll<HTMLButtonElement>(
             "button[data-action]",
         )) {
@@ -912,7 +1044,7 @@ async function start() {
                 (selectedIds.size === 0 ||
                     (action === "compare" && selectedIds.size < 2));
             control.title = control.disabled
-                ? "먼저 이미지를 선택해 주세요."
+                ? lt("먼저 이미지를 선택해 주세요.")
                 : "";
         }
         for (const item of visible) {
@@ -927,7 +1059,10 @@ async function start() {
             const checkbox = element("input");
             checkbox.type = "checkbox";
             checkbox.checked = selectedIds.has(item.id);
-            checkbox.setAttribute("aria-label", `${item.name} 선택`);
+            checkbox.setAttribute(
+                "aria-label",
+                lt(`${item.name} 선택`, `Select ${item.name}`),
+            );
             checkbox.onchange = () => {
                 if (checkbox.checked) selectedIds.add(item.id);
                 else selectedIds.delete(item.id);
@@ -952,8 +1087,14 @@ async function start() {
                     "p",
                     "empty-state",
                     query
-                        ? "No images match this filter."
-                        : "No images yet. Import, drop, or paste an image.",
+                        ? lt(
+                              "조건에 맞는 이미지가 없습니다.",
+                              "No images match this filter.",
+                          )
+                        : lt(
+                              "아직 이미지가 없습니다. 가져오거나 놓거나 붙여넣으세요.",
+                              "No images yet. Import, drop, or paste an image.",
+                          ),
                 ),
             );
     }
@@ -970,11 +1111,11 @@ async function start() {
             if (!file.type.startsWith("image/")) continue;
             await api.importImage(
                 await fileDataURL(file),
-                file.name || "pasted-image.png",
+                file.name || lt("붙여넣은-이미지.png", "pasted-image.png"),
             );
         }
         await refreshLibrary();
-        message("이미지를 가져왔습니다.");
+        message(lt("이미지를 가져왔습니다."));
     }
 
     async function derive(
@@ -982,12 +1123,18 @@ async function start() {
         width?: number,
     ) {
         const source = selectedItems()[0];
-        if (!source) throw new Error("이미지를 먼저 선택해 주세요.");
+        if (!source) throw new Error(lt("이미지를 먼저 선택해 주세요."));
         const dataURL = await transformImage(source.dataURL, operation, width);
         const item = await api.deriveItem(source.id, dataURL, operation);
         selectedIds.clear();
         selectedIds.add(item.id);
         await refreshLibrary();
+        message(
+            lt(
+                "새 이미지를 보관함에 저장했습니다.",
+                "Saved a new image to the Library.",
+            ),
+        );
     }
 
     async function processSelection(
@@ -1005,9 +1152,9 @@ async function start() {
             return;
         }
         const source = selectedItems()[0];
-        if (!source) throw new Error("이미지를 먼저 선택해 주세요.");
+        if (!source) throw new Error(lt("이미지를 먼저 선택해 주세요."));
         const result = await process(operation, { dataURL: source.dataURL });
-        if (result.text) openTextResult("인식한 텍스트", result.text);
+        if (result.text) openTextResult(lt("인식한 텍스트"), result.text);
         if (result.dataURL) {
             const created = await api.deriveItem(
                 source.id,
@@ -1017,6 +1164,12 @@ async function start() {
             selectedIds.clear();
             selectedIds.add(created.id);
             await refreshLibrary();
+            message(
+                lt(
+                    "처리 결과를 보관함에 저장했습니다.",
+                    "Saved the processed result to the Library.",
+                ),
+            );
         }
         if (!result.text && !result.dataURL)
             throw new Error("The processor returned no usable result.");
@@ -1031,38 +1184,48 @@ async function start() {
         }
         const selected = selectedItems();
         if (!selected.length)
-            throw new Error("이미지를 하나 이상 선택해 주세요.");
+            throw new Error(lt("이미지를 하나 이상 선택해 주세요."));
         if (action === "add-board") {
             await board.addItems(selected.map((item) => item.id));
             navigate("editor");
+            message(
+                lt(
+                    "보드에 추가했습니다. Ctrl+Z로 되돌릴 수 있습니다.",
+                    "Added to the board. Press Ctrl+Z to undo.",
+                ),
+            );
         } else if (action === "compare") await openComparison();
         else if (action === "float")
             for (const item of selected)
                 await references.open(item.dataURL, item.name);
-        else if (action === "copy") await copyPNG(selected[0].dataURL);
-        else if (action === "composite")
+        else if (action === "copy") {
+            await copyPNG(selected[0].dataURL);
+            message(lt("PNG 이미지를 복사했습니다."));
+        } else if (action === "composite") {
             await copyPNG(await composite(selected));
-        else if (action === "download")
+            message(lt("PNG 이미지를 복사했습니다."));
+        } else if (action === "download") {
             for (const item of selected)
                 downloadDataURL(
                     item.dataURL,
                     item.name.endsWith(".png") ? item.name : `${item.name}.png`,
                 );
-        else if (action === "crop") {
+            message(lt("다운로드했습니다.", "Downloaded."));
+        } else if (action === "crop") {
             captureLab.setSource(selected[0].dataURL, selected[0].name, "crop");
             navigate("capture");
         } else if (action === "rotate" || action === "flip")
             await derive(action);
         else if (action === "resize") {
             const value = await requestText({
-                title: "새 이미지 너비 (px)",
+                title: lt("새 이미지 너비 (px)"),
                 value: String(selected[0].width),
                 maxLength: 5,
             });
             if (value === null) return;
             const width = Number(value);
             if (!Number.isFinite(width) || width < 1)
-                throw new Error("올바른 너비를 입력해 주세요.");
+                throw new Error(lt("올바른 너비를 입력해 주세요."));
             await derive("resize", width);
         } else if (["ocr", "cutout", "upscale", "redact"].includes(action)) {
             await processSelection(
@@ -1082,7 +1245,10 @@ async function start() {
             const chip = element(
                 "span",
                 "capability-chip",
-                `${name}: ${value.available ? "준비됨" : "사용 불가"}`,
+                lt(
+                    `${name}: ${value.available ? "준비됨" : "사용 불가"}`,
+                    `${name}: ${value.available ? "Ready" : "Unavailable"}`,
+                ),
             );
             chip.dataset.available = String(Boolean(value.available));
             if (value.message) chip.title = value.message;
@@ -1092,10 +1258,13 @@ async function start() {
 
     function renderFeatures() {
         const query = featureSearch.value.trim().toLocaleLowerCase();
-        const matching = features.filter((feature) =>
-            `${feature.name} ${feature.detail} ${feature.kind}`
-                .toLocaleLowerCase()
-                .includes(query),
+        const matching = features.filter(
+            (feature) =>
+                (kindFilter === "all" || feature.kind === kindFilter) &&
+                (!uncheckedOnly || !featureChecks[feature.id]) &&
+                `${feature.name} ${lt(feature.name)} ${feature.detail} ${lt(feature.detail)} ${feature.kind}`
+                    .toLocaleLowerCase()
+                    .includes(query),
         );
         featureGroups.replaceChildren();
         const grouped = new Map<string, LabFeature[]>();
@@ -1105,22 +1274,32 @@ async function start() {
                 feature,
             ]);
         for (const [group, groupFeatures] of grouped) {
-            const section = element("section", "feature-group");
-            section.append(element("h3", "feature-group__title", group));
+            const section = element("details", "feature-group");
+            section.open = true;
+            const summary = element("summary", "feature-group__title");
+            summary.append(
+                document.createTextNode(lt(group)),
+                element(
+                    "span",
+                    "feature-group__count",
+                    String(groupFeatures.length),
+                ),
+            );
+            section.append(summary);
             const list = element("div", "feature-list");
             for (const feature of groupFeatures) {
                 const row = element("article", "feature-row");
                 const copy = element("div", "feature-row__copy");
                 const title = element("div", "feature-row__title");
                 title.append(
-                    element("strong", undefined, feature.name),
+                    element("strong", undefined, lt(feature.name)),
                     element(
                         "span",
                         `kind kind--${feature.kind}`,
                         feature.kind === "native" ? "App only" : feature.kind,
                     ),
                 );
-                copy.append(title, element("p", undefined, feature.detail));
+                copy.append(title, element("p", undefined, lt(feature.detail)));
                 const actions = element("div", "feature-row__actions");
                 const checkLabel = element("label", "check-control");
                 const check = element("input");
@@ -1133,18 +1312,24 @@ async function start() {
                         JSON.stringify(featureChecks),
                     );
                 };
-                checkLabel.append(check, document.createTextNode("확인함"));
+                checkLabel.append(check, document.createTextNode(lt("확인함")));
                 actions.append(checkLabel);
                 if (feature.kind === "native")
                     actions.append(
                         element(
                             "span",
                             "app-only-copy",
-                            "운영체제 연동이 필요한 데스크톱 앱 전용 기능입니다.",
+                            lt(
+                                "운영체제 연동이 필요한 데스크톱 앱 전용 기능입니다.",
+                            ),
                         ),
                     );
                 else if (feature.action) {
-                    const runButton = button("열기 / 실행", undefined, true);
+                    const runButton = button(
+                        lt("열기 / 실행"),
+                        undefined,
+                        true,
+                    );
                     runButton.onclick = () => void runFeature(feature);
                     actions.append(runButton);
                 }
@@ -1178,8 +1363,10 @@ async function start() {
             ].includes(action)
         ) {
             navigate("editor");
-            await run(`${feature.name} 실행 중…`, async () =>
-                board.command(action),
+            const featureName = lt(feature.name);
+            await run(
+                lt(`${featureName} 실행 중…`, `Running ${featureName}…`),
+                async () => board.command(action),
             );
             return;
         }
@@ -1190,8 +1377,10 @@ async function start() {
                   ? "composite"
                   : action;
         navigate("library");
-        await run(`${feature.name} 실행 중…`, () =>
-            runLibraryAction(libraryAction),
+        const featureName = lt(feature.name);
+        await run(
+            lt(`${featureName} 실행 중…`, `Running ${featureName}…`),
+            () => runLibraryAction(libraryAction),
         );
     }
 
@@ -1219,7 +1408,13 @@ async function start() {
             bugList.append(row);
         }
         if (!reports.length)
-            bugList.append(element("p", "empty-state", "No reports saved."));
+            bugList.append(
+                element(
+                    "p",
+                    "empty-state",
+                    lt("저장된 기록이 없습니다.", "No reports saved."),
+                ),
+            );
     }
 
     bugForm.onsubmit = (event) => {
@@ -1268,7 +1463,11 @@ async function start() {
         for (const [route, label] of routeLabels.filter(([, label]) =>
             label.toLocaleLowerCase().includes(query),
         )) {
-            const item = button(`${label}(으)로 이동`, undefined, true);
+            const item = button(
+                lt(`${label}(으)로 이동`, `Go to ${label}`),
+                undefined,
+                true,
+            );
             item.onclick = () => {
                 commandsDialog.close();
                 navigate(route);
@@ -1279,10 +1478,12 @@ async function start() {
             .filter(
                 (item) =>
                     item.action &&
-                    item.name.toLocaleLowerCase().includes(query),
+                    `${item.name} ${lt(item.name)}`
+                        .toLocaleLowerCase()
+                        .includes(query),
             )
             .slice(0, 12)) {
-            const item = button(feature.name, undefined, true);
+            const item = button(lt(feature.name), undefined, true);
             item.onclick = () => {
                 commandsDialog.close();
                 void runFeature(feature);
@@ -1309,7 +1510,10 @@ async function start() {
     fileInput.onchange = () => {
         const files = fileInput.files;
         fileInput.value = "";
-        if (files) void run("Importing images…", () => importFiles(files));
+        if (files)
+            void run(lt("이미지를 가져오는 중…", "Importing images…"), () =>
+                importFiles(files),
+            );
     };
     search.oninput = renderLibrary;
     libraryActions.onclick = (event) => {
@@ -1318,8 +1522,12 @@ async function start() {
                 ? event.target.closest<HTMLElement>("[data-action]")
                 : null;
         if (target?.dataset.action)
-            void run(`Running ${target.textContent ?? "action"}…`, () =>
-                runLibraryAction(target.dataset.action as string),
+            void run(
+                lt(
+                    `${target.textContent ?? "작업"} 실행 중…`,
+                    `Running ${target.textContent ?? "action"}…`,
+                ),
+                () => runLibraryAction(target.dataset.action as string),
             );
     };
     for (const type of ["dragenter", "dragover"])
@@ -1335,8 +1543,9 @@ async function start() {
         event.preventDefault();
         delete dropzone.dataset.active;
         if (event.dataTransfer?.files)
-            void run("Importing dropped images…", () =>
-                importFiles(event.dataTransfer?.files ?? []),
+            void run(
+                lt("놓은 이미지를 가져오는 중…", "Importing dropped images…"),
+                () => importFiles(event.dataTransfer?.files ?? []),
             );
     });
     window.addEventListener("paste", (event) => {
@@ -1348,7 +1557,10 @@ async function start() {
                 : [],
         );
         if (files.length)
-            void run("Importing pasted image…", () => importFiles(files));
+            void run(
+                lt("붙여넣은 이미지 가져오는 중…", "Importing pasted image…"),
+                () => importFiles(files),
+            );
     });
     featureSearch.oninput = renderFeatures;
     bugButton.onclick = () => {
@@ -1374,7 +1586,10 @@ async function start() {
     resetButton.onclick = () => {
         if (
             !window.confirm(
-                "Delete all browser lab boards and images? This cannot be undone.",
+                lt(
+                    "브라우저 실험실의 보드와 이미지를 모두 삭제할까요? 되돌릴 수 없습니다.",
+                    "Delete all browser lab boards and images? This cannot be undone.",
+                ),
             )
         )
             return;
@@ -1443,7 +1658,7 @@ async function start() {
     const status = await api.status();
     if (status.readOnly)
         message(
-            status.error ?? "브라우저 저장소를 읽기 전용으로 열었습니다.",
+            status.error ?? lt("브라우저 저장소를 읽기 전용으로 열었습니다."),
             true,
         );
     try {
@@ -1460,11 +1675,14 @@ async function start() {
         const ready = Object.values(capabilityState).filter(
             (value) => value.available,
         ).length;
-        processorStatus.textContent = `로컬 도구 ${ready}/${Object.keys(capabilityState).length}개 준비됨`;
+        processorStatus.textContent = lt(
+            `로컬 도구 ${ready}/${Object.keys(capabilityState).length}개 준비됨`,
+            `Local tools ${ready}/${Object.keys(capabilityState).length} ready`,
+        );
         processorStatus.dataset.ready = String(ready > 0);
         renderCapabilities();
     } catch (error) {
-        processorStatus.textContent = "로컬 도구를 사용할 수 없음";
+        processorStatus.textContent = lt("로컬 도구를 사용할 수 없음");
         processorStatus.title = errorText(error);
         processorStatus.dataset.ready = "false";
     }
@@ -1516,10 +1734,17 @@ function renderFatal(error: unknown) {
     const mount = document.querySelector<HTMLElement>("#app") ?? document.body;
     const panel = element("main", "fatal-state");
     panel.append(
-        element("h1", undefined, "Browser lab could not start"),
+        element(
+            "h1",
+            undefined,
+            lt(
+                "브라우저 실험실을 시작할 수 없습니다",
+                "Browser lab could not start",
+            ),
+        ),
         element("p", undefined, errorText(error)),
     );
-    const retry = button("Retry");
+    const retry = button(lt("다시 시도", "Retry"));
     retry.onclick = () => location.reload();
     panel.append(retry);
     mount.replaceChildren(panel);

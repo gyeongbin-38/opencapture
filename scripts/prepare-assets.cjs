@@ -22,7 +22,11 @@ async function sha256File(filePath) {
 }
 
 function assertRelativePath(value, label) {
-    if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+    if (
+        typeof value !== "string" ||
+        value.length === 0 ||
+        value.includes("\0")
+    ) {
         throw new Error(`${label} must be a non-empty path`);
     }
     const portable = value.replaceAll("\\", "/");
@@ -133,10 +137,14 @@ async function downloadAsset(asset, destination, fetchImpl) {
 
 function openZip(zipPath) {
     return new Promise((resolve, reject) => {
-        yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (error, zip) => {
-            if (error) reject(error);
-            else resolve(zip);
-        });
+        yauzl.open(
+            zipPath,
+            { lazyEntries: true, autoClose: false },
+            (error, zip) => {
+                if (error) reject(error);
+                else resolve(zip);
+            },
+        );
     });
 }
 
@@ -172,16 +180,23 @@ async function extractSelectedFiles(asset, zipPath, stagingRoot) {
                 try {
                     entryCount += 1;
                     if (entryCount > 10000) {
-                        throw new Error(`${asset.id}: ZIP contains too many entries`);
+                        throw new Error(
+                            `${asset.id}: ZIP contains too many entries`,
+                        );
                     }
                     const entryPath = normalizeZipEntry(entry.fileName);
                     totalUncompressed += entry.uncompressedSize;
                     if (totalUncompressed > asset.download.maxBytes * 20) {
-                        throw new Error(`${asset.id}: ZIP expansion limit exceeded`);
+                        throw new Error(
+                            `${asset.id}: ZIP expansion limit exceeded`,
+                        );
                     }
-                    const unixType = (entry.externalFileAttributes >>> 16) & 0o170000;
+                    const unixType =
+                        (entry.externalFileAttributes >>> 16) & 0o170000;
                     if (unixType === 0o120000) {
-                        throw new Error(`${asset.id}: symbolic links are not allowed in ZIP files`);
+                        throw new Error(
+                            `${asset.id}: symbolic links are not allowed in ZIP files`,
+                        );
                     }
                     const expected = wanted.get(entryPath);
                     if (!expected || entryPath.endsWith("/")) {
@@ -189,7 +204,9 @@ async function extractSelectedFiles(asset, zipPath, stagingRoot) {
                         return;
                     }
                     if (expected.found) {
-                        throw new Error(`${asset.id}: duplicate ZIP entry ${entryPath}`);
+                        throw new Error(
+                            `${asset.id}: duplicate ZIP entry ${entryPath}`,
+                        );
                     }
                     if (entry.uncompressedSize !== expected.size) {
                         throw new Error(
@@ -200,11 +217,20 @@ async function extractSelectedFiles(asset, zipPath, stagingRoot) {
                     const stagedPath = path.join(stagingRoot, expected.path);
                     fsp.mkdir(path.dirname(stagedPath), { recursive: true })
                         .then(() => openEntryStream(zip, entry))
-                        .then((stream) => pipeline(stream, fs.createWriteStream(stagedPath, { flags: "wx" })))
+                        .then((stream) =>
+                            pipeline(
+                                stream,
+                                fs.createWriteStream(stagedPath, {
+                                    flags: "wx",
+                                }),
+                            ),
+                        )
                         .then(() => fileMatches(stagedPath, expected))
                         .then((matches) => {
                             if (!matches) {
-                                throw new Error(`${asset.id}: extracted hash mismatch for ${entryPath}`);
+                                throw new Error(
+                                    `${asset.id}: extracted hash mismatch for ${entryPath}`,
+                                );
                             }
                             zip.readEntry();
                         })
@@ -221,7 +247,9 @@ async function extractSelectedFiles(asset, zipPath, stagingRoot) {
 
     for (const [entryPath, expected] of wanted) {
         if (!expected.found) {
-            throw new Error(`${asset.id}: expected ZIP entry is missing: ${entryPath}`);
+            throw new Error(
+                `${asset.id}: expected ZIP entry is missing: ${entryPath}`,
+            );
         }
     }
 }
@@ -242,11 +270,14 @@ async function prepareAsset(asset, options) {
         return "skipped";
     }
     const files = outputFiles(asset);
-    for (const file of files) assertRelativePath(file.path, `${asset.id} output`);
+    for (const file of files)
+        assertRelativePath(file.path, `${asset.id} output`);
     if (
         (
             await Promise.all(
-                files.map((file) => fileMatches(path.join(rootDir, file.path), file)),
+                files.map((file) =>
+                    fileMatches(path.join(rootDir, file.path), file),
+                ),
             )
         ).every(Boolean)
     ) {
@@ -284,7 +315,9 @@ async function prepareAsset(asset, options) {
 async function prepareAssets(options = {}) {
     const rootDir = options.rootDir ?? projectRoot;
     const manifestPath = options.manifestPath ?? defaultManifestPath;
-    const manifest = options.manifest ?? JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+    const manifest =
+        options.manifest ??
+        JSON.parse(await fsp.readFile(manifestPath, "utf8"));
     if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.assets)) {
         throw new Error("Unsupported assets manifest schema");
     }
@@ -301,7 +334,10 @@ async function prepareAssets(options = {}) {
     };
     const results = [];
     for (const asset of manifest.assets) {
-        results.push({ id: asset.id, status: await prepareAsset(asset, context) });
+        results.push({
+            id: asset.id,
+            status: await prepareAsset(asset, context),
+        });
     }
     return results;
 }
