@@ -93,7 +93,8 @@
 }
 #capture_redact_review {
     width: min(400px, 90vw);
-    height: auto !important;
+    height: fit-content !important;
+    max-height: calc(100vh - 40px) !important;
     padding: var(--sp-4);
     border: 1px solid #ffffff24;
     border-radius: 14px;

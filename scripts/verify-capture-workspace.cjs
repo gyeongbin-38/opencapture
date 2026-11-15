@@ -951,12 +951,22 @@ app.whenReady().then(async () => {
         );
         const redactReview = await clip(`(() => {
             const dialog=document.querySelector("#capture_redact_review");
+            const rect=dialog.getBoundingClientRect();
+            const cs=getComputedStyle(dialog);
+            const kids=[...dialog.children].map(k=>({tag:k.tagName,cls:k.className,h:k.getBoundingClientRect().height}));
             return {open:dialog.open, candidates:dialog.querySelectorAll(".capture-review-line").length,
+                rect:{w:rect.width,h:rect.height},
+                computed:{display:cs.display,height:cs.height,minHeight:cs.minHeight,maxHeight:cs.maxHeight,position:cs.position,alignItems:cs.alignItems,flexDirection:cs.flexDirection},
+                kids,
                 status:document.querySelector(".capture-workspace-status").textContent};
         })()`);
         assert(
             redactReview.open && redactReview.candidates > 0,
             `Fixture email was not offered for redaction review: ${JSON.stringify(redactReview)}.`,
+        );
+        assert(
+            !redactReview.rect || redactReview.rect.h <= 400,
+            `Redact review dialog is oversized for ${redactReview.candidates} candidates: ${JSON.stringify(redactReview)}.`,
         );
         await shot(capture, "redaction-candidate-review");
         await clip(
