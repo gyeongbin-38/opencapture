@@ -1519,10 +1519,24 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     let ocrJobTimer: ReturnType<typeof setTimeout> | undefined;
     let ocrWorkerReady = false;
     const ocrQueueFull = () => ocrQueue.length + (ocrBusy ? 1 : 0) >= 40;
+    let ocrWorkerIdleTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleOcrWorkerIdleTeardown = () => {
+        if (ocrWorkerIdleTimer) clearTimeout(ocrWorkerIdleTimer);
+        ocrWorkerIdleTimer = setTimeout(() => {
+            if (ocrQueue.length || ocrBusy) return;
+            ocrWorkerReady = false;
+            ocrWorker?.destroy();
+            ocrWorker = null;
+        }, 10_000);
+        ocrWorkerIdleTimer.unref();
+    };
     const pumpOcrQueue = () => {
         if (ocrBusy) return;
         const job = ocrQueue.shift();
-        if (!job) return;
+        if (!job) {
+            scheduleOcrWorkerIdleTeardown();
+            return;
+        }
         if (!existsSync(job.path)) {
             job.settle?.({
                 jobId: job.jobId,
@@ -1539,6 +1553,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         }
         ocrCurrentJob = job;
         ocrBusy = true;
+        if (ocrWorkerIdleTimer) clearTimeout(ocrWorkerIdleTimer);
         if (ocrJobTimer) clearTimeout(ocrJobTimer);
         ocrJobTimer = setTimeout(() => {
             ocrJobTimer = undefined;

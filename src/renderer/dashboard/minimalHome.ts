@@ -93,6 +93,7 @@ export function createMinimalHome(
     const workspaceRow = document.createElement("div");
     workspaceRow.className = "minimal-pin-workspaces";
     pinsSection.append(pinsHeader, workspaceRow, pinsGrid);
+    pinsSection.hidden = true;
 
     const continueSection = document.createElement("section");
     continueSection.className = "minimal-continue";
@@ -103,6 +104,7 @@ export function createMinimalHome(
     const continueButton = control(t("이어가기"), "minimal-continue-button");
     continueButton.dataset.boardContinue = "true";
     continueSection.append(continueCopy, continueButton);
+    continueSection.hidden = true;
 
     const convertSection = document.createElement("section");
     convertSection.className = "minimal-convert-history";

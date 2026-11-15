@@ -179,7 +179,7 @@ button()
     })
     .addInto(sidebarTools);
 button()
-    .class("ghost-button", "compact", "icon-button")
+    .class("ghost-button", "compact", "icon-button", "shortcut-button")
     .attr({
         type: "button",
         title: t("단축키 보기"),
@@ -5370,6 +5370,12 @@ function openModal(dialog: HTMLDialogElement) {
     modalBackdrop.el.hidden = false;
     document.body.classList.add("modal-open");
     dialog.showModal();
+    if (!dialog.contains(document.activeElement))
+        dialog
+            .querySelector<HTMLElement>(
+                "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+            )
+            ?.focus();
 }
 
 const allDialogs = [

@@ -47,7 +47,7 @@ function initStyle(
     setCSSVar("--main-font", 字体.主要字体);
     setCSSVar("--monospace", 字体.等宽字体 || monoFont.join(","));
 
-    const activeLanguage = renderSendSync("active_language", []);
+    const activeLanguage = renderSendSync("active_language", []) ?? "zh-HANS";
     lan(activeLanguage);
     const resolvedLan = matchFitLan(activeLanguage, getLans()) ?? "zh-HANS";
     document.documentElement.lang = resolvedLan;
