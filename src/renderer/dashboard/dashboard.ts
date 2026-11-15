@@ -4413,7 +4413,7 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
         .class("shortcut-edit")
         .attr({
             readOnly: true,
-            value: shortcut.custom ?? shortcut.requested ?? "",
+            value: formatShortcut(shortcut.custom ?? shortcut.requested ?? ""),
             placeholder: t("단축키 없음"),
             ariaLabel: `${shortcut.label} 단축키`,
             title: t(
@@ -4433,7 +4433,9 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
         e.preventDefault();
         e.stopPropagation();
         if (e.key === "Escape") {
-            field.el.value = shortcut.custom ?? shortcut.requested ?? "";
+            field.el.value = formatShortcut(
+                shortcut.custom ?? shortcut.requested ?? "",
+            );
             field.el.blur();
             return;
         }
@@ -4456,21 +4458,24 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
             setTimeout(() => field.el.classList.remove("invalid"), 400);
             return;
         }
-        field.el.value = accel;
+        field.el.value = formatShortcut(accel);
         field.el.blur();
         await rebindShortcut(shortcut, accel);
     });
     field.on("blur", () => {
         if (!field.el.value && (shortcut.custom ?? shortcut.requested))
-            field.el.value = shortcut.custom ?? shortcut.requested ?? "";
+            field.el.value = formatShortcut(
+                shortcut.custom ?? shortcut.requested ?? "",
+            );
     });
-    const status = !shortcut.available
-        ? `충돌 · ${formatShortcut(shortcut.requested)}`
-        : shortcut.active === null
-          ? t("꺼짐")
-          : shortcut.custom != null
-            ? `기본: ${formatShortcut(shortcut.default || shortcut.requested || "—")}`
-            : formatShortcut(shortcut.active);
+    const status =
+        !shortcut.available && shortcut.requested
+            ? `충돌 · ${formatShortcut(shortcut.requested)}`
+            : shortcut.active === null
+              ? t("꺼짐")
+              : shortcut.custom != null
+                ? `기본: ${formatShortcut(shortcut.default || shortcut.requested || "—")}`
+                : formatShortcut(shortcut.active);
     return view("x")
         .class("runtime-shortcut-row")
         .add([
