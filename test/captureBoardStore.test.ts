@@ -205,7 +205,7 @@ describe("capture board store", () => {
             sourceAssetId: node.assetId,
         });
         expect(store.load(board.id)).toEqual(board);
-        expect(() =>
+        await expect(
             store.cutout(board.id, node.id, "stale-source"),
         ).rejects.toThrow(/no longer matches/i);
         const disposable = await store.cutout(

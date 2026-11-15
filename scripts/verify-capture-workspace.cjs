@@ -228,7 +228,7 @@ app.whenReady().then(async () => {
             await until(
                 () =>
                     recoveredRun(
-                        `window.captureDraftBridge?.info().id === ${JSON.stringify(plan.firstId)} && !document.querySelector("#selection_handles").hidden`,
+                        `window.captureDraftBridge?.info().id === ${JSON.stringify(plan.firstId)} && document.querySelector("#selection_handles")?.hidden === false`,
                     ),
                 "Restarted editor did not bind the recovered draft.",
             );
@@ -447,7 +447,7 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 run(
-                    'document.querySelector(".bundle-dialog").open && document.querySelectorAll(".bundle-order-chip").length === 3',
+                    'document.querySelector(".bundle-dialog")?.open === true && document.querySelectorAll(".bundle-order-chip").length === 3',
                 ),
             "Bundle composer did not open with three images.",
         );
@@ -490,7 +490,7 @@ app.whenReady().then(async () => {
             'document.querySelector(".bundle-dialog [data-role=copy]").click()',
         );
         await until(
-            () => run('!document.querySelector(".bundle-dialog").open'),
+            () => run('document.querySelector(".bundle-dialog")?.open === false'),
             "Bundle copy did not finish.",
         );
         const bundleImage = await clipboardPng();
@@ -520,6 +520,9 @@ app.whenReady().then(async () => {
         );
         const clip = (code) =>
             capture.webContents.executeJavaScript(code, true);
+        await clip(
+            `window.addEventListener("error",e=>console.error("CLIP_STACK:"+(e.error&&e.error.stack||e.message)),true)`,
+        ).catch(() => {});
         await until(
             () =>
                 clip(
@@ -576,7 +579,7 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 clip(
-                    '!document.querySelector("#selection_handles").hidden && Number(document.querySelector(".capture-dimensions input").value) > 10',
+                    'document.querySelector("#selection_handles")?.hidden === false && Number(document.querySelector(".capture-dimensions input")?.value) > 10',
                 ),
             "First selection was not created.",
         );
@@ -878,7 +881,7 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 clip(
-                    `window.captureDraftBridge.info().id === ${JSON.stringify(firstStage.id)} && !document.querySelector("#selection_handles").hidden`,
+                    `window.captureDraftBridge.info().id === ${JSON.stringify(firstStage.id)} && document.querySelector("#selection_handles")?.hidden === false`,
                 ),
             "First draft did not reopen in the capture editor.",
         );
@@ -941,7 +944,7 @@ app.whenReady().then(async () => {
                 clip(`(() => {
                     const review=document.querySelector("#capture_redact_review");
                     const status=document.querySelector(".capture-workspace-status");
-                    return review.open || (!status.hidden && (status.classList.contains("has-error") || /찾지 못|변경되었습니다/.test(status.textContent)));
+                    return (review && review.open) || (status && !status.hidden && (status.classList.contains("has-error") || /찾지 못|변경되었습니다/.test(status.textContent)));
                 })()`),
             "Smart-redact review did not return a visible result.",
             600,
@@ -983,9 +986,12 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 clip(
-                    'document.querySelector("#radial_menu").style.display === "block" && document.querySelectorAll(".radial_item").length === 7',
+                    'document.querySelector("#radial_menu")?.style.display === "block" && document.querySelectorAll(".radial_item").length === 7',
                 ),
             "Right-button radial menu did not open.",
+        );
+        await clip(
+            `window.__pm=[];["pointermove","pointerup","pointerdown"].forEach(t=>document.addEventListener(t,e=>window.__pm.push({t,b:e.buttons,pid:e.pointerId,x:e.clientX,y:e.clientY}),true))`,
         );
         const radialOrder = await clip(
             '[...document.querySelectorAll(".radial_item")].map(node=>node.dataset.captureAction)',
@@ -1002,14 +1008,22 @@ app.whenReady().then(async () => {
             type: "mouseMove",
             x: drawTarget.x,
             y: drawTarget.y,
+            modifiers: ["rightButtonDown"],
         });
-        await until(
+        const gestureProbe = await until(
             () =>
                 clip(
-                    'document.querySelector(".radial_item[data-capture-action=draw]").classList.contains("is-gesture-target")',
+                    `(()=>{const hit=document.querySelector(".radial_item[data-capture-action=draw]")?.classList.contains("is-gesture-target");return hit?{hit,pm:window.__pm}:null})()`,
                 ),
             "Right-hold gesture did not highlight its nearest tool.",
-        );
+            30,
+        ).catch(async () => {
+            report.gestureDebug = await clip(
+                `({items:document.querySelectorAll(".radial_item").length,display:document.querySelector("#radial_menu")?.style.display,pm:window.__pm})`,
+            );
+            return null;
+        });
+        assert(gestureProbe, "Right-hold gesture did not highlight its nearest tool.");
         assert(
             drawTarget.animation === "none",
             `Reduced motion left radial animation enabled: ${drawTarget.animation}.`,
@@ -1025,7 +1039,7 @@ app.whenReady().then(async () => {
         await until(
             () =>
                 clip(
-                    'getComputedStyle(document.querySelector("#draw_bar")).opacity === "1"',
+                    'document.querySelector("#draw_bar") && getComputedStyle(document.querySelector("#draw_bar")).opacity === "1"',
                 ),
             "Right-hold release did not execute the highlighted annotation tool.",
         );

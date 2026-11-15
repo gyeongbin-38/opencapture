@@ -244,18 +244,24 @@ const store = new Map([
     ["ding_dock", [0, 0]],
 ]);
 ipcMain.on("store", (event, request) => {
-    if (request?.type === "get") event.returnValue = store.get(request.path);
+    if (request?.type === "get")
+        event.returnValue = store.get(request.path) ?? null;
     else if (request?.type === "set") {
         store.set(request.path, request.value);
         event.returnValue = undefined;
     } else if (request?.type === "getAll") event.returnValue = {};
     else if (request?.type === "path") event.returnValue = profile;
 });
-ipcMain.on("ipc", (_event, key, data) => {
+ipcMain.on("ipc", (event, key, data) => {
     if (key === "dingQueryResult") {
         latestPins = data[0];
         pinQueryRevision += 1;
     }
+    if (key === "active_language") {
+        event.returnValue = store.get("语言.语言") ?? "zh-HANS";
+        return;
+    }
+    if (event.returnValue === undefined) event.returnValue = null;
 });
 ipcMain.handle("ding:session:get", () => sessionRestore);
 ipcMain.handle("ding:session:save", (_event, pins) => {

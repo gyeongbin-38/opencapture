@@ -10,6 +10,58 @@ const fixtures = [
     path.join(root, ".evidence/red.png"),
     path.join(root, ".evidence/blue.png"),
 ];
+// auto-cutout 테스트는 라이브러리 dedup을 통과해야 하므로 고유 콘텐츠의 시드가 필요
+const zlib = require("node:zlib");
+const crcTable = (() => {
+    const table = [];
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        table[n] = c;
+    }
+    return table;
+})();
+const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+};
+const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+};
+const makeSeedPng = () => {
+    const w = 96;
+    const h = 96;
+    const rows = Buffer.alloc(h * (1 + w * 3));
+    for (let y = 0; y < h; y++) {
+        const row = y * (1 + w * 3);
+        for (let x = 0; x < w; x++) {
+            const i = row + 1 + x * 3;
+            const inCircle = (x - 48) ** 2 + (y - 48) ** 2 < 24 * 24;
+            rows[i] = inCircle ? 40 : 220;
+            rows[i + 1] = inCircle ? 200 : 60;
+            rows[i + 2] = inCircle ? 60 : 40;
+        }
+    }
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0);
+    ihdr.writeUInt32BE(h, 4);
+    ihdr[8] = 8;
+    ihdr[9] = 2;
+    return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk("IHDR", ihdr),
+        chunk("IDAT", zlib.deflateSync(rows)),
+        chunk("IEND", Buffer.alloc(0)),
+    ]);
+};
+const cutoutSeed = path.join(root, ".evidence/auto-cutout-seed.png");
+if (!fs.existsSync(cutoutSeed)) fs.writeFileSync(cutoutSeed, makeSeedPng());
 const items = Array.from({ length: 1005 }, (_, i) => ({
     id: `fixture-${i}`,
     name: `fixture-${i}.png`,
@@ -152,7 +204,7 @@ const timer = setTimeout(() => {
         });
         await call("DOM.setFileInputFiles", {
             nodeId: file.nodeId,
-            files: [fixtures[0]],
+            files: [cutoutSeed],
         });
         for (let i = 0; i < 100; i++) {
             state = await evaluate("window.openCapture.getState()");
@@ -164,7 +216,7 @@ const timer = setTimeout(() => {
             "Auto-cutout failed to preserve original and add derivative",
         );
         await evaluate(
-            'Array.from(document.querySelectorAll("nav button")).find(b=>b.innerText.includes("라이브러리")).click()',
+            'document.querySelector(\'.nav-button[data-page="library"]\').click()',
         );
         await delay(300);
         let screenshot = await call("Page.captureScreenshot");
@@ -203,7 +255,7 @@ const timer = setTimeout(() => {
             expression: 'window.openCapture.action("hide-window")',
         }).catch(() => {});
         for (let i = 0; i < 80 && child.exitCode === null; i++)
-            await delay(100);
+            await delay(500);
         assert(
             child.exitCode === 0,
             "Broker editor did not quit after windows closed",

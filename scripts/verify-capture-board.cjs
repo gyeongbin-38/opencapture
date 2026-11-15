@@ -642,14 +642,14 @@ app.whenReady().then(async () => {
         }
 
         const minimal = await run(
-            `(() => ({capture:document.querySelectorAll(".minimal-capture-button").length,recents:document.querySelectorAll(".minimal-recent-card").length,collapsed:document.querySelector(".app-shell").classList.contains("nav-collapsed"),visibleTools:[...document.querySelectorAll(".minimal-home button")].filter(button=>getComputedStyle(button).display!=="none").length,visibleLegacy:[...document.querySelectorAll(".legacy-home-action,.legacy-tools-close")].filter(node=>getComputedStyle(node).display!=="none").length}))()`,
+            `(() => ({capture:document.querySelectorAll(".minimal-capture-button").length,recents:document.querySelectorAll(".minimal-recent-card").length,collapsed:document.querySelector(".app-shell").classList.contains("nav-collapsed"),visibleTools:[...document.querySelectorAll(".minimal-home button")].filter(button=>button.checkVisibility({checkVisibilityCSS:true})).length,visibleLegacy:[...document.querySelectorAll(".legacy-home-action,.legacy-tools-close")].filter(node=>node.checkVisibility({checkVisibilityCSS:true})).length}))()`,
         );
         assert(
             minimal.capture === 1 &&
                 minimal.visibleTools <= 4 &&
                 minimal.collapsed &&
                 minimal.visibleLegacy === 0,
-            "Home is not minimal/collapsed",
+            `Home is not minimal/collapsed: ${JSON.stringify(minimal)}`,
         );
         await shot(dashboard, "minimal-home");
         await run(

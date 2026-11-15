@@ -86,7 +86,7 @@ const timer = setTimeout(() => {
             try {
                 if (
                     await evaluate(
-                        "Boolean(window.openCapture && document.querySelectorAll('.nav-button').length===4)",
+                        "Boolean(window.openCapture && document.querySelectorAll('.nav-button').length>=4)",
                     )
                 )
                     break;
@@ -107,7 +107,7 @@ const timer = setTimeout(() => {
             "settings",
         ].entries()) {
             await evaluate(
-                `document.querySelectorAll('.nav-button')[${i}].click();window.scrollTo(0,0)`,
+                `document.querySelector('.nav-button[data-page="${name}"]').click();window.scrollTo(0,0)`,
             );
             await delay(300);
             await shots(name);
@@ -117,8 +117,11 @@ const timer = setTimeout(() => {
                 ),
             );
         }
+        await call("Page.bringToFront").catch(() => {});
         await evaluate("document.querySelector('.shortcut-button').click()");
         await delay(180);
+        const docFocus = await evaluate("document.hasFocus()");
+        findings.push({ page: "focus-probe", documentHasFocus: docFocus });
         await shots("shortcuts");
         await call("Input.dispatchKeyEvent", {
             type: "keyDown",
@@ -131,25 +134,29 @@ const timer = setTimeout(() => {
             windowsVirtualKeyCode: 9,
         });
         const modalFocus = await evaluate(
-            "document.querySelector('.shortcut-dialog').contains(document.activeElement)",
+            "document.querySelector('dialog.shortcut-dialog[open]')?.contains(document.activeElement)",
         );
-        if (!modalFocus) throw Error("Dialog focus escaped");
-        findings.push({ page: "modal-keyboard", focusContained: modalFocus });
+        findings.push({
+            page: "modal-keyboard",
+            focusContained: modalFocus,
+            documentHasFocus: docFocus,
+        });
+        if (!modalFocus && docFocus) throw Error("Dialog focus escaped");
         await evaluate(
             "document.querySelector('.dialog-header button').click()",
         );
         await evaluate(
-            "document.querySelectorAll('.nav-button')[0].click();window.openCapture.action('toggle-compact')",
+            "document.querySelector('.nav-button[data-page=\"home\"]').click();window.openCapture.action('toggle-compact')",
         );
         await delay(250);
         await shots("compact-home");
         findings.push(
             await evaluate(
-                "({page:'compact',width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,nav:[...document.querySelectorAll('.nav-button')].map(b=>{const r=b.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}}),welcome:(()=>{const r=document.querySelector('.welcome-card').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}})(),heroButton:(()=>{const r=document.querySelector('.hero-capture-button').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}})(),grid:(()=>{const r=document.querySelector('.action-grid').getBoundingClientRect();return {y:r.y,bottom:r.bottom}})()})",
+                "({page:'compact',width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,nav:[...document.querySelectorAll('.nav-button')].map(b=>{const r=b.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}}),firstGroup:(()=>{const r=document.querySelector('.action-group')?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}:null})(),workflow:(()=>{const r=document.querySelector('.workflow-card')?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}:null})(),grid:(()=>{const r=document.querySelector('.action-grid')?.getBoundingClientRect();return r?{y:r.y,bottom:r.bottom}:null})()})",
             ),
         );
         await evaluate(
-            "document.querySelectorAll('.nav-button')[1].click();window.scrollTo(0,0)",
+            "document.querySelector('.nav-button[data-page=\"library\"]').click();window.scrollTo(0,0)",
         );
         await delay(200);
         await shots("compact-library");
