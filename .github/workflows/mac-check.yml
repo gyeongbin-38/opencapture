@@ -1,0 +1,46 @@
+name: mac-check
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+    workflow_dispatch:
+
+jobs:
+    darwin:
+        runs-on: macos-15
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10.17.0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Fetch pinned assets
+              run: node scripts/prepare-assets.cjs
+
+            - name: macOS configuration readiness
+              run: node scripts/pack-macos.cjs --check
+
+            - name: Build app
+              run: pnpm run build
+
+            - name: Package unsigned darwin app (arm64)
+              env:
+                  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+              run: node scripts/pack-macos.cjs --arch arm64
+
+            - name: Upload darwin package
+              uses: actions/upload-artifact@v4
+              with:
+                  name: opencapture-darwin-arm64
+                  path: release/macos/darwin/
+                  if-no-files-found: warn

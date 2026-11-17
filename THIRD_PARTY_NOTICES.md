@@ -6,14 +6,23 @@ and destination for each file. The build fails if any of those checks do not mat
 
 ## eSearch OCR model releases
 
-- Components: PaddleOCR v6 small detection/recognition model, Korean recognition
-  model and dictionary, and document-orientation classifier.
+- Components: PaddleOCR v6 small detection/recognition model and
+  document-orientation classifier.
 - Upstream: https://github.com/xushengfeng/eSearch-OCR
 - Release assets: 4.0.0 and 8.1.0, as pinned in `assets-manifest.json`.
 - Repository license: Apache License 2.0.
 - Model ancestry: PaddleOCR/PaddlePaddle. The release repository identifies the
   distributed model project under Apache-2.0; retain upstream notices when adding
   or replacing models.
+
+## RapidOCR Korean recognition model
+
+- Components: PP-OCRv5 Korean recognition model (`korean_PP-OCRv5_rec_mobile.onnx`)
+  and matching dictionary, redistributed as ONNX by RapidOCR v3.10.0.
+- Upstream: https://github.com/RapidAI/RapidOCR (Apache-2.0); model ancestry
+  PaddleOCR/PaddlePaddle (Apache-2.0).
+- Distribution: https://www.modelscope.cn/models/RapidAI/RapidOCR, pinned by
+  SHA-256 and size in `assets-manifest.json`.
 
 ## eSearch segmentation model
 
