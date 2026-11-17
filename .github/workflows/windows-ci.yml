@@ -1,0 +1,53 @@
+name: windows-ci
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+    workflow_dispatch:
+
+jobs:
+    windows:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10.17.0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: pnpm
+
+            - name: Enable corepack
+              run: corepack enable
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Fetch pinned assets
+              run: node scripts/prepare-assets.cjs
+
+            - name: Typecheck
+              run: pnpm run typecheck
+
+            - name: Lint
+              run: pnpm run lint
+
+            - name: Unit tests
+              run: pnpm test
+
+            - name: Build app
+              run: pnpm run build
+
+            - name: Package unpacked windows app
+              run: node scripts/pack-local.cjs
+
+            - name: Upload windows package
+              uses: actions/upload-artifact@v4
+              with:
+                  name: opencapture-win-unpacked
+                  path: release/
+                  if-no-files-found: warn

@@ -334,7 +334,7 @@ try {
 
     const pageT = await waitTarget(
         DEBUG_PORT,
-        (t) => t.url && t.url.includes("videoEditor.html"),
+        (t) => t.url?.includes("videoEditor.html"),
         30000,
     );
     page = await Session.connect(pageT.webSocketDebuggerUrl);
@@ -495,7 +495,7 @@ try {
     await sleep(1500);
     dumpMsgs("播放3s");
     const playInfo = await page.eval(
-        `JSON.stringify({ starts: window.__starts, create: window.__createCount })`,
+        "JSON.stringify({ starts: window.__starts, create: window.__createCount })",
     );
     const paused = await page.eval(`
         (() => {
@@ -619,7 +619,7 @@ try {
     }
 } catch (e) {
     console.log("FATAL:", e);
-    result.fail.push("fatal: " + e.message);
+    result.fail.push(`fatal: ${e.message}`);
 } finally {
     try {
         const cfg = JSON.parse(
