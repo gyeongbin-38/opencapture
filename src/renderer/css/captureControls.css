@@ -329,6 +329,13 @@ body {
 .radial_item:hover {
     background: var(--surface-hover);
 }
+.radial_item.is-primary {
+    background: var(--accent) !important;
+    color: #18181b;
+}
+.radial_item.is-primary:hover {
+    background: #ffffff !important;
+}
 .radial-halo {
     position: fixed;
     z-index: 118;

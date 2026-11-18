@@ -1296,6 +1296,7 @@ async function runCopy(closeAfterCopy = true) {
         if (generation !== captureInitSequence) return false;
         playDoneSound();
         if (closeAfterCopy) toolsX.close.f();
+        else captureWorkspace?.showStatus(t("이미지를 복사했습니다."));
         return true;
     } catch (error) {
         captureWorkspace?.showError(error);
@@ -1717,6 +1718,7 @@ function clipStart(e: MouseEvent, inRect: boolean) {
         isShowBars = true;
         showBars(true);
         followBar({ x: e.clientX, y: e.clientY });
+        void completeSelectionAction();
         return;
     }
     selectionBeforeDrag = {
@@ -5183,6 +5185,10 @@ function openRadial(cx: number, cy: number, page = 0) {
             .class("radial_item")
             .attr({ role: "menuitem" })
             .style({ left: `${point.x}px`, top: `${point.y}px` });
+        control.el.classList.toggle(
+            "is-primary",
+            item.id === capturePrimaryToolId(),
+        );
         control.el.style.setProperty(
             "--radial-from-x",
             `${layout.center.x - point.x}px`,
@@ -6404,6 +6410,7 @@ hotkeys("s", () => {
     rectSelect = false;
     finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
     drawClipRect();
+    void completeSelectionAction();
 });
 
 const whHotKeyMap = {
