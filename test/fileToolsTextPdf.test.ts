@@ -227,8 +227,9 @@ describe("plain text PDF renderer", () => {
 
         state.printPromise = pdf(201);
         const running = render("too many pages");
-        const window = await waitForPrint();
-        await expect(running).rejects.toThrow("200-page");
+        const rejection = expect(running).rejects.toThrow("200-page");
+        await waitForPrint();
+        await rejection;
         await expect(fs.readdir(outputDir)).resolves.toEqual([]);
     });
 });
