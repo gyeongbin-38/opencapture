@@ -24,10 +24,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $file = Get-Item -LiteralPath $outputPath
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+$hashStream = [System.IO.File]::OpenRead($outputPath)
+try {
+    $hashText = ([System.BitConverter]::ToString(
+        $sha256.ComputeHash($hashStream)
+    )).Replace("-", "").ToLowerInvariant()
+} finally {
+    $hashStream.Dispose()
+    $sha256.Dispose()
+}
 $result = [pscustomobject]@{
     Path = $file.FullName
     Bytes = $file.Length
-    Sha256 = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Sha256 = $hashText
     LastWriteTimeUtc = $file.LastWriteTimeUtc
 }
 $result
