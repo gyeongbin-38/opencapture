@@ -5663,7 +5663,7 @@ const defaultSetting: setting = {
             最大阈值: 150,
         },
         识别窗口: false,
-        记忆: { 开启: false, rects: {} },
+        记忆: { 开启: false, rects: {}, 启动提示: false },
         颜色: {
             遮罩: "#0008",
             光标参考线: "#00f",

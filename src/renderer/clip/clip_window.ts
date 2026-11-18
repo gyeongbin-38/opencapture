@@ -607,9 +607,27 @@ function backHotkeyScope() {
     console.log(hotkeys.getScope(), hotkeyScopes);
 }
 
+function capturePrimaryToolId() {
+    const preset = capturePreferences.defaultPreset;
+    if (preset === "copy-close") return "copy";
+    if (preset === "stage-only" || preset === "stage-pin") return "stage";
+    if (preset === "annotate") return "annotate";
+    const act = store.get("框选后默认操作");
+    return act === "copysave" ? "copy" : act;
+}
+
+function markPrimaryTool() {
+    const primary = capturePrimaryToolId();
+    for (const b of toolBar.querySelectorAll<HTMLElement>(
+        "[data-capture-action]",
+    ))
+        b.classList.toggle("is-primary", b.dataset.captureAction === primary);
+}
+
 function setDefaultAction(act: setting["框选后默认操作"] | undefined) {
     if (!act) return;
     autoDo = act;
+    markPrimaryTool();
     if (autoDo !== "no" && autoDo !== "copysave") {
         toolsX[autoDo].el.el.style.backgroundColor = "var(--bar-focus-color)";
     }
@@ -1671,6 +1689,7 @@ function pointsOutRect(points: point[]) {
 
 // 开始操纵框选
 function clipStart(e: MouseEvent, inRect: boolean) {
+    dismissStartHint();
     const p = src2pXY(e2srcPoint(e));
     if (captureSelectionMode === "window") {
         const candidate = windowEdgeAtPoint(
@@ -1786,6 +1805,8 @@ async function completeSelectionAction() {
     try {
         if (capturePreferences.defaultPreset === "copy-close") {
             await runCopy();
+        } else if (capturePreferences.defaultPreset === "stage-only") {
+            await captureWorkspace?.stage(true);
         } else if (capturePreferences.defaultPreset === "stage-pin") {
             await captureWorkspace?.stage(true);
             if (generation !== captureInitSequence) return;
@@ -1935,6 +1956,7 @@ function cleanClip() {
     showMask(null);
     showSaveBar(false);
     captureHelp.el.hidden = true;
+    updateStartHint();
     showBars(false);
     whEl.style({ visibility: "hidden" });
     mouseBarEl.el.classList.add("mouse_bar_hide");
@@ -4258,6 +4280,7 @@ whEl.add([
         .on("click", (e) => {
             e.stopPropagation();
             captureHelp.el.hidden = !captureHelp.el.hidden;
+            dismissStartHint();
         }),
 ]);
 
@@ -4305,6 +4328,49 @@ function textDesc(desc: string) {
 captureHelp.el.addEventListener("click", () => {
     captureHelp.el.hidden = true;
 });
+
+const startHint = view("x").class("capture-start-hint").addInto();
+let startHintDismissed = Boolean(store.get("框选.记忆.启动提示"));
+const startHintItems: [string, string][] = [
+    ["드래그", t("영역 선택")],
+    ["S", t("자동 선택")],
+];
+for (const [tool, label] of [
+    ["copy", "복사"],
+    ["save", "저장"],
+] as const) {
+    const key = (store.get(`工具快捷键.${tool}` as never) as string) ?? "";
+    if (key)
+        startHintItems.push([
+            key
+                .split("+")
+                .map((k) => jsKeyCodeDisplay(ele2jsKeyCode(k)).primary)
+                .join("+"),
+            t(label),
+        ]);
+}
+startHintItems.push(["Esc", t("닫기")], ["?", t("단축키")]);
+for (const [key, desc] of startHintItems) {
+    startHint.add(
+        view("x")
+            .class("capture-start-hint-item")
+            .add([ele("kbd").attr({ textContent: key }), textDesc(desc)]),
+    );
+}
+if (startHintDismissed) startHint.el.classList.add("hint-hidden");
+
+function dismissStartHint() {
+    if (startHintDismissed) return;
+    startHintDismissed = true;
+    store.set("框选.记忆.启动提示", true);
+    startHint.el.classList.add("hint-hidden");
+}
+function updateStartHint() {
+    startHint.el.classList.toggle(
+        "hint-hidden",
+        startHintDismissed || !captureHelp.el.hidden,
+    );
+}
 
 hotkeyTipEl.addInto();
 toolBarEl.addInto();
@@ -4756,6 +4822,10 @@ function renderQuickToolbar(ids: readonly CaptureToolId[]) {
     for (const id of ids) {
         const control = toolButton(experienceTools[id]);
         control.el.dataset.toolbarFavorite = "";
+        control.el.classList.toggle(
+            "is-primary",
+            id === capturePrimaryToolId(),
+        );
         quickToolbar.add(control);
     }
     quickToolbar.add(view().class("capture-divider"));
@@ -6128,6 +6198,7 @@ document.body.onkeydown = (e) => {
     if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         captureHelp.el.hidden = !captureHelp.el.hidden;
+        dismissStartHint();
         return;
     }
     if (e.key === "Escape" && !captureHelp.el.hidden) {
@@ -6313,6 +6384,7 @@ document.onmouseup = (e) => {
 };
 
 hotkeys("s", () => {
+    dismissStartHint();
     if (captureSelectionMode === "window") {
         rectSelect = false;
         finalRect = [0, 0, 0, 0];
@@ -6922,6 +6994,7 @@ captureWorkspace = createCaptureWorkspace({
     preferencesChanged: (value) => {
         capturePreferences = value;
         rebuildCaptureTools();
+        markPrimaryTool();
         followBar();
     },
     settleElement: () => selectionHandles.el,

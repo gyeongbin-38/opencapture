@@ -68,6 +68,13 @@ body {
 .capture-tool:active {
     background: #ffffff26;
 }
+.capture-tool.is-primary {
+    background: var(--accent) !important;
+    color: #18181b;
+}
+.capture-tool.is-primary:hover {
+    background: #ffffff !important;
+}
 .capture-tool:focus-visible,
 #clip_wh input:focus-visible,
 #clip_wh button:focus-visible,
@@ -244,6 +251,57 @@ body {
     color: var(--muted);
     font-size: var(--fs-xs);
     text-align: right;
+}
+.capture-start-hint {
+    position: fixed;
+    left: 50%;
+    bottom: 56px;
+    transform: translateX(-50%);
+    z-index: 126;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    max-width: calc(100vw - 32px);
+    padding: 7px 14px;
+    border: 1px solid var(--capture-border);
+    border-radius: var(--r-md);
+    background: var(--capture-surface);
+    box-shadow: var(--shadow);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity var(--transition), transform var(--transition),
+        visibility var(--transition);
+}
+.capture-start-hint.hint-hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-50%) translateY(4px);
+}
+.capture-start-hint-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.capture-start-hint-item kbd {
+    padding: 1px 6px;
+    border: 1px solid var(--capture-border);
+    border-radius: var(--r-xs);
+    background: var(--surface-soft);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    color: var(--capture-text);
+}
+.capture-start-hint-item span {
+    color: var(--muted);
+}
+.capture-feedback-off .capture-start-hint,
+.capture-motion-reduced .capture-start-hint {
+    transition: none;
 }
 [hidden][hidden] {
     display: none !important;

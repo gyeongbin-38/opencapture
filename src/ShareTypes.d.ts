@@ -132,7 +132,11 @@ export interface setting {
             最大阈值: number;
         };
         识别窗口: boolean;
-        记忆: { 开启: boolean; rects: { [screenId: string]: number[] } };
+        记忆: {
+            开启: boolean;
+            rects: { [screenId: string]: number[] };
+            启动提示: boolean;
+        };
         颜色: {
             遮罩: string;
             光标参考线: string;

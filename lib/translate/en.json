@@ -2474,5 +2474,7 @@
     "b1bf7d": "Select a capture region first.",
     "dd2f23": "The Windows screen is locked or another desktop is active. Unlock it, then try capturing again.",
     "c30767": "A file path is required.",
-    "d14057": "The application runtime path is unavailable."
+    "d14057": "The application runtime path is unavailable.",
+    "47a5ab": "Select area",
+    "b180ce": "Auto select"
 }

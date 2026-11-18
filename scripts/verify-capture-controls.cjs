@@ -161,6 +161,17 @@ app.whenReady().then(async () => {
                 ),
             "Capture initialization failed",
         );
+        const hintInitial = await clip(
+            '(() => { const h = document.querySelector(".capture-start-hint"); return { exists: Boolean(h), hidden: h?.classList.contains("hint-hidden"), items: h?.querySelectorAll(".capture-start-hint-item").length }; })()',
+        );
+        assert(hintInitial.exists, "Start hint missing");
+        assert(!hintInitial.hidden, "Start hint hidden on first open");
+        assert(hintInitial.items >= 5, "Start hint incomplete");
+        const primaryTool = await clip(
+            'document.querySelector(".capture-tool.is-primary")?.dataset.captureAction ?? null',
+        );
+        assert(primaryTool, "Primary action button not marked");
+        await shot(capture, "capture-start-hint");
         const rectangle = await clip(
             'JSON.parse(JSON.stringify(document.querySelector("#main_photo").getBoundingClientRect()))',
         );
@@ -200,7 +211,13 @@ app.whenReady().then(async () => {
             "Toolbar is not below the capture",
         );
         assert(ui.toolbar.height < 50, "Toolbar is too tall");
-        report.checks.push({ captureLayout: ui });
+        assert(
+            await clip(
+                'document.querySelector(".capture-start-hint").classList.contains("hint-hidden")',
+            ),
+            "Start hint did not dismiss after drag",
+        );
+        report.checks.push({ captureLayout: ui, startHint: hintInitial });
         await shot(capture, "capture-toolbar");
         const before = ui.size.map(Number);
         await clip(
