@@ -80,6 +80,47 @@ test("reports install, ready, and tamper-repair status", async () => {
     }
 });
 
+test("installs from a chunked response without Content-Length", async () => {
+    const rootDir = await fsp.mkdtemp(path.join(os.tmpdir(), "assets-test-"));
+    const payload = Buffer.from("chunked asset payload");
+    try {
+        await withServer(
+            (_request, response) => {
+                response.writeHead(200, {
+                    "Transfer-Encoding": "chunked",
+                });
+                response.write(payload);
+                response.end();
+            },
+            async (sourceUrl) => {
+                const result = await prepareAssets({
+                    rootDir,
+                    logger: () => {},
+                    manifest: {
+                        schemaVersion: 1,
+                        assets: [
+                            {
+                                id: "chunked",
+                                sourceUrl,
+                                download: {
+                                    sha256: sha256(payload),
+                                    size: payload.length,
+                                    minBytes: payload.length,
+                                    maxBytes: payload.length,
+                                },
+                                path: "assets/chunked.bin",
+                            },
+                        ],
+                    },
+                });
+                assert.equal(result[0].status, "installed");
+            },
+        );
+    } finally {
+        await fsp.rm(rootDir, { recursive: true, force: true });
+    }
+});
+
 test("rejects a response outside the declared size bounds", async () => {
     const rootDir = await fsp.mkdtemp(path.join(os.tmpdir(), "assets-test-"));
     const payload = Buffer.from("too large");

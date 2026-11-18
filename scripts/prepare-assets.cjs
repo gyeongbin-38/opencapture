@@ -88,7 +88,9 @@ async function downloadAsset(asset, destination, fetchImpl) {
         );
     }
 
-    const contentLength = Number(response.headers.get("content-length"));
+    const contentLengthHeader = response.headers.get("content-length");
+    const contentLength =
+        contentLengthHeader === null ? NaN : Number(contentLengthHeader);
     if (
         Number.isFinite(contentLength) &&
         (contentLength < asset.download.minBytes ||
