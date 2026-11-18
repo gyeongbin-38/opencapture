@@ -85,7 +85,9 @@ describe("file tools ownership and publication", () => {
         vi.mocked(childProcess.execFile)
             .mockReset()
             .mockImplementation(realChildProcess.execFile);
-        directory = await fs.mkdtemp(join(tmpdir(), "oc-file-tools-"));
+        directory = await fs.realpath(
+            await fs.mkdtemp(join(tmpdir(), "oc-file-tools-")),
+        );
         Object.defineProperty(process, "resourcesPath", {
             configurable: true,
             value: directory,
