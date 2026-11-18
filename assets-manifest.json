@@ -122,6 +122,66 @@
             ]
         },
         {
+            "id": "ffmpeg-darwin-arm64",
+            "description": "FFmpeg 6.1.1 static build for macOS arm64 (ffmpeg-static)",
+            "license": "GPL-3.0-or-later",
+            "licenseUrl": "https://ffmpeg.org/legal.html",
+            "sourceUrl": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64",
+            "platforms": ["darwin"],
+            "download": {
+                "sha256": "a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584",
+                "size": 45568216,
+                "minBytes": 45500000,
+                "maxBytes": 45600000
+            },
+            "path": "lib/ffmpeg/ffmpeg.darwin-arm64"
+        },
+        {
+            "id": "ffmpeg-darwin-x64",
+            "description": "FFmpeg 6.1.1 static build for macOS x64 (ffmpeg-static)",
+            "license": "GPL-3.0-or-later",
+            "licenseUrl": "https://ffmpeg.org/legal.html",
+            "sourceUrl": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64",
+            "platforms": ["darwin"],
+            "download": {
+                "sha256": "ebdddc936f61e14049a2d4b549a412b8a40deeff6540e58a9f2a2da9e6b18894",
+                "size": 78862176,
+                "minBytes": 78800000,
+                "maxBytes": 78900000
+            },
+            "path": "lib/ffmpeg/ffmpeg.darwin-x64"
+        },
+        {
+            "id": "ffmpeg-darwin-arm64-license",
+            "description": "GPL license text for the macOS arm64 FFmpeg build",
+            "license": "GPL-3.0-or-later",
+            "licenseUrl": "https://ffmpeg.org/legal.html",
+            "sourceUrl": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/darwin-arm64.LICENSE",
+            "platforms": ["darwin"],
+            "download": {
+                "sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2",
+                "size": 4376,
+                "minBytes": 4000,
+                "maxBytes": 5000
+            },
+            "path": "lib/ffmpeg/LICENSE.darwin-arm64.txt"
+        },
+        {
+            "id": "ffmpeg-darwin-x64-license",
+            "description": "GPL license text for the macOS x64 FFmpeg build",
+            "license": "GPL-3.0-or-later",
+            "licenseUrl": "https://ffmpeg.org/legal.html",
+            "sourceUrl": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/darwin-x64.LICENSE",
+            "platforms": ["darwin"],
+            "download": {
+                "sha256": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
+                "size": 4346,
+                "minBytes": 4000,
+                "maxBytes": 5000
+            },
+            "path": "lib/ffmpeg/LICENSE.darwin-x64.txt"
+        },
+        {
             "id": "u2netp",
             "description": "U2Net small salient object segmentation",
             "license": "Apache-2.0",

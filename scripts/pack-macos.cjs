@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
@@ -24,6 +25,19 @@ if (!has("--check") && process.platform !== "darwin") {
         "macOS packaging requires a macOS host with Xcode and the matching native optional dependencies. Run with --check on other platforms.",
     );
     process.exit(1);
+}
+
+if (!has("--check") && requestedArch !== "all") {
+    const ffmpegDir = path.join(root, "lib", "ffmpeg");
+    const staged = path.join(
+        ffmpegDir,
+        `ffmpeg.darwin-${requestedArch}`,
+    );
+    const target = path.join(ffmpegDir, "ffmpeg");
+    if (fs.existsSync(staged)) {
+        fs.copyFileSync(staged, target);
+        fs.chmodSync(target, 0o755);
+    }
 }
 
 const readinessArgs = [

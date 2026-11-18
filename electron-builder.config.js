@@ -103,6 +103,7 @@ const build = {
             "!native/**",
             "!lib/copy.exe",
             "!lib/ffmpeg/ffmpeg.exe",
+            "!lib/ffmpeg/ffmpeg.darwin-*",
             "!assets/runtime/win32-x64/**",
             "!lib/gtk-open-with",
             "!lib/kde-open-with",
