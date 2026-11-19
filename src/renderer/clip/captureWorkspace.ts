@@ -212,11 +212,27 @@ export function createCaptureWorkspace(options: {
                 }),
             )
                 .class("capture-shelf-thumb")
-                .attr({ type: "button", title: t("주석·편집") });
-            thumbnail.on("click", () => {
-                void queue
-                    .flush()
-                    .then(() => ipcRenderer.invoke("oc:clip:open-draft", id))
+                .attr({
+                    type: "button",
+                    title: `${t("주석·편집")} · ${t("더블클릭하여 화면에 고정")}`,
+                });
+            let clickTimer: number | undefined;
+            thumbnail.on("click", (event) => {
+                if (event.detail > 1) return;
+                clickTimer = window.setTimeout(() => {
+                    void queue
+                        .flush()
+                        .then(() =>
+                            ipcRenderer.invoke("oc:clip:open-draft", id),
+                        )
+                        .catch(showError);
+                }, 240);
+            });
+            thumbnail.on("dblclick", () => {
+                window.clearTimeout(clickTimer);
+                void ipcRenderer
+                    .invoke("oc:shelf:action", "pin", id)
+                    .then(() => showStatus(t("화면에 고정됨")))
                     .catch(showError);
             });
             thumbnail.on("pointerenter", () =>

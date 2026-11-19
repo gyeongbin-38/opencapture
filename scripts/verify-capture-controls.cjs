@@ -666,6 +666,22 @@ app.whenReady().then(async () => {
             `Staged marker click did not restore region: ${JSON.stringify(restored)}`,
         );
         report.checks.push({ stagedRestore: restored });
+        // Double-clicking a shelf thumbnail pins it as a ding window.
+        const dingBefore = BrowserWindow.getAllWindows().filter((w) =>
+            w.webContents.getURL().includes("ding.html"),
+        ).length;
+        await clip(
+            `(() => { document.querySelector('.capture-shelf-thumb')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); })()`,
+        );
+        await pause(900);
+        const dingAfter = BrowserWindow.getAllWindows().filter((w) =>
+            w.webContents.getURL().includes("ding.html"),
+        ).length;
+        assert(
+            dingAfter > dingBefore,
+            `Shelf dblclick did not pin: ${dingBefore} -> ${dingAfter}`,
+        );
+        report.checks.push({ shelfDblclickPin: { dingBefore, dingAfter } });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);
