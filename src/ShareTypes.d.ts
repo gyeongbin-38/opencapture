@@ -90,6 +90,7 @@ export interface setting {
     };
     大小栏: {
         快捷位置: { left: number; top: number } | null;
+        自动位置: "top" | "bottom";
     };
     字体: {
         主要字体: string;

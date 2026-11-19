@@ -5,6 +5,7 @@ import chroma from "chroma-js";
 import hotkeys from "hotkeys-js";
 import {
     captureDock,
+    dimBarY,
     fitCaptureToolbar,
     radialLayout,
 } from "../../../lib/captureControls";
@@ -2294,16 +2295,14 @@ function whBar(finalRect: rect) {
         cy < tPos.y + tH &&
         cy + dh > tPos.y;
 
-    let y = zy - dh - gap;
-    if (y < gap || overlapsToolbar(y)) {
-        const insideFits = zh >= dh + gap * 2;
-        const insideTop = zy + gap;
-        const insideBottom = zy + zh - dh - gap;
-        if (insideFits && !overlapsToolbar(insideTop)) y = insideTop;
-        else if (insideFits && !overlapsToolbar(insideBottom)) y = insideBottom;
-        else if (y < gap) y = gap;
-    }
-    y = Math.max(gap, Math.min(winHeight - dh - gap, Math.round(y)));
+    let y = dimBarY(
+        { y: zy, height: zh },
+        winHeight,
+        dh,
+        whAutoPos === "bottom",
+        overlapsToolbar,
+        gap,
+    );
 
     if (whPinnedPos) {
         x = Math.max(gap, Math.min(winWidth - dw - gap, whPinnedPos.left));
@@ -4421,6 +4420,7 @@ drawBarSideEl.add(drawBarSideElChildren.map((i) => i.el));
 
 const whEl = view("x").attr({ id: "clip_wh" }).class(Class.glassBar, Class.gap);
 let whPinnedPos = store.get("大小栏.快捷位置");
+let whAutoPos = store.get("大小栏.自动位置") ?? "top";
 let whBarPos = { x: 0, y: 0 };
 const whGrip = view()
     .class("capture-grip")
@@ -5293,6 +5293,31 @@ function rebuildCaptureTools() {
         view("x")
             .class("capture-size-setting")
             .add([txt(t("피드백")), soundToggle]),
+    );
+    const whPosToggle = button()
+        .class("capture-toggle", whAutoPos === "bottom" ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("치수 바 자동 위치"),
+            ariaPressed: String(whAutoPos === "bottom"),
+        })
+        .add(txt(whAutoPos === "bottom" ? t("아래") : t("위")))
+        .on("click", () => {
+            whAutoPos = whAutoPos === "bottom" ? "top" : "bottom";
+            store.set("大小栏.自动位置", whAutoPos);
+            whPosToggle.el.classList.toggle("active", whAutoPos === "bottom");
+            whPosToggle.el.setAttribute(
+                "aria-pressed",
+                String(whAutoPos === "bottom"),
+            );
+            whPosToggle.el.textContent =
+                whAutoPos === "bottom" ? t("아래") : t("위");
+            whBar(finalRect);
+        });
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("치수 바")), whPosToggle]),
     );
     const delaySteps = [0, 3, 5, 10];
     let captureDelay = delaySteps.includes(Number(store.get("框选.延迟")))

@@ -379,6 +379,7 @@ const defaultSetting: setting = {
     },
     大小栏: {
         快捷位置: null,
+        自动位置: "top",
     },
     字体: {
         主要字体: "",

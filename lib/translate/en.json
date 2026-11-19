@@ -2491,5 +2491,7 @@
     "9ad039": "Shutter",
     "0c562a": "Lasso smoothing",
     "82802f": "Simplifies the boundary when a free-form selection is released; higher strength smooths more",
-    "d73f86": "Light"
+    "d73f86": "Light",
+    "ace7a6": "Dimensions bar",
+    "9e45bd": "Automatic position of the dimensions bar"
 }

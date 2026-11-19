@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     captureDock,
+    dimBarY,
     fitCaptureToolbar,
     radialLayout,
 } from "../lib/captureControls";
@@ -80,6 +81,42 @@ describe("capture controls at screen edges", () => {
             expect(dock.x + toolbar.width).toBeLessThanOrEqual(348);
             expect(dock.y).toBeGreaterThanOrEqual(12);
         }
+    });
+
+    it("docks the dimensions bar above or below per preference", () => {
+        const noOverlap = () => false;
+        const selection = { y: 200, height: 100 };
+        expect(dimBarY(selection, 800, 30, false, noOverlap)).toBe(162);
+        expect(dimBarY(selection, 800, 30, true, noOverlap)).toBe(308);
+    });
+
+    it("moves the dimensions bar inside toward the preferred edge", () => {
+        const noOverlap = () => false;
+        const tall = { y: 10, height: 560 };
+        expect(dimBarY(tall, 600, 30, false, noOverlap)).toBe(18);
+        expect(dimBarY(tall, 600, 30, true, noOverlap)).toBe(532);
+    });
+
+    it("avoids the toolbar and falls back to the far inside edge", () => {
+        const selection = { y: 200, height: 100 };
+        const toolbarAbove = (cy: number) => cy < 215;
+        expect(dimBarY(selection, 800, 30, false, toolbarAbove)).toBe(
+            200 + 100 - 30 - 8,
+        );
+        const toolbarInsideBottom = (cy: number) => cy > 230;
+        expect(dimBarY(selection, 800, 30, true, toolbarInsideBottom)).toBe(
+            200 + 8,
+        );
+    });
+
+    it("clamps the dimensions bar inside the viewport for edge selections", () => {
+        const noOverlap = () => false;
+        expect(dimBarY({ y: 4, height: 20 }, 300, 30, false, noOverlap)).toBe(
+            8,
+        );
+        expect(
+            dimBarY({ y: 270, height: 20 }, 300, 30, true, noOverlap),
+        ).toBe(300 - 30 - 8);
     });
 
     it("moves the radial center as a group without overlapping edge buttons", () => {

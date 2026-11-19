@@ -67,6 +67,39 @@ export function captureDock(
     };
 }
 
+export function dimBarY(
+    selection: { y: number; height: number },
+    viewportHeight: number,
+    barHeight: number,
+    preferBottom: boolean,
+    overlaps: (cy: number) => boolean,
+    gap = 8,
+) {
+    const insideFits = selection.height >= barHeight + gap * 2;
+    const insideNear = preferBottom
+        ? selection.y + selection.height - barHeight - gap
+        : selection.y + gap;
+    const insideFar = preferBottom
+        ? selection.y + gap
+        : selection.y + selection.height - barHeight - gap;
+    let y = preferBottom
+        ? selection.y + selection.height + gap
+        : selection.y - barHeight - gap;
+    const primaryFits = preferBottom
+        ? y + barHeight <= viewportHeight - gap
+        : y >= gap;
+    if (!primaryFits || overlaps(y)) {
+        if (insideFits && !overlaps(insideNear)) y = insideNear;
+        else if (insideFits && !overlaps(insideFar)) y = insideFar;
+        else if (!primaryFits)
+            y = preferBottom ? viewportHeight - barHeight - gap : gap;
+    }
+    return Math.max(
+        gap,
+        Math.min(viewportHeight - barHeight - gap, Math.round(y)),
+    );
+}
+
 export function radialLayout(
     pointer: { x: number; y: number },
     viewport: { width: number; height: number },
