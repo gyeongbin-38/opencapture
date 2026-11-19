@@ -161,6 +161,10 @@ app.whenReady().then(async () => {
             clip(
                 `(() => { for (const type of ["keydown","keyup"]) document.dispatchEvent(new KeyboardEvent(type,{key:"${key}",keyCode:${code},which:${code},bubbles:true})); })()`,
             );
+        const pressCombo = (key, code, mods) =>
+            clip(
+                `(() => { for (const type of ["keydown","keyup"]) document.dispatchEvent(new KeyboardEvent(type,{key:"${key}",keyCode:${code},which:${code},ctrlKey:${Boolean(mods?.ctrl)},shiftKey:${Boolean(mods?.shift)},bubbles:true})); })()`,
+            );
         await until(
             () =>
                 clip(
@@ -1019,6 +1023,56 @@ app.whenReady().then(async () => {
             `Free-form restore failed: ${JSON.stringify(polyRestored)}`,
         );
         report.checks.push({ stagedPoly });
+        // Moving a free-form selection pushes full state; Ctrl+Z must
+        // restore the polygon itself, not only its bounding box.
+        const polyD = () =>
+            clip(
+                `(() => { const paths=document.querySelectorAll('#selection_frame_poly path'); return paths[paths.length-1]?.getAttribute('d') ?? ''; })()`,
+            );
+        const polyD0 = await polyD();
+        const polyCenter = await clip(
+            `(() => { const path=document.querySelector('#selection_frame_poly path'); const nums=(path.getAttribute('d').match(/-?[0-9.]+/g) ?? []).map(Number); let cx=0,cy=0,n=0; for (let i=0;i+1<nums.length;i+=2){cx+=nums[i];cy+=nums[i+1];n++;} const p=new DOMPoint(cx/n,cy/n).matrixTransform(path.getScreenCTM()); return {x:Math.round(p.x),y:Math.round(p.y)}; })()`,
+        );
+        assert(polyCenter, "No polygon center for move test");
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...polyCenter,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: polyCenter.x + 40,
+            y: polyCenter.y + 30,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: polyCenter.x + 80,
+            y: polyCenter.y + 60,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: polyCenter.x + 80,
+            y: polyCenter.y + 60,
+        });
+        await pause(200);
+        const polyD1 = await polyD();
+        assert(
+            polyD1 && polyD1 !== polyD0,
+            `Polygon did not move: ${JSON.stringify({ polyD0, polyD1 })}`,
+        );
+        await pressCombo("z", 90, { ctrl: true });
+        await pause(200);
+        const polyD2 = await polyD();
+        assert(
+            polyD2 === polyD0,
+            `Undo did not restore polygon: ${JSON.stringify({ polyD0, polyD2 })}`,
+        );
+        report.checks.push({ polyUndo: true });
         await pressKey("f", 70);
         await pause(120);
         // W toggles region/window selection modes with visible feedback:

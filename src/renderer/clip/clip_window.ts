@@ -2258,6 +2258,7 @@ function restoreStagedRegion(entry: StagedRegion) {
     followBar();
     renderStagedRegions();
     if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
+    hisPush();
     captureWorkspace?.showStatus(t("보관된 영역을 다시 선택했습니다"));
 }
 
@@ -3156,7 +3157,12 @@ function movePoly(
  */
 function hisPush() {
     const canvas = fabricCanvas?.toJSON() || {};
-    undoStack.setData({ rect: finalRect, canvas: canvas });
+    undoStack.setData({
+        rect: finalRect,
+        points: structuredClone(freeSelect),
+        isRect,
+        canvas: canvas,
+    });
     undoStack.apply();
     captureWorkspace?.changed();
 }
@@ -3172,7 +3178,10 @@ function undo(v: boolean) {
     }
     const c = undoStack.getData();
     finalRect = c.rect;
-    drawClipRect();
+    if (c.points) freeSelect = c.points;
+    if (c.isRect !== undefined && c.isRect !== isRect)
+        setEditType("select", c.isRect ? "rect" : "free");
+    drawClip();
     followBar();
     if (fabricCanvas) fabricCanvas.loadFromJSON(c.canvas);
     updateUndoButtons();
@@ -6076,7 +6085,13 @@ let theColor: [number, number, number, number] | null = null;
 let theTextColor: [string, string] = ["", ""];
 type colorFormat = setting["取色器"]["默认格式"];
 type colorRGBA = [number, number, number, number];
-let undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
+type UndoEntry = {
+    rect: rect;
+    points?: point[];
+    isRect?: boolean;
+    canvas: object;
+};
+let undoStack = new xhistory<UndoEntry>([], {
     rect: [0, 0, mainCanvas.width, mainCanvas.height] as rect,
     canvas: {},
 });
@@ -6442,7 +6457,7 @@ renderOn(
             }, 0);
             rightKey = false;
             changeRightBar(false);
-            undoStack = new xhistory<{ rect: rect; canvas: object }>([], {
+            undoStack = new xhistory<UndoEntry>([], {
                 rect: [...finalRect],
                 canvas: fabricCanvas.toJSON(),
             });
