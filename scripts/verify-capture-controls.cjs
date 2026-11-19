@@ -678,6 +678,53 @@ app.whenReady().then(async () => {
             `Lasso start marker failed: ${JSON.stringify({ lassoMarker, lassoNear, lassoFar, lassoGone })}`,
         );
         report.checks.push({ lassoMarker: true });
+        // Releasing a jittery stroke simplifies it: hand-shake points near
+        // each leg's chord are dropped, deliberate corners are kept.
+        const jx = (f) => Math.round(rectangle.x + rectangle.width * f);
+        const jy = (f) => Math.round(rectangle.y + rectangle.height * f);
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: jx(0.45),
+            y: jy(0.2),
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            x: jx(0.45),
+            y: jy(0.2),
+        });
+        for (let i = 1; i <= 6; i++) {
+            capture.webContents.sendInputEvent({
+                type: "mouseMove",
+                x: jx(0.45 + (0.15 * i) / 6),
+                y: jy(0.2) + (i % 2 ? 1 : -1),
+            });
+            await pause(40);
+        }
+        for (const m of [
+            { x: jx(0.6), y: jy(0.4) },
+            { x: jx(0.46), y: jy(0.39) },
+        ]) {
+            capture.webContents.sendInputEvent({ type: "mouseMove", ...m });
+            await pause(40);
+        }
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: jx(0.46),
+            y: jy(0.39),
+        });
+        await pause(150);
+        const lassoSmooth = await clip(
+            `(() => { const paths=document.querySelectorAll('#selection_frame_poly path'); const d=paths[paths.length-1]?.getAttribute('d') ?? ''; return { segments: (d.match(/L/g) ?? []).length }; })()`,
+        );
+        assert(
+            lassoSmooth.segments >= 2 && lassoSmooth.segments <= 6,
+            `Lasso smoothing left too many vertices: ${JSON.stringify(lassoSmooth)}`,
+        );
+        report.checks.push({ lassoSmooth: lassoSmooth.segments });
         await pressKey("f", 70);
         await pause(120);
         // W toggles region/window selection modes with visible feedback:

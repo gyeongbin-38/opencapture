@@ -9,6 +9,7 @@ import {
     radialLayout,
 } from "../../../lib/captureControls";
 import { ele2jsKeyCode, jsKeyCodeDisplay } from "../../../lib/key";
+import { simplifyLassoPoints } from "../../../lib/lassoSmoothing";
 import open_with from "../../../lib/open_with";
 import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
@@ -1874,6 +1875,10 @@ function clipEnd(e: MouseEvent) {
         }
     } else {
         freeSelect.push(p);
+        freeSelect = simplifyLassoPoints(
+            freeSelect,
+            Math.max(1.2, 3 / editorP.zoom),
+        );
         finalRect = pointsOutRect(freeSelect);
     }
     setSnapGuides(null, null);
