@@ -325,3 +325,72 @@ export function windowEdgeAtPoint(
             point.y < edge.y + edge.height,
     );
 }
+
+function nearestWithin(value: number, candidates: number[], threshold: number) {
+    let best: number | null = null;
+    let distance = threshold;
+    for (const candidate of candidates) {
+        const d = Math.abs(candidate - value);
+        if (d <= distance) {
+            distance = d;
+            best = candidate;
+        }
+    }
+    return best;
+}
+
+/**
+ * Snap the moving corner of a drag selection to candidate edges plus the
+ * canvas bounds and midlines. `anchor` is the drag-start corner in canvas
+ * pixels; the edges closest to it stay fixed while the opposite edges move.
+ */
+export function snapDragRect(
+    rect: readonly [number, number, number, number],
+    anchor: { x: number; y: number },
+    edges: CaptureSelectionEdge[],
+    canvas: CanvasSize,
+    threshold: number,
+): {
+    rect: [number, number, number, number];
+    guideX: number | null;
+    guideY: number | null;
+} {
+    const [x, y, w, h] = rect;
+    const none = {
+        rect: [x, y, w, h] as [number, number, number, number],
+        guideX: null,
+        guideY: null,
+    };
+    if (w <= 0 || h <= 0 || threshold <= 0) return none;
+    const xs = [0, canvas.width / 2, canvas.width];
+    const ys = [0, canvas.height / 2, canvas.height];
+    for (const edge of edges) {
+        xs.push(edge.x, edge.x + edge.width);
+        ys.push(edge.y, edge.y + edge.height);
+    }
+    const rightMoves = anchor.x < x + w / 2;
+    const bottomMoves = anchor.y < y + h / 2;
+    const snappedX = nearestWithin(rightMoves ? x + w : x, xs, threshold);
+    const snappedY = nearestWithin(bottomMoves ? y + h : y, ys, threshold);
+    if (snappedX == null && snappedY == null) return none;
+    let nx = x;
+    let ny = y;
+    let nw = w;
+    let nh = h;
+    if (snappedX != null) {
+        if (rightMoves) nw = snappedX - x;
+        else {
+            nw = x + w - snappedX;
+            nx = snappedX;
+        }
+    }
+    if (snappedY != null) {
+        if (bottomMoves) nh = snappedY - y;
+        else {
+            nh = y + h - snappedY;
+            ny = snappedY;
+        }
+    }
+    if (nw < 1 || nh < 1) return none;
+    return { rect: [nx, ny, nw, nh], guideX: snappedX, guideY: snappedY };
+}

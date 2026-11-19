@@ -63,6 +63,7 @@ import {
     type CaptureSelectionEdge,
     type CaptureSelectionMode,
     selectionEdgesForMode,
+    snapDragRect,
     windowBoundsToCanvas,
     windowEdgeAtPoint,
 } from "../../../lib/captureWindowSelection";
@@ -1765,6 +1766,7 @@ function clipStart(e: MouseEvent, inRect: boolean) {
 
 function cancelSelectionInteraction() {
     finishHandleResize(false);
+    setSnapGuides(null, null);
     if (!down && !selecting && !moving) return;
     down = moved = selecting = moving = false;
     oFinalRect = null;
@@ -1830,7 +1832,7 @@ function clipEnd(e: MouseEvent) {
     const p = src2pXY(e2srcPoint(e));
     selecting = false;
     if (isRect) {
-        const r = dragRect(e);
+        const r = snapDrag(e, dragRect(e));
         if (rectInRect.length) {
             let nearestL = Number.POSITIVE_INFINITY;
             let nr: rect | null = null;
@@ -1867,6 +1869,7 @@ function clipEnd(e: MouseEvent) {
         freeSelect.push(p);
         finalRect = pointsOutRect(freeSelect);
     }
+    setSnapGuides(null, null);
     // 此时 selecting 已为 false，选区已定，直接重绘
     captureWorkspace?.feedback.settle(selectionHandles.el);
     drawClip();
@@ -2006,6 +2009,48 @@ function inEdge(p: editor_position) {
     setEdge(rectInRect);
 }
 
+/** 拖动选区时的吸附参考线：只有命中边才显示，未命中时清空 */
+let snapGuideKey = "";
+function setSnapGuides(x: number | null, y: number | null) {
+    const key = `${x ?? ""}|${y ?? ""}`;
+    if (key === snapGuideKey) return;
+    snapGuideKey = key;
+    const w = lineW();
+    const els: HTMLElement[] = [];
+    if (x != null) {
+        const el = document.createElement("div");
+        setElBox(el, x - w / 2, 0, w, mainCanvas.height);
+        el.style.background = "#ffffffd9";
+        el.style.boxShadow = `0 0 0 ${w}px #00000052`;
+        els.push(el);
+    }
+    if (y != null) {
+        const el = document.createElement("div");
+        setElBox(el, 0, y - w / 2, mainCanvas.width, w);
+        el.style.background = "#ffffffd9";
+        el.style.boxShadow = `0 0 0 ${w}px #00000052`;
+        els.push(el);
+    }
+    snapGuideEl.el.replaceChildren(...els);
+}
+
+/** 新框选拖动时把移动角吸附到窗口/图像边缘或屏幕中线；Shift/Alt 手势跳过 */
+function snapDrag(e: MouseEvent, r: rect): rect {
+    if (e.altKey || e.shiftKey || !rectStartE) {
+        setSnapGuides(null, null);
+        return r;
+    }
+    const snapped = snapDragRect(
+        r,
+        rectStartE,
+        selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
+        { width: mainCanvas.width, height: mainCanvas.height },
+        6 / editorP.zoom,
+    );
+    setSnapGuides(snapped.guideX, snapped.guideY);
+    return snapped.rect;
+}
+
 /** 提示框没变化就不动 DOM */
 function setEdge(rects: rect[]) {
     const w = lineW();
@@ -2033,7 +2078,7 @@ function renderClip(e: MouseEvent) {
     if (selecting) {
         if (isRect) {
             // 画框
-            finalRect = dragRect(e);
+            finalRect = snapDrag(e, dragRect(e));
         } else {
             freeSelect.push(src2pXY(e2srcPoint(e)));
             finalRect = pointsOutRect(freeSelect);
@@ -4451,11 +4496,19 @@ const clipEdge = view().style({
     width: "100%",
     height: "100%",
 });
+const snapGuideEl = view().attr({ id: "capture_snap_guides" }).style({
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+});
 clipEl.append(
     ...clipMaskRect.map((i) => i.el),
     clipMaskPoly.el,
     ...clipSelectLines.map((i) => i.el),
     clipEdge.el,
+    snapGuideEl.el,
     ...clipCkx.map((i) => i.el),
 );
 

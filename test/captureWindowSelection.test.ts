@@ -6,6 +6,7 @@ import {
     nativeWindowBoundsForDisplay,
     nativeWindowBoundsToDip,
     selectionEdgesForMode,
+    snapDragRect,
     windowBoundsToCanvas,
     windowEdgeAtPoint,
 } from "../lib/captureWindowSelection";
@@ -373,5 +374,107 @@ describe("capture window selection", () => {
         expect(
             windowEdgeAtPoint([front, back], { x: 400, y: 400 }),
         ).toBeUndefined();
+    });
+
+    it("snaps the moving corner to candidate and canvas edges", () => {
+        const win = {
+            x: 100,
+            y: 100,
+            width: 400,
+            height: 300,
+            type: "system" as const,
+        };
+        const canvas = { width: 1000, height: 800 };
+        // Dragging down-right: right/bottom edges move, anchor top-left fixed.
+        const snapped = snapDragRect(
+            [100, 100, 396, 297],
+            { x: 100, y: 100 },
+            [win],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([100, 100, 400, 300]);
+        expect(snapped.guideX).toBe(500);
+        expect(snapped.guideY).toBe(400);
+    });
+
+    it("snaps the left/top edges when dragging up-left", () => {
+        const win = {
+            x: 100,
+            y: 100,
+            width: 400,
+            height: 300,
+            type: "system" as const,
+        };
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapDragRect(
+            [104, 96, 396, 304],
+            { x: 500, y: 400 },
+            [win],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([100, 100, 400, 300]);
+        expect(snapped.guideX).toBe(100);
+        expect(snapped.guideY).toBe(100);
+    });
+
+    it("offers the canvas midlines and bounds as snap targets", () => {
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapDragRect(
+            [100, 90, 396, 300],
+            { x: 100, y: 90 },
+            [],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([100, 90, 400, 300]);
+        expect(snapped.guideX).toBe(500);
+        expect(snapped.guideY).toBeNull();
+    });
+
+    it("leaves the rect untouched when nothing is within threshold", () => {
+        const canvas = { width: 1000, height: 800 };
+        const rect: [number, number, number, number] = [200, 200, 90, 80];
+        const snapped = snapDragRect(rect, { x: 200, y: 200 }, [], canvas, 8);
+        expect(snapped.rect).toEqual(rect);
+        expect(snapped.guideX).toBeNull();
+        expect(snapped.guideY).toBeNull();
+    });
+
+    it("prefers the nearest candidate within threshold", () => {
+        const edges = [
+            { x: 60, y: 0, width: 10, height: 10, type: "image" as const },
+            { x: 70, y: 0, width: 10, height: 10, type: "image" as const },
+        ];
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapDragRect(
+            [100, 100, 396, 300],
+            { x: 100, y: 100 },
+            edges,
+            canvas,
+            20,
+        );
+        // Right edge at 496: canvas midline 500 wins over edge coords 60..80.
+        expect(snapped.rect).toEqual([100, 100, 400, 300]);
+        expect(snapped.guideX).toBe(500);
+    });
+
+    it("refuses snaps that would collapse the selection", () => {
+        const canvas = { width: 1000, height: 800 };
+        const edges = [
+            { x: 904, y: 0, width: 1, height: 1, type: "image" as const },
+        ];
+        const snapped = snapDragRect(
+            [900, 100, 3, 100],
+            { x: 903, y: 100 },
+            edges,
+            canvas,
+            8,
+        );
+        // Anchor sits right of the midpoint so the left edge moves; the
+        // nearest candidate at 904 would pull it past the right edge.
+        expect(snapped.rect).toEqual([900, 100, 3, 100]);
+        expect(snapped.guideX).toBeNull();
     });
 });

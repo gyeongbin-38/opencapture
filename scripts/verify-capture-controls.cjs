@@ -298,6 +298,43 @@ app.whenReady().then(async () => {
             ratioLocked: locked,
             handleResize: dragged,
         });
+        // Drag from outside the active selection toward the canvas midline:
+        // the moving right edge should snap and show a guide line.
+        const snapStart = {
+            x: Math.round(rectangle.x + rectangle.width * 0.03),
+            y: Math.round(rectangle.y + rectangle.height * 0.03),
+        };
+        const snapEnd = {
+            x: Math.round(rectangle.x + rectangle.width * 0.5 - 2),
+            y: Math.round(rectangle.y + rectangle.height * 0.55),
+        };
+        capture.webContents.sendInputEvent({ type: "mouseMove", ...snapStart });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...snapStart,
+        });
+        capture.webContents.sendInputEvent({ type: "mouseMove", ...snapEnd });
+        await pause(120);
+        const guideCount = await clip(
+            'document.querySelectorAll("#capture_snap_guides > *").length',
+        );
+        assert(guideCount >= 1, "Snap guide did not render near midline");
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            ...snapEnd,
+        });
+        await pause(120);
+        assert(
+            (await clip(
+                'document.querySelectorAll("#capture_snap_guides > *").length',
+            )) === 0,
+            "Snap guide did not clear after drag",
+        );
+        report.checks.push({ snapGuides: guideCount });
         await clip(
             'document.querySelectorAll("#quick_toolbar button")[4].click();',
         );
