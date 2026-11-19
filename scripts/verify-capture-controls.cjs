@@ -232,6 +232,40 @@ app.whenReady().then(async () => {
             "Start hint did not dismiss after drag",
         );
         report.checks.push({ captureLayout: ui, startHint: hintInitial });
+        // The pixel loupe follows the pointer while picking in region
+        // mode — not only mid-drag — and steps aside over the toolbar.
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(rectangle.x + 40),
+            y: Math.round(rectangle.y + 40),
+        });
+        await pause(200);
+        const loupeShown = await clip(
+            '!document.querySelector("#mouse_bar").classList.contains("mouse_bar_hide")',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(ui.toolbar.x + ui.toolbar.width / 2),
+            y: Math.round(ui.toolbar.y + ui.toolbar.height / 2),
+        });
+        await pause(200);
+        const loupeHidden = await clip(
+            'document.querySelector("#mouse_bar").classList.contains("mouse_bar_hide")',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(rectangle.x + 60),
+            y: Math.round(rectangle.y + 60),
+        });
+        await pause(200);
+        const loupeBack = await clip(
+            '!document.querySelector("#mouse_bar").classList.contains("mouse_bar_hide")',
+        );
+        assert(
+            loupeShown && loupeHidden && loupeBack,
+            `Loupe visibility failed: ${JSON.stringify({ loupeShown, loupeHidden, loupeBack })}`,
+        );
+        report.checks.push({ loupeHover: true });
         await shot(capture, "capture-toolbar");
         await until(
             () =>

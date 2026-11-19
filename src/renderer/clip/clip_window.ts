@@ -7115,9 +7115,19 @@ document.onmousemove = (e) => {
 
             const isDrawBar = drawBar.contains(ev.target as HTMLElement);
             const isToolBar = toolBar.contains(ev.target as HTMLElement);
+            const overPanel =
+                isDrawBar ||
+                isToolBar ||
+                toolPopover.el.contains(ev.target as HTMLElement) ||
+                whEl.el.contains(ev.target as HTMLElement) ||
+                (ev.target as HTMLElement)?.closest?.(
+                    "#capture_inline_shelf",
+                ) != null;
+            const picking =
+                nowType === "select" && captureSelectionMode === "region";
             mouseBarEl.el.classList.toggle(
                 "mouse_bar_hide",
-                isDrawBar || isToolBar || radialOpen || (!selecting && !moving),
+                overPanel || radialOpen || (!selecting && !moving && !picking),
             );
 
             // 画板栏移动
