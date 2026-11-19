@@ -5356,9 +5356,10 @@ function rebuildCaptureTools() {
             .add([txt(t("치수 바")), whPosToggle]),
     );
     const delaySteps = [0, 3, 5, 10];
-    let captureDelay = delaySteps.includes(Number(store.get("框选.延迟")))
-        ? Number(store.get("框选.延迟"))
-        : 0;
+    let captureDelay = Math.min(
+        15,
+        Math.max(0, Number(store.get("框选.延迟")) || 0),
+    );
     const delayToggle = button()
         .class("capture-toggle", captureDelay > 0 ? "active" : "")
         .attr({
@@ -5369,9 +5370,7 @@ function rebuildCaptureTools() {
         .add(txt(captureDelay > 0 ? `${captureDelay}s` : t("지연 없음")))
         .on("click", () => {
             captureDelay =
-                delaySteps[
-                    (delaySteps.indexOf(captureDelay) + 1) % delaySteps.length
-                ];
+                delaySteps.find((s) => s > captureDelay) ?? delaySteps[0];
             store.set("框选.延迟", captureDelay);
             delayToggle.el.classList.toggle("active", captureDelay > 0);
             delayToggle.el.setAttribute(
