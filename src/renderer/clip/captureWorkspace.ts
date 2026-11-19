@@ -203,6 +203,21 @@ export function createCaptureWorkspace(options: {
                         ele("span").attr({ textContent: t("영역 추가") }),
                     ]),
             );
+        } else if (thumbnails.size >= 2) {
+            strip.add(
+                view("x")
+                    .class("capture-shelf-hint")
+                    .add([
+                        ele("kbd").attr({ textContent: t("클릭") }),
+                        ele("span").attr({
+                            textContent: `${t("마커")} ${t("복원")}`,
+                        }),
+                        ele("kbd").attr({
+                            textContent: `Alt+${t("클릭")}`,
+                        }),
+                        ele("span").attr({ textContent: t("삭제") }),
+                    ]),
+            );
         }
         for (const [id, entry] of thumbnails) {
             const thumbnail = button(

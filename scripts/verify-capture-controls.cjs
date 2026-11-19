@@ -644,6 +644,17 @@ app.whenReady().then(async () => {
             `Second staged marker wrong: ${JSON.stringify(staged2)}`,
         );
         report.checks.push({ stagedMarkers: staged2 });
+        // With staged markers the shelf advertises the marker gestures.
+        const markerHint = await clip(
+            `document.querySelector(".capture-shelf-hint")?.textContent ?? ""`,
+        );
+        assert(
+            markerHint.includes("클릭") &&
+                markerHint.includes("Alt") &&
+                markerHint.includes("삭제"),
+            `Marker gesture hint missing: ${markerHint}`,
+        );
+        report.checks.push({ markerHint });
         // Hovering a shelf thumbnail highlights its matching region marker.
         await clip(
             `(() => { const t=document.querySelectorAll('.capture-shelf-thumb')[0]; t?.dispatchEvent(new PointerEvent('pointerenter')); })()`,
