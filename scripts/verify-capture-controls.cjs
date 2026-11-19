@@ -154,6 +154,13 @@ app.whenReady().then(async () => {
         );
         const clip = (code) =>
             capture.webContents.executeJavaScript(code, true);
+        // Synthetic key presses must pair keydown with keyup: hotkeys-js only
+        // fires a shortcut when the held-key set matches exactly, so a keydown
+        // without keyup leaves the key "held" and blocks later shortcuts.
+        const pressKey = (key, code) =>
+            clip(
+                `(() => { for (const type of ["keydown","keyup"]) document.dispatchEvent(new KeyboardEvent(type,{key:"${key}",keyCode:${code},which:${code},bubbles:true})); })()`,
+            );
         await until(
             () =>
                 clip(
@@ -357,9 +364,7 @@ app.whenReady().then(async () => {
         report.checks.push({ dimBar });
         await shot(capture, "capture-fullscreen-dimbar");
         // F toggles rect/free selection mode with visible feedback.
-        await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
-        );
+        await pressKey("f", 70);
         await until(
             () =>
                 clip(
@@ -368,9 +373,7 @@ app.whenReady().then(async () => {
             "Free selection mode status did not appear",
             400,
         );
-        await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
-        );
+        await pressKey("f", 70);
         await until(
             () =>
                 clip(
@@ -382,9 +385,7 @@ app.whenReady().then(async () => {
         report.checks.push({ freeSelectToggle: true });
         // F converts the active rect into a free-form polygon; it gets the
         // crisp SVG frame and moving it snaps the bounding box like rects.
-        await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
-        );
+        await pressKey("f", 70);
         await pause(150);
         const polyFrame = await clip(
             `(() => { const svg=document.querySelector('#selection_frame_poly'); const line=svg?.querySelectorAll('path')[1]; const d=line?.getAttribute('d') ?? ''; return { display: svg ? getComputedStyle(svg).display : 'missing', segments: (d.match(/L/g) ?? []).length, closed: d.endsWith('Z'), outline: svg?.querySelector('path')?.getAttribute('stroke-width') ?? '' }; })()`,
@@ -434,9 +435,7 @@ app.whenReady().then(async () => {
             "Polygon snap guides did not clear",
         );
         report.checks.push({ polySnap: polyGuides });
-        await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
-        );
+        await pressKey("f", 70);
         await pause(120);
         // Shift+drag stages the current region and reports the running count.
         const batchDrag = [
@@ -481,22 +480,68 @@ app.whenReady().then(async () => {
             'document.querySelector(".capture-shelf-count")?.textContent ?? ""',
         );
         report.checks.push({ regionStatus, shelfCount });
-        // W toggles region/window selection modes with visible feedback.
-        await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"w",keyCode:87,which:87,bubbles:true}))',
-        );
-        await until(
-            () =>
-                clip(
-                    '(() => { const s=document.querySelector(".capture-workspace-status"); return Boolean(s && !s.hidden && s.textContent.length > 0); })()',
-                ),
-            "Window-mode toggle produced no status feedback",
-            400,
-        );
-        const windowModeStatus = await clip(
-            'document.querySelector(".capture-workspace-status").textContent',
+        // W toggles region/window selection modes with visible feedback:
+        // either the pick guidance or a "no windows" error. Move the pointer
+        // away from the selection first so W is not consumed as a WASD nudge.
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(rectangle.x + rectangle.width * 0.05),
+            y: Math.round(rectangle.y + rectangle.height * 0.05),
+        });
+        await pause(120);
+        await pressKey("w", 87);
+        let windowModeStatus = null;
+        let lastStatus = "";
+        for (let i = 0; i < 60 && !windowModeStatus; i++) {
+            const probe = await clip(
+                '(() => { const s=document.querySelector(".capture-workspace-status"); const t=s?.textContent ?? ""; return { t, err: s?.classList.contains("has-error"), hidden: s?.hidden }; })()',
+            );
+            lastStatus = JSON.stringify(probe);
+            if (
+                probe.t.includes("창 위로") ||
+                probe.err
+            )
+                windowModeStatus = probe.t;
+            else await pause(100);
+        }
+        assert(
+            windowModeStatus,
+            `Window-mode toggle produced no status feedback, last=${lastStatus}`,
         );
         report.checks.push({ windowModeStatus });
+        // Clear the sticky error (or any message) so later checks read fresh.
+        await clip(
+            'document.querySelector(".capture-workspace-status.has-error button")?.click()',
+        );
+        await pause(120);
+        // In window mode, hovering a detected window shows a pointer cursor
+        // and the emphasized outline. Sweep a grid until a candidate is hit.
+        let windowCursor = null;
+        let edgeHits = 0;
+        outer: for (const fy of [0.15, 0.3, 0.45, 0.6, 0.8])
+            for (const fx of [0.12, 0.3, 0.5, 0.7, 0.88]) {
+                capture.webContents.sendInputEvent({
+                    type: "mouseMove",
+                    x: Math.round(rectangle.x + rectangle.width * fx),
+                    y: Math.round(rectangle.y + rectangle.height * fy),
+                });
+                await pause(70);
+                const probe = await clip(
+                    '({c: document.querySelector("#clip_photo").style.cursor, e: document.querySelectorAll("#capture_edge > *").length})',
+                );
+                if (probe.e > 0) {
+                    edgeHits++;
+                    assert(
+                        probe.c === "pointer",
+                        `Window-mode hover did not show pointer cursor: ${JSON.stringify(probe)}`,
+                    );
+                    windowCursor = probe.c;
+                    break outer;
+                }
+            }
+        report.checks.push({ windowCursor, edgeHits });
+        await pressKey("w", 87);
+        await pause(120);
         const scrollHint = await clip(
             '(() => { const h=document.querySelector(".capture-scroll-hint"); return { exists: Boolean(h), hidden: h?.hidden ?? null }; })()',
         );
@@ -560,7 +605,7 @@ app.whenReady().then(async () => {
             "Reduced motion was ignored",
         );
         await clip(
-            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));',
+            'for (const type of ["keydown","keyup"]) document.dispatchEvent(new KeyboardEvent(type,{key:"Escape",keyCode:27,which:27,bubbles:true}));',
         );
         assert(
             await clip(

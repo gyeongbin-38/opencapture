@@ -102,7 +102,7 @@ describe("production capture keyboard movement", () => {
         expect(() => h.handleKey(keyEvent("ArrowDown"))).not.toThrow();
         expect(h.state.moveRect).toHaveBeenCalledOnce();
     });
-    it.each(["w", "a", "s", "d"])(
+    it.each(["a", "d", "ArrowUp", "ArrowLeft"])(
         "does not alter a system window with %s",
         (key) => {
             const h = harness();
@@ -110,6 +110,18 @@ describe("production capture keyboard movement", () => {
             h.handleKey(keyEvent(key));
             expect(h.state.moveRect).not.toHaveBeenCalled();
             expect(h.state.captureWorkspace.showStatus).toHaveBeenCalledOnce();
+        },
+    );
+    it.each(["w", "s"])(
+        "leaves %s for the mode hotkeys in window mode",
+        (key) => {
+            const h = harness();
+            h.state.captureSelectionMode = "window";
+            const event = keyEvent(key);
+            h.handleKey(event);
+            expect(h.state.moveRect).not.toHaveBeenCalled();
+            expect(event.preventDefault).not.toHaveBeenCalled();
+            expect(event.stopPropagation).not.toHaveBeenCalled();
         },
     );
     it.each([
@@ -130,11 +142,23 @@ describe("production capture keyboard movement", () => {
         },
     );
 
+    it.each(["w", "a", "s", "d"])(
+        "leaves unmodified %s for letter hotkeys instead of nudging",
+        (key) => {
+            const h = harness();
+            const event = keyEvent(key);
+            h.handleKey(event);
+            expect(h.state.moveRect).not.toHaveBeenCalled();
+            expect(event.preventDefault).not.toHaveBeenCalled();
+            expect(event.stopPropagation).not.toHaveBeenCalled();
+        },
+    );
+
     it.each([
-        ["w", { x: 100, y: 99 }],
-        ["a", { x: 99, y: 100 }],
-        ["s", { x: 100, y: 101 }],
-        ["d", { x: 101, y: 100 }],
+        ["ArrowUp", { x: 100, y: 99 }],
+        ["ArrowLeft", { x: 99, y: 100 }],
+        ["ArrowDown", { x: 100, y: 101 }],
+        ["ArrowRight", { x: 101, y: 100 }],
     ])("preserves unmodified %s movement", (key, expected) => {
         const h = harness();
         const event = keyEvent(key);
@@ -145,7 +169,7 @@ describe("production capture keyboard movement", () => {
             expected,
         );
         expect(event.preventDefault).toHaveBeenCalledOnce();
-        expect(event.stopPropagation).toHaveBeenCalledOnce();
+        expect(event.stopPropagation).not.toHaveBeenCalled();
     });
 
     it("preserves Ctrl+Arrow movement at five pixels", () => {

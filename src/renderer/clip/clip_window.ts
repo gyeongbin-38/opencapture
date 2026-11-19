@@ -2015,7 +2015,7 @@ function refreshLines() {
  * 自动框选提示
  */
 function inEdge(p: editor_position) {
-    if (rectSelect) {
+    if (rectSelect && captureSelectionMode !== "window") {
         setEdge([]);
         return;
     }
@@ -2029,6 +2029,7 @@ function inEdge(p: editor_position) {
             picked ? [[picked.x, picked.y, picked.width, picked.height]] : [],
             true,
         );
+        if (!direction) setClipCursor(picked ? "pointer" : "crosshair");
         return;
     }
 
@@ -2140,7 +2141,6 @@ function renderClip(e: MouseEvent) {
     // 仅选区变化或遮罩形态变化时重绘遮罩
     const mask = isRect ? "rect" : freeSelect.length >= 2 ? "poly" : null;
     if (selecting || moving || maskType !== mask) drawClip();
-    inEdge({ x: e.offsetX, y: e.offsetY });
     ckx(e2srcPoint(e));
 
     if (!selecting && !moving) {
@@ -2151,6 +2151,7 @@ function renderClip(e: MouseEvent) {
             isPointInPolygon({ x: e.offsetX, y: e.offsetY });
         }
     }
+    inEdge({ x: e.offsetX, y: e.offsetY });
 }
 
 // 大小栏
@@ -4473,7 +4474,7 @@ const captureHelp = view("y").class("capture-help").addInto();
 captureHelp.el.hidden = true;
 captureHelp.add(ele("strong").attr({ textContent: t("단축키") }));
 for (const [key, desc] of [
-    ["↑ ← ↓ → · WASD", t("선택 영역 이동")],
+    ["↑ ← ↓ →", t("선택 영역 이동")],
     ["Ctrl", t("5픽셀 이동")],
     ["Shift", t("드래그 시 정사각형 · 10픽셀 이동")],
     ["Shift+드래그", t("영역 추가 (최대 12개)")],
@@ -6477,7 +6478,12 @@ document.body.onkeydown = (e) => {
     const controlKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     const isWasd = controlKey.length === 1 && controlKey in o;
     if (isWasd && (e.ctrlKey || e.metaKey || e.altKey)) return;
-    if (captureSelectionMode === "window" && controlKey in o) {
+    if (
+        captureSelectionMode === "window" &&
+        controlKey in o &&
+        controlKey !== "w" &&
+        controlKey !== "s"
+    ) {
         e.preventDefault();
         captureWorkspace?.showStatus(
             "창 캡처에서는 시스템 창의 원래 경계를 사용합니다.",
@@ -6497,9 +6503,8 @@ document.body.onkeydown = (e) => {
     let v = 1;
     if (e.ctrlKey) v = v * 5;
     if (e.shiftKey) v = v * 10;
-    if (controlKey in o) {
+    if (controlKey in o && !isWasd) {
         e.preventDefault();
-        if (isWasd) e.stopPropagation();
         const dx =
             (o[controlKey] === "right" ? v : 0) -
             (o[controlKey] === "left" ? v : 0);
@@ -6643,6 +6648,7 @@ document.onmouseup = (e) => {
 
 hotkeys("s", () => {
     dismissStartHint();
+    if (nowType !== "select" && captureSelectionMode !== "window") return;
     if (captureSelectionMode === "window") {
         rectSelect = false;
         finalRect = [0, 0, 0, 0];
