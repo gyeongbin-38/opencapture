@@ -137,6 +137,7 @@ export interface setting {
         识别窗口: boolean;
         选区吸附: boolean;
         吸附距离: number;
+        套索平滑: "off" | "light" | "normal";
         记忆: {
             开启: boolean;
             rects: { [screenId: string]: number[] };

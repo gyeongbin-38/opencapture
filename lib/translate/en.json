@@ -2488,5 +2488,8 @@
     "73fc95": "Snap distance",
     "882fbb": "Selections snap when they come within this distance of an edge; larger values snap sooner",
     "b35eb5": "Chime",
-    "9ad039": "Shutter"
+    "9ad039": "Shutter",
+    "0c562a": "Lasso smoothing",
+    "82802f": "Simplifies the boundary when a free-form selection is released; higher strength smooths more",
+    "d73f86": "Light"
 }

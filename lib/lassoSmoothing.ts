@@ -1,5 +1,19 @@
 export type LassoPoint = { x: number; y: number };
 
+export type LassoSmoothingLevel = "off" | "light" | "normal";
+
+/**
+ * Tolerance for a smoothing level in canvas px. `off` disables
+ * simplification outright; `light` halves the base so deliberate detail
+ * survives. The base scales with zoom so the effective smoothing stays
+ * roughly 3 screen px at any magnification.
+ */
+export function lassoTolerance(level: LassoSmoothingLevel, zoom: number) {
+    if (level === "off") return 0;
+    const base = Math.max(1.2, 3 / zoom);
+    return level === "light" ? base * 0.5 : base;
+}
+
 function distanceToSegmentSq(p: LassoPoint, a: LassoPoint, b: LassoPoint) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;

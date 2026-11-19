@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { simplifyLassoPoints } from "../lib/lassoSmoothing";
+import {
+    lassoTolerance,
+    simplifyLassoPoints,
+} from "../lib/lassoSmoothing";
 
 describe("lasso smoothing", () => {
     it("collapses each straight leg to its endpoints", () => {
@@ -99,5 +102,50 @@ describe("lasso smoothing", () => {
         const snapshot = [...points];
         simplifyLassoPoints(points, 2);
         expect(points).toEqual(snapshot);
+    });
+});
+
+describe("lasso tolerance levels", () => {
+    const stroke = [
+        { x: 0, y: 0 },
+        { x: 25, y: 2.2 },
+        { x: 50, y: -2.2 },
+        { x: 75, y: 2.2 },
+        { x: 100, y: 0 },
+        { x: 100, y: 20 },
+        { x: 100, y: 40 },
+    ];
+
+    it("disables simplification when the level is off", () => {
+        expect(lassoTolerance("off", 1)).toBe(0);
+        expect(
+            simplifyLassoPoints(stroke, lassoTolerance("off", 1)),
+        ).toEqual(stroke);
+    });
+
+    it("halves the normal tolerance for the light level", () => {
+        expect(lassoTolerance("light", 2)).toBeCloseTo(
+            lassoTolerance("normal", 2) / 2,
+        );
+    });
+
+    it("keeps roughly constant screen-px tolerance across zooms", () => {
+        const near = lassoTolerance("normal", 1);
+        const far = lassoTolerance("normal", 2);
+        expect(near * 1).toBeCloseTo(far * 2, 1);
+        expect(lassoTolerance("normal", 4)).toBe(1.2);
+    });
+
+    it("keeps a 2.2px wobble under light but smooths it under normal", () => {
+        const light = simplifyLassoPoints(
+            stroke,
+            lassoTolerance("light", 1),
+        ).length;
+        const normal = simplifyLassoPoints(
+            stroke,
+            lassoTolerance("normal", 1),
+        ).length;
+        expect(light).toBeGreaterThan(normal);
+        expect(normal).toBeLessThan(stroke.length);
     });
 });
