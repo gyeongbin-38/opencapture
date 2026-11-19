@@ -42,6 +42,25 @@
     white-space: nowrap;
     padding: 0 var(--sp-1);
 }
+.capture-shelf-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 var(--sp-2) 0 var(--sp-1);
+    border-left: 1px solid #ffffff1c;
+    font-size: var(--fs-xs);
+    color: #a1a1aa;
+    white-space: nowrap;
+}
+.capture-shelf-hint kbd {
+    padding: 0 5px;
+    border: 1px solid #ffffff24;
+    border-radius: 4px;
+    background: #222227;
+    font-family: inherit;
+    font-size: 10px;
+    color: #d4d4d8;
+}
 .capture-shelf-thumb {
     padding: 0 !important;
     width: 56px !important;

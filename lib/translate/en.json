@@ -2476,5 +2476,8 @@
     "c30767": "A file path is required.",
     "d14057": "The application runtime path is unavailable.",
     "47a5ab": "Select area",
-    "b180ce": "Auto select"
+    "b180ce": "Auto select",
+    "7ca582": "Add region",
+    "27323a": "Add region (up to 12)",
+    "2f01aa": "Shift+drag"
 }

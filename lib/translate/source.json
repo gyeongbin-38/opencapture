@@ -2477,5 +2477,8 @@
     "A file path is required.": "c30767",
     "The application runtime path is unavailable.": "d14057",
     "영역 선택": "47a5ab",
-    "자동 선택": "b180ce"
+    "자동 선택": "b180ce",
+    "영역 추가": "7ca582",
+    "영역 추가 (최대 12개)": "27323a",
+    "Shift+드래그": "2f01aa"
 }

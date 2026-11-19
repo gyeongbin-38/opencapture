@@ -145,6 +145,16 @@ export function createCaptureWorkspace(options: {
         strip.add(
             txt(`${t("임시")} ${thumbnails.size}`).class("capture-shelf-count"),
         );
+        if (thumbnails.size === 1) {
+            strip.add(
+                view("x")
+                    .class("capture-shelf-hint")
+                    .add([
+                        ele("kbd").attr({ textContent: t("Shift+드래그") }),
+                        ele("span").attr({ textContent: t("영역 추가") }),
+                    ]),
+            );
+        }
         for (const [id, entry] of thumbnails) {
             const thumbnail = button(
                 ele("img").attr({
