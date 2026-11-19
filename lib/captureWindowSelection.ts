@@ -394,3 +394,98 @@ export function snapDragRect(
     if (nw < 1 || nh < 1) return none;
     return { rect: [nx, ny, nw, nh], guideX: snappedX, guideY: snappedY };
 }
+
+/**
+ * Snap edges of an existing selection while resizing or moving it. Each axis
+ * names which edge is being dragged ("left"/"right"/"top"/"bottom") or that
+ * the whole rect translates ("translate"), where both edges of the axis can
+ * latch onto a candidate without changing the rect's size.
+ */
+export function snapAdjustRect(
+    rect: readonly [number, number, number, number],
+    mode: {
+        x?: "left" | "right" | "translate";
+        y?: "top" | "bottom" | "translate";
+    },
+    edges: CaptureSelectionEdge[],
+    canvas: CanvasSize,
+    threshold: number,
+): {
+    rect: [number, number, number, number];
+    guideX: number | null;
+    guideY: number | null;
+} {
+    const [x, y, w, h] = rect;
+    let nx = x;
+    let ny = y;
+    let nw = w;
+    let nh = h;
+    let guideX: number | null = null;
+    let guideY: number | null = null;
+    const xs = [0, canvas.width / 2, canvas.width];
+    const ys = [0, canvas.height / 2, canvas.height];
+    for (const edge of edges) {
+        xs.push(edge.x, edge.x + edge.width);
+        ys.push(edge.y, edge.y + edge.height);
+    }
+    if (mode.x === "left" || mode.x === "right") {
+        const snapped = nearestWithin(
+            mode.x === "left" ? x : x + w,
+            xs,
+            threshold,
+        );
+        if (snapped != null) {
+            if (mode.x === "left") {
+                nw = x + w - snapped;
+                nx = snapped;
+            } else nw = snapped - x;
+            guideX = snapped;
+        }
+    } else if (mode.x === "translate") {
+        const leftHit = nearestWithin(x, xs, threshold);
+        const rightHit = nearestWithin(x + w, xs, threshold);
+        const leftDelta = leftHit == null ? null : leftHit - x;
+        const rightDelta = rightHit == null ? null : rightHit - (x + w);
+        const delta =
+            leftDelta != null &&
+            (rightDelta == null || Math.abs(leftDelta) <= Math.abs(rightDelta))
+                ? leftDelta
+                : rightDelta;
+        if (delta != null) {
+            nx = x + delta;
+            guideX = delta === leftDelta ? leftHit : rightHit;
+        }
+    }
+    if (mode.y === "top" || mode.y === "bottom") {
+        const snapped = nearestWithin(
+            mode.y === "top" ? y : y + h,
+            ys,
+            threshold,
+        );
+        if (snapped != null) {
+            if (mode.y === "top") {
+                nh = y + h - snapped;
+                ny = snapped;
+            } else nh = snapped - y;
+            guideY = snapped;
+        }
+    } else if (mode.y === "translate") {
+        const topHit = nearestWithin(y, ys, threshold);
+        const bottomHit = nearestWithin(y + h, ys, threshold);
+        const topDelta = topHit == null ? null : topHit - y;
+        const bottomDelta = bottomHit == null ? null : bottomHit - (y + h);
+        const delta =
+            topDelta != null &&
+            (bottomDelta == null || Math.abs(topDelta) <= Math.abs(bottomDelta))
+                ? topDelta
+                : bottomDelta;
+        if (delta != null) {
+            ny = y + delta;
+            guideY = delta === topDelta ? topHit : bottomHit;
+        }
+    }
+    if (nw < 1 || nh < 1) {
+        return { rect: [x, y, w, h], guideX: null, guideY: null };
+    }
+    return { rect: [nx, ny, nw, nh], guideX, guideY };
+}

@@ -63,6 +63,7 @@ import {
     type CaptureSelectionEdge,
     type CaptureSelectionMode,
     selectionEdgesForMode,
+    snapAdjustRect,
     snapDragRect,
     windowBoundsToCanvas,
     windowEdgeAtPoint,
@@ -2665,6 +2666,24 @@ function isInClipRect(p: editor_position) {
     return inRect;
 }
 
+const adjustSnapMode: Record<
+    string,
+    {
+        x?: "left" | "right" | "translate";
+        y?: "top" | "bottom" | "translate";
+    }
+> = {
+    西北: { x: "left", y: "top" },
+    东南: { x: "right", y: "bottom" },
+    东北: { x: "right", y: "top" },
+    西南: { x: "left", y: "bottom" },
+    西: { x: "left" },
+    东: { x: "right" },
+    北: { y: "top" },
+    南: { y: "bottom" },
+    move: { x: "translate", y: "translate" },
+};
+
 /** 调整框选 */
 function moveRect(
     oldFinalRect: rect | null,
@@ -2798,6 +2817,19 @@ function moveRect(
         finalRect[2] = mainCanvas.width - finalRect[0];
     if (finalRect[1] + finalRect[3] > mainCanvas.height)
         finalRect[3] = mainCanvas.height - finalRect[1];
+
+    const mode = adjustSnapMode[direction];
+    if (mode) {
+        const snapped = snapAdjustRect(
+            finalRect,
+            mode,
+            selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
+            { width: mainCanvas.width, height: mainCanvas.height },
+            6 / editorP.zoom,
+        );
+        finalRect = snapped.rect;
+        setSnapGuides(snapped.guideX, snapped.guideY);
+    }
 
     finalRectFix();
 }
@@ -5360,6 +5392,7 @@ function finishHandleResize(commit: boolean) {
     const drag = handleDrag;
     if (!drag) return;
     handleDrag = null;
+    setSnapGuides(null, null);
     if (drag.handle.hasPointerCapture(drag.pointerId))
         drag.handle.releasePointerCapture(drag.pointerId);
     if (!commit) finalRect = drag.rect;
@@ -6426,6 +6459,7 @@ document.onmouseup = (e) => {
         if (moving) {
             moving = false;
             oFinalRect = null;
+            setSnapGuides(null, null);
             if (e.button === 0) followBar({ x: e.clientX, y: e.clientY });
             hisPush();
             rememberLastRect();

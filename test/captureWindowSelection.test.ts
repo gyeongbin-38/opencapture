@@ -6,6 +6,7 @@ import {
     nativeWindowBoundsForDisplay,
     nativeWindowBoundsToDip,
     selectionEdgesForMode,
+    snapAdjustRect,
     snapDragRect,
     windowBoundsToCanvas,
     windowEdgeAtPoint,
@@ -476,5 +477,78 @@ describe("capture window selection", () => {
         // nearest candidate at 904 would pull it past the right edge.
         expect(snapped.rect).toEqual([900, 100, 3, 100]);
         expect(snapped.guideX).toBeNull();
+    });
+
+    it("snaps a resize edge to the nearest candidate", () => {
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapAdjustRect(
+            [100, 100, 396, 300],
+            { x: "right" },
+            [],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([100, 100, 400, 300]);
+        expect(snapped.guideX).toBe(500);
+        expect(snapped.guideY).toBeNull();
+    });
+
+    it("snaps both axes of a corner resize independently", () => {
+        const win = {
+            x: 100,
+            y: 100,
+            width: 400,
+            height: 300,
+            type: "system" as const,
+        };
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapAdjustRect(
+            [104, 96, 396, 304],
+            { x: "left", y: "top" },
+            [win],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([100, 100, 400, 300]);
+        expect(snapped.guideX).toBe(100);
+        expect(snapped.guideY).toBe(100);
+    });
+
+    it("translates the rect when either edge latches a candidate", () => {
+        const canvas = { width: 1000, height: 800 };
+        // Right edge at 496 sits 4px from the midline: move the whole rect
+        // by the delta while preserving width.
+        const snapped = snapAdjustRect(
+            [196, 100, 300, 200],
+            { x: "translate" },
+            [],
+            canvas,
+            8,
+        );
+        expect(snapped.rect).toEqual([200, 100, 300, 200]);
+        expect(snapped.guideX).toBe(500);
+    });
+
+    it("keeps the size when translate snaps both axes", () => {
+        const canvas = { width: 1000, height: 800 };
+        const snapped = snapAdjustRect(
+            [196, 96, 300, 200],
+            { x: "translate", y: "translate" },
+            [],
+            canvas,
+            8,
+        );
+        // Right edge 496→500 (+4); bottom edge 296→? nothing in y: top 96 vs
+        // 0/400 distances stay outside threshold except... 96→? none.
+        expect(snapped.rect).toEqual([200, 96, 300, 200]);
+        expect(snapped.guideX).toBe(500);
+        expect(snapped.guideY).toBeNull();
+    });
+
+    it("leaves the rect untouched when no mode edge is set", () => {
+        const canvas = { width: 1000, height: 800 };
+        const rect: [number, number, number, number] = [100, 100, 400, 300];
+        const snapped = snapAdjustRect(rect, {}, [], canvas, 8);
+        expect(snapped.rect).toEqual(rect);
     });
 });
