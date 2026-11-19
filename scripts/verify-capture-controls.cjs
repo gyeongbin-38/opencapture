@@ -480,9 +480,77 @@ app.whenReady().then(async () => {
             'document.querySelector(".capture-shelf-count")?.textContent ?? ""',
         );
         report.checks.push({ regionStatus, shelfCount });
+        // Free-form lasso: while drawing, a marker sits at the start point
+        // and is emphasized when the pointer returns near the origin.
+        await pressKey("f", 70);
+        await pause(150);
+        const lassoOrigin = {
+            x: Math.round(rectangle.x + rectangle.width * 0.15),
+            y: Math.round(rectangle.y + rectangle.height * 0.2),
+        };
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            ...lassoOrigin,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...lassoOrigin,
+        });
+        for (const [fx, fy] of [
+            [0.3, 0.2],
+            [0.3, 0.35],
+            [0.15, 0.35],
+        ]) {
+            capture.webContents.sendInputEvent({
+                type: "mouseMove",
+                x: Math.round(rectangle.x + rectangle.width * fx),
+                y: Math.round(rectangle.y + rectangle.height * fy),
+            });
+            await pause(90);
+        }
+        const lassoMarker = await clip(
+            '(() => { const m=document.querySelector(".capture-free-start"); return { shown: m && getComputedStyle(m).display !== "none" }; })()',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(rectangle.x + rectangle.width * 0.16),
+            y: Math.round(rectangle.y + rectangle.height * 0.21),
+        });
+        await pause(120);
+        const lassoNear = await clip(
+            'document.querySelector(".capture-free-start")?.classList.contains("is-near")',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(rectangle.x + rectangle.width * 0.24),
+            y: Math.round(rectangle.y + rectangle.height * 0.29),
+        });
+        await pause(120);
+        const lassoFar = await clip(
+            'document.querySelector(".capture-free-start")?.classList.contains("is-near")',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: Math.round(rectangle.x + rectangle.width * 0.24),
+            y: Math.round(rectangle.y + rectangle.height * 0.29),
+        });
+        await pause(150);
+        const lassoGone = await clip(
+            '(() => { const m=document.querySelector(".capture-free-start"); return !m || getComputedStyle(m).display === "none"; })()',
+        );
+        assert(
+            lassoMarker?.shown && lassoNear === true && lassoFar === false && lassoGone,
+            `Lasso start marker failed: ${JSON.stringify({ lassoMarker, lassoNear, lassoFar, lassoGone })}`,
+        );
+        report.checks.push({ lassoMarker: true });
+        await pressKey("f", 70);
+        await pause(120);
         // W toggles region/window selection modes with visible feedback:
-        // either the pick guidance or a "no windows" error. Move the pointer
-        // away from the selection first so W is not consumed as a WASD nudge.
+        // either the pick guidance or a "no windows" error.
         capture.webContents.sendInputEvent({
             type: "mouseMove",
             x: Math.round(rectangle.x + rectangle.width * 0.05),

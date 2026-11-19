@@ -2130,6 +2130,18 @@ function renderClip(e: MouseEvent) {
             finalRect = pointsOutRect(freeSelect);
         }
     }
+    const showFreeStart = selecting && !isRect && freeSelect.length > 1;
+    freeStartEl.el.style.display = showFreeStart ? "block" : "none";
+    if (showFreeStart) {
+        const s = freeSelect[0];
+        const size = Math.max(10, 12 / editorP.zoom);
+        setElBox(freeStartEl.el, s.x - size / 2, s.y - size / 2, size, size);
+        freeStartEl.el.style.borderWidth = `${lineW() * 2}px`;
+        const near =
+            Math.hypot(e.offsetX - s.x, e.offsetY - s.y) <=
+            Math.max(16, 20 / editorP.zoom);
+        freeStartEl.el.classList.toggle("is-near", near);
+    }
     if (moving) {
         if (isRect) {
             moveRect(oFinalRect, oldP, { x: e.offsetX, y: e.offsetY });
@@ -4644,6 +4656,8 @@ const snapGuideEl = view().attr({ id: "capture_snap_guides" }).style({
     height: "100%",
     pointerEvents: "none",
 });
+/** 自由选区绘制起点：回到此处松开可干净闭合 */
+const freeStartEl = view().class("capture-free-start");
 clipEl.append(
     ...clipMaskRect.map((i) => i.el),
     clipMaskPoly.el,
@@ -4652,6 +4666,7 @@ clipEl.append(
     selectionFrameEl.el,
     clipPolyFrame,
     snapGuideEl.el,
+    freeStartEl.el,
     ...clipCkx.map((i) => i.el),
 );
 
