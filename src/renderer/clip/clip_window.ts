@@ -2089,6 +2089,25 @@ function setSnapGuides(x: number | null, y: number | null) {
     snapGuideEl.el.replaceChildren(...els);
 }
 
+/** 吸附候选边：窗口/图像边缘 + 已暂存区域，方便贴着已捕获区域继续框选 */
+function snapEdges() {
+    const edges = selectionEdgesForMode(
+        edgeRect,
+        captureSelectionMode,
+        识别窗口,
+    );
+    if (!batchRegions.length) return edges;
+    return edges.concat(
+        batchRegions.map((i) => ({
+            x: i.rect[0],
+            y: i.rect[1],
+            width: i.rect[2],
+            height: i.rect[3],
+            type: "image" as const,
+        })),
+    );
+}
+
 /** 新框选拖动时把移动角吸附到窗口/图像边缘或屏幕中线；Shift/Alt 手势跳过 */
 function snapDrag(e: MouseEvent, r: rect): rect {
     if (e.altKey || e.shiftKey || !rectStartE || !选区吸附) {
@@ -2098,7 +2117,7 @@ function snapDrag(e: MouseEvent, r: rect): rect {
     const snapped = snapDragRect(
         r,
         rectStartE,
-        selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
+        snapEdges(),
         { width: mainCanvas.width, height: mainCanvas.height },
         吸附距离 / editorP.zoom,
     );
@@ -2989,7 +3008,7 @@ function moveRect(
         const snapped = snapAdjustRect(
             finalRect,
             mode,
-            selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
+            snapEdges(),
             { width: mainCanvas.width, height: mainCanvas.height },
             吸附距离 / editorP.zoom,
         );
@@ -3040,11 +3059,7 @@ function movePoly(
             ? snapAdjustRect(
                   target,
                   adjustSnapMode.move,
-                  selectionEdgesForMode(
-                      edgeRect,
-                      captureSelectionMode,
-                      识别窗口,
-                  ),
+                  snapEdges(),
                   { width: mainCanvas.width, height: mainCanvas.height },
                   吸附距离 / editorP.zoom,
               )
@@ -6851,37 +6866,43 @@ clipEl.onmousedown = (e) => {
 };
 
 document.onmouseup = (e) => {
+    const stagedEntry = stagedClickEntry;
+    stagedClickEntry = null;
+    const isMarkerClick =
+        stagedEntry != null &&
+        (selecting || moving) &&
+        Math.hypot(
+            e.clientX - stagedClickPoint.x,
+            e.clientY - stagedClickPoint.y,
+        ) <= 4;
     if (e.button === 0) {
-        if (selecting) {
-            clipEnd(e);
-            rememberLastRect();
-            // 抬起鼠标后工具栏跟随
-            followBar({ x: e.clientX, y: e.clientY });
-            // 框选后默认操作
-            isShowBars = true;
-            showBars(isShowBars);
-            void completeSelectionAction();
-        }
-        if (moving) {
+        if (isMarkerClick) {
+            selecting = false;
             moving = false;
             oFinalRect = null;
             setSnapGuides(null, null);
-            if (e.button === 0) followBar({ x: e.clientX, y: e.clientY });
-            hisPush();
-            rememberLastRect();
-            scheduleLiveTranslation();
+            restoreStagedRegion(stagedEntry);
+        } else {
+            if (selecting) {
+                clipEnd(e);
+                rememberLastRect();
+                // 抬起鼠标后工具栏跟随
+                followBar({ x: e.clientX, y: e.clientY });
+                // 框选后默认操作
+                isShowBars = true;
+                showBars(isShowBars);
+                void completeSelectionAction();
+            }
+            if (moving) {
+                moving = false;
+                oFinalRect = null;
+                setSnapGuides(null, null);
+                if (e.button === 0) followBar({ x: e.clientX, y: e.clientY });
+                hisPush();
+                rememberLastRect();
+                scheduleLiveTranslation();
+            }
         }
-    }
-    if (stagedClickEntry) {
-        const entry = stagedClickEntry;
-        stagedClickEntry = null;
-        if (
-            Math.hypot(
-                e.clientX - stagedClickPoint.x,
-                e.clientY - stagedClickPoint.y,
-            ) <= 4
-        )
-            restoreStagedRegion(entry);
     }
     const hasSelection = finalRect[2] > 0 && finalRect[3] > 0;
     toolBar.style.pointerEvents = whEl.el.style.pointerEvents = hasSelection

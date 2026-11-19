@@ -716,6 +716,49 @@ app.whenReady().then(async () => {
             `Shelf dblclick did not pin: ${dingBefore} -> ${dingAfter}`,
         );
         report.checks.push({ shelfDblclickPin: { dingBefore, dingAfter } });
+        // Staged regions are snap targets too: a drag ending within the
+        // snap distance of a marker edge latches for clean adjacency.
+        const stagedSnapStart = await clip(
+            `(() => { for (const [x, y] of [[40,350],[40,300],[40,120],[60,430],[60,200],[500,60]]) { const el = document.elementFromPoint(x, y); if (el && el.id === "clip_photo") return { x, y }; } return null; })()`,
+        );
+        assert(
+            stagedSnapStart,
+            "No free canvas point inside the staged marker",
+        );
+        const stagedSnapEnd = {
+            x: Math.round(staged2[0].x + staged2[0].w - 4),
+            y: Math.round(stagedSnapStart.y + staged2[0].h * 0.1),
+        };
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            ...stagedSnapStart,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...stagedSnapStart,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            ...stagedSnapEnd,
+        });
+        await pause(150);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            ...stagedSnapEnd,
+        });
+        await pause(200);
+        const stagedSnap = await clip(
+            `(() => { const f = document.querySelector('#selection_frame').getBoundingClientRect(); return { right: f.x + f.width }; })()`,
+        );
+        assert(
+            Math.abs(stagedSnap.right - (staged2[0].x + staged2[0].w)) <= 4,
+            `Drag did not snap to staged edge: ${JSON.stringify(stagedSnap)}`,
+        );
+        report.checks.push({ stagedSnap });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);

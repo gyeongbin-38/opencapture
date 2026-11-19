@@ -78,10 +78,11 @@ describe("production capture selection geometry", () => {
                     识别窗口: false,
                     选区吸附: true,
                     吸附距离: 6,
+                    batchRegions: [],
                     editorP: { zoom: 1 },
                     setSnapGuides: vi.fn(),
                 },
-                ["finalRectFix"],
+                ["finalRectFix", "snapEdges"],
             );
             h.subject([30, 20, 40, 30], { x: 0, y: 0 }, point);
             expect(h.finalRect).toEqual(expected);
