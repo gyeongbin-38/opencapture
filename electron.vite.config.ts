@@ -64,6 +64,10 @@ export default defineConfig(({ mode }) => ({
                     ),
                     editor: path.resolve(__dirname, "src/renderer/editor.html"),
                     clip: path.resolve(__dirname, "src/renderer/capture.html"),
+                    captureDelay: path.resolve(
+                        __dirname,
+                        "src/renderer/captureDelay.html",
+                    ),
                     setting: path.resolve(
                         __dirname,
                         "src/renderer/setting.html",

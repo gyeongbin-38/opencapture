@@ -6,6 +6,10 @@ const evidence = path.join(root, ".evidence", "capture-controls");
 fs.mkdirSync(evidence, { recursive: true });
 const profile = path.join(evidence, `profile-${Date.now()}`);
 fs.mkdirSync(profile);
+fs.writeFileSync(
+    path.join(profile, "config.json"),
+    JSON.stringify({ 框选: { 延迟: 2 } }),
+);
 process.argv.push(`--userData=${profile}`);
 const errors = [];
 const fixtures = path.join(evidence, "fixtures");
@@ -1378,6 +1382,60 @@ app.whenReady().then(async () => {
                 count: 3,
                 size: copiedSize,
                 format: "single PNG grid",
+            },
+        });
+        capture.close();
+        await pause(300);
+        void run('window.openCapture.action("capture")');
+        const delayWin = await until(
+            () =>
+                BrowserWindow.getAllWindows().find(
+                    (window) =>
+                        window.webContents
+                            .getURL()
+                            .includes("captureDelay.html") &&
+                        !window.webContents.isLoading(),
+                ),
+            "Countdown window did not appear",
+        );
+        const delayInfo = await delayWin.webContents.executeJavaScript(
+            '(() => ({ count: document.querySelector(".delay-count")?.textContent, label: document.querySelector(".delay-label")?.textContent }))()',
+            true,
+        );
+        assert(
+            delayInfo.count === "2" || delayInfo.count === "1",
+            `Countdown shows ${delayInfo.count}`,
+        );
+        await delayWin.webContents.executeJavaScript(
+            'document.querySelector(".delay-cancel").click()',
+            true,
+        );
+        await pause(2500);
+        const noCaptureAfterCancel = !BrowserWindow.getAllWindows().some(
+            (window) =>
+                !window.isDestroyed() &&
+                window.webContents.getURL().includes("capture.html"),
+        );
+        assert(noCaptureAfterCancel, "Capture proceeded after cancel");
+        void run('window.openCapture.action("capture")');
+        const delayedCapture = await until(
+            () =>
+                BrowserWindow.getAllWindows().find(
+                    (window) =>
+                        window.webContents
+                            .getURL()
+                            .includes("capture.html") &&
+                        !window.webContents.isLoading(),
+                ),
+            "Capture did not open after countdown",
+        );
+        delayedCapture.close();
+        report.checks.push({
+            delayCountdown: {
+                count: delayInfo.count,
+                label: delayInfo.label,
+                cancelled: noCaptureAfterCancel,
+                openedAfterDelay: true,
             },
         });
         assert(

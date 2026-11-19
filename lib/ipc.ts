@@ -130,6 +130,7 @@ type Message = {
     dropzone_action: (action: string, paths: string[]) => void;
     dropzone_close: () => void;
     clip_stop_long: () => void;
+    captureDelayCancel: () => void;
     clip_init: (
         displays: Electron.Display[],
         imgBuffer: Buffer | undefined,

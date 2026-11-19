@@ -3033,6 +3033,55 @@ async function fullScreen(requestId?: string, nowScreenId?: number) {
     win.setSimpleFullScreen(true);
 }
 
+/** 延迟截屏倒计时提示窗：小窗显示剩余秒数，可点击取消 */
+let captureDelayWin: BrowserWindow | undefined;
+
+function closeCaptureDelayWin() {
+    if (captureDelayWin && !captureDelayWin.isDestroyed())
+        captureDelayWin.close();
+    captureDelayWin = undefined;
+}
+
+function showCaptureDelayWin(seconds: number) {
+    closeCaptureDelayWin();
+    const display = screen.getDisplayNearestPoint(
+        screen.getCursorScreenPoint(),
+    );
+    const w = 200;
+    const h = 150;
+    const win = new BrowserWindow({
+        x: display.bounds.x + Math.round((display.bounds.width - w) / 2),
+        y: display.bounds.y + Math.round(display.bounds.height / 4),
+        width: w,
+        height: h,
+        transparent: true,
+        frame: false,
+        autoHideMenuBar: true,
+        show: false,
+        resizable: false,
+        skipTaskbar: true,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            sandbox: false,
+        },
+    });
+    captureDelayWin = win;
+    showWhenReady(win);
+    rendererPath(win, "captureDelay.html", {
+        query: { seconds: String(seconds) },
+    });
+    win.setAlwaysOnTop(true, "screen-saver");
+    win.on("closed", () => {
+        if (captureDelayWin === win) captureDelayWin = undefined;
+    });
+}
+
+mainOn("captureDelayCancel", () => {
+    captureAcquireSequence++;
+    closeCaptureDelayWin();
+});
+
 async function sendCaptureEvent(
     data?: Buffer,
     type?: 功能,
@@ -3056,8 +3105,11 @@ async function sendCaptureEvent(
             data || project
                 ? 0
                 : Math.min(15, Number(store.get("框选.延迟")) || 0);
-        if (captureDelay > 0)
+        if (captureDelay > 0) {
+            showCaptureDelayWin(captureDelay);
             await new Promise((r) => setTimeout(r, captureDelay * 1000));
+            closeCaptureDelayWin();
+        }
         if (superseded()) {
             addCaptureDiagnostic(requestId, "failed", input, "superseded");
             return;
