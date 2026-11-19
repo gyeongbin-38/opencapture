@@ -1890,6 +1890,7 @@ function showMask(type: "rect" | "poly" | null) {
     const rectV = type === "rect";
     for (const el of clipMaskRect) el.el.style.display = rectV ? "" : "none";
     for (const el of clipSelectLines) el.el.style.display = rectV ? "" : "none";
+    selectionFrameEl.el.style.display = rectV ? "" : "none";
     clipMaskPoly.el.style.display = type === "poly" ? "" : "none";
 }
 
@@ -1921,6 +1922,11 @@ function drawClipRect() {
     setElBox(clipMaskRect[1].el, 0, y + height, cw, ch - y - height);
     setElBox(clipMaskRect[2].el, 0, y, x, height);
     setElBox(clipMaskRect[3].el, x + width, y, cw - x - width, height);
+
+    const borderW = lineW();
+    setElBox(selectionFrameEl.el, x, y, width, height);
+    selectionFrameEl.el.style.border = `${borderW}px solid #000`;
+    selectionFrameEl.el.style.outline = `${borderW}px solid #fff`;
 
     drawSelectLines();
 
@@ -1993,6 +1999,18 @@ function inEdge(p: editor_position) {
         return;
     }
 
+    if (captureSelectionMode === "window") {
+        const picked = windowEdgeAtPoint(
+            selectionEdgesForMode(edgeRect, "window", false),
+            p,
+        );
+        setEdge(
+            picked ? [[picked.x, picked.y, picked.width, picked.height]] : [],
+            true,
+        );
+        return;
+    }
+
     rectInRect = [];
     for (const i of selectionEdgesForMode(
         edgeRect,
@@ -2053,9 +2071,9 @@ function snapDrag(e: MouseEvent, r: rect): rect {
 }
 
 /** 提示框没变化就不动 DOM */
-function setEdge(rects: rect[]) {
+function setEdge(rects: rect[], emphasize = false) {
     const w = lineW();
-    const key = `${w}|${rects.map((i) => i.join(",")).join(";")}`;
+    const key = `${w}|${emphasize ? "e" : ""}|${rects.map((i) => i.join(",")).join(";")}`;
     if (key === edgeKey) return;
     edgeKey = key;
     clipEdge.el.replaceChildren(
@@ -2065,6 +2083,11 @@ function setEdge(rects: rect[]) {
             el.style.boxSizing = "border-box";
             el.style.border = `${w}px solid #000`;
             el.style.outline = `${w}px solid #fff`;
+            if (emphasize) {
+                el.style.outline = `${w * 1.5}px solid #fff`;
+                el.style.background = "#ffffff1f";
+                el.style.borderRadius = "2px";
+            }
             return el;
         }),
     );
@@ -4415,6 +4438,7 @@ for (const [key, desc] of [
     ["Shift", t("드래그 시 정사각형 · 10픽셀 이동")],
     ["Shift+드래그", t("영역 추가 (최대 12개)")],
     ["F", t("自由选择")],
+    ["W", t("창 선택")],
     ["Alt", t("중심 기준 확장")],
     ["휠 클릭 드래그", t("도넛 빠른 동작 · 캔버스 팬")],
     ["우클릭", t("도넛 메뉴 · 가운데 놓기는 취소")],
@@ -4550,8 +4574,13 @@ const clipSelectLines = [...clipSelectLineX, ...clipSelectLineY];
 const clipCkx = Array.from({ length: 4 }, () =>
     view().style({ background: c参考线颜色.光标参考线 }),
 );
+/** 选区边界：内外双色描边，任何底色上都清晰 */
+const selectionFrameEl = view().attr({ id: "selection_frame" }).style({
+    pointerEvents: "none",
+    boxSizing: "border-box",
+});
 /** 自动框选提示 */
-const clipEdge = view().style({
+const clipEdge = view().attr({ id: "capture_edge" }).style({
     left: "0",
     top: "0",
     width: "100%",
@@ -4569,6 +4598,7 @@ clipEl.append(
     clipMaskPoly.el,
     ...clipSelectLines.map((i) => i.el),
     clipEdge.el,
+    selectionFrameEl.el,
     snapGuideEl.el,
     ...clipCkx.map((i) => i.el),
 );
@@ -5632,6 +5662,7 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
             { name: "高", keys: [store.get("大小栏快捷键.高")] },
             { name: "自动框选", keys: ["S"] },
             { name: "自由选择", keys: ["F"] },
+            { name: "창 선택", keys: ["W"] },
             { name: "匹配自动框选", keys: [`Shift ${t("框选")}`] },
         ],
     },
@@ -6589,6 +6620,29 @@ hotkeys("f", () => {
         captureWorkspace?.showStatus(t("自由选择"));
     }
     drawClip();
+});
+
+hotkeys("w", () => {
+    if (nowType !== "select") return;
+    if (captureSelectionMode === "window") {
+        captureSelectionMode = "region";
+        drawClip();
+        captureWorkspace?.showStatus(t("영역 선택"));
+        return;
+    }
+    if (!selectionEdgesForMode(edgeRect, "window", false).length) {
+        captureWorkspace?.showError(
+            new Error("현재 화면에서 캡처할 창을 찾을 수 없습니다."),
+        );
+        return;
+    }
+    captureSelectionMode = "window";
+    freeSelect = [];
+    rectSelect = false;
+    finalRect = [0, 0, 0, 0];
+    setEdge([]);
+    drawClipRect();
+    captureWorkspace?.showStatus("창 위로 포인터를 이동한 다음 클릭하세요.");
 });
 
 const whHotKeyMap = {

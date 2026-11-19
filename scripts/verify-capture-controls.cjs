@@ -199,7 +199,7 @@ app.whenReady().then(async () => {
         });
         await pause(200);
         const ui = await clip(
-            `(() => { const selection=document.querySelector('#selection_handles'); const toolbar=document.querySelector('#quick_toolbar'); return { handles:selection.querySelectorAll('.capture-handle').length, hidden:selection.hidden, selection:JSON.parse(JSON.stringify(selection.getBoundingClientRect())), toolbar:JSON.parse(JSON.stringify(toolbar.getBoundingClientRect())), size:[...document.querySelectorAll('.capture-dimensions input')].map(i=>i.value), background:getComputedStyle(toolbar).backgroundColor, colorPanelHidden:document.querySelector('#mouse_bar').classList.contains('mouse_bar_hide') } })()`,
+            `(() => { const selection=document.querySelector('#selection_handles'); const toolbar=document.querySelector('#quick_toolbar'); const frame=document.querySelector('#selection_frame'); const fcs=getComputedStyle(frame); return { handles:selection.querySelectorAll('.capture-handle').length, hidden:selection.hidden, selection:JSON.parse(JSON.stringify(selection.getBoundingClientRect())), toolbar:JSON.parse(JSON.stringify(toolbar.getBoundingClientRect())), size:[...document.querySelectorAll('.capture-dimensions input')].map(i=>i.value), background:getComputedStyle(toolbar).backgroundColor, colorPanelHidden:document.querySelector('#mouse_bar').classList.contains('mouse_bar_hide'), frame:{display:fcs.display,borderWidth:fcs.borderWidth,outlineWidth:fcs.outlineWidth,rect:JSON.parse(JSON.stringify(frame.getBoundingClientRect()))} } })()`,
         );
         assert(
             ui.handles === 8 && !ui.hidden,
@@ -211,6 +211,13 @@ app.whenReady().then(async () => {
             "Toolbar is not below the capture",
         );
         assert(ui.toolbar.height < 50, "Toolbar is too tall");
+        assert(
+            ui.frame.display !== "none" &&
+                parseFloat(ui.frame.borderWidth) > 0 &&
+                parseFloat(ui.frame.outlineWidth) > 0 &&
+                Math.abs(ui.frame.rect.x - ui.selection.x) < 3,
+            `Selection frame is not crisp: ${JSON.stringify(ui.frame)}`,
+        );
         assert(
             await clip(
                 'document.querySelector(".capture-start-hint").classList.contains("hint-hidden")',
@@ -373,6 +380,22 @@ app.whenReady().then(async () => {
             400,
         );
         report.checks.push({ freeSelectToggle: true });
+        // W toggles region/window selection modes with visible feedback.
+        await clip(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"w",keyCode:87,which:87,bubbles:true}))',
+        );
+        await until(
+            () =>
+                clip(
+                    '(() => { const s=document.querySelector(".capture-workspace-status"); return Boolean(s && !s.hidden && s.textContent.length > 0); })()',
+                ),
+            "Window-mode toggle produced no status feedback",
+            400,
+        );
+        const windowModeStatus = await clip(
+            'document.querySelector(".capture-workspace-status").textContent',
+        );
+        report.checks.push({ windowModeStatus });
         const scrollHint = await clip(
             '(() => { const h=document.querySelector(".capture-scroll-hint"); return { exists: Boolean(h), hidden: h?.hidden ?? null }; })()',
         );

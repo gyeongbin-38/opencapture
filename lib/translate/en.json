@@ -40,6 +40,7 @@
     "373847": "User has cancelled the save",
     "384704": "Fetch model list",
     "394293": "Horizontal position",
+    "402249": "{count} selected",
     "407695": "Trim tail",
     "408350": "User Prompt, ${t} for text, ${to}, ${from}",
     "411931": "Convert table data",
@@ -106,6 +107,7 @@
     "841632": "Mouse follow bar",
     "869382": "Clipboard",
     "870933": "Could not encode frames.",
+    "878449": "App language",
     "882920": "Height",
     "897334": "The settings are invalid.",
     "901234": "Paste from clipboard",
@@ -2454,7 +2456,6 @@
     "af7886": "Expand file list",
     "b57eff": "File actions do not convert content",
     "6b23be": "Change operation",
-    "878449": "App language",
     "b14ad9": "Display language",
     "8ce1d3": "Language changes take effect the next time the app starts.",
     "a4bdca": "Unsupported language.",
@@ -2462,7 +2463,6 @@
     "a3cc95": "{images} images · {elements} elements",
     "cafe4b": "{count} · {total} total",
     "f484bf": "{count}",
-    "402249": "{count} selected",
     "e0648d": "Load more ({current}/{total})",
     "9c2215": "Failed to capture the screen.",
     "7fb916": "The captured screen is empty. Try capturing it again.",
@@ -2480,5 +2480,6 @@
     "7ca582": "Add region",
     "27323a": "Add region (up to 12)",
     "2f01aa": "Shift+drag",
-    "ac9196": "Pinned to screen"
+    "ac9196": "Pinned to screen",
+    "da1061": "Select window"
 }
