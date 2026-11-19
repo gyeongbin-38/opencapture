@@ -759,6 +759,41 @@ app.whenReady().then(async () => {
             `Drag did not snap to staged edge: ${JSON.stringify(stagedSnap)}`,
         );
         report.checks.push({ stagedSnap });
+        // Alt+click drops the staged marker and trashes its draft.
+        const thumbsBeforeDrop = await clip(
+            'document.querySelectorAll(".capture-shelf-thumb").length',
+        );
+        const dropPt = await clip(
+            `(() => { for (const [x, y] of [[500,60],[480,80],[40,120],[60,200],[500,140]]) { const el = document.elementFromPoint(x, y); if (el && el.id === "clip_photo") return { x, y }; } return null; })()`,
+        );
+        assert(dropPt, "No free canvas point for the drop gesture");
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["alt"],
+            ...dropPt,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["alt"],
+            ...dropPt,
+        });
+        await pause(300);
+        const afterDrop = await clip(
+            `(() => ({ markers: document.querySelectorAll('#capture_staged > div').length, thumbs: document.querySelectorAll('.capture-shelf-thumb').length, frame: (() => { const r = document.querySelector('#selection_frame').getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) }; })() }))()`,
+        );
+        assert(
+            afterDrop.markers === 0 &&
+                afterDrop.thumbs < thumbsBeforeDrop &&
+                afterDrop.frame.w < staged2[0].w &&
+                afterDrop.frame.w > 100,
+            `Alt+click did not drop staged region: ${JSON.stringify(afterDrop)}`,
+        );
+        report.checks.push({ stagedDrop: afterDrop });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);

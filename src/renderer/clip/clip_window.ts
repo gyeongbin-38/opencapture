@@ -121,6 +121,7 @@ let stagedHighlightKey: number | null = null;
 /** mousedown이 보관 마커 안에서 시작됐고 mouseup까지 안 움직이면 복원 클릭 */
 let stagedClickEntry: { rect: rect; key?: number } | null = null;
 let stagedClickPoint = { x: 0, y: 0 };
+let stagedClickAlt = false;
 let selectionBeforeDrag: {
     rect: rect;
     points: point[];
@@ -2201,6 +2202,24 @@ function restoreStagedRegion(entry: { rect: rect; key?: number }) {
     renderStagedRegions();
     if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
     captureWorkspace?.showStatus(t("보관된 영역을 다시 선택했습니다"));
+}
+
+/** Alt+点击已暂存区域：直接丢弃该暂存及其草稿 */
+function dropStagedRegion(entry: { rect: rect; key?: number }) {
+    const i = batchRegions.indexOf(entry);
+    if (i < 0) return;
+    batchRegions.splice(i, 1);
+    if (stagedHighlightKey === entry.key) stagedHighlightKey = null;
+    if (selectionBeforeDrag) {
+        finalRect = selectionBeforeDrag.rect;
+        freeSelect = selectionBeforeDrag.points;
+        rectSelect = selectionBeforeDrag.manual;
+        drawClip();
+        followBar();
+    }
+    renderStagedRegions();
+    if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
+    captureWorkspace?.showStatus(t("휴지통으로 이동됨"));
 }
 
 /** 提示框没变化就不动 DOM */
@@ -6838,6 +6857,7 @@ clipEl.onmousedown = (e) => {
             ? stagedRegionAt(e.offsetX, e.offsetY)
             : null;
     stagedClickPoint = { x: e.clientX, y: e.clientY };
+    stagedClickAlt = e.altKey;
     if (e.button === 0) {
         if (e.shiftKey && finalRect[2] > 1 && finalRect[3] > 1 && rectSelect) {
             if (batchRegions.length >= 11) {
@@ -6881,7 +6901,8 @@ document.onmouseup = (e) => {
             moving = false;
             oFinalRect = null;
             setSnapGuides(null, null);
-            restoreStagedRegion(stagedEntry);
+            if (stagedClickAlt) dropStagedRegion(stagedEntry);
+            else restoreStagedRegion(stagedEntry);
         } else {
             if (selecting) {
                 clipEnd(e);
