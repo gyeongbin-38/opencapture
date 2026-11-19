@@ -132,6 +132,7 @@ export interface setting {
             最大阈值: number;
         };
         识别窗口: boolean;
+        选区吸附: boolean;
         记忆: {
             开启: boolean;
             rects: { [screenId: string]: number[] };

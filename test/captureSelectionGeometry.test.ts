@@ -76,6 +76,7 @@ describe("production capture selection geometry", () => {
                     edgeRect: [],
                     captureSelectionMode: "region",
                     识别窗口: false,
+                    选区吸附: true,
                     editorP: { zoom: 1 },
                     setSnapGuides: vi.fn(),
                 },

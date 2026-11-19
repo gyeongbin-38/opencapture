@@ -2076,7 +2076,7 @@ function setSnapGuides(x: number | null, y: number | null) {
 
 /** 新框选拖动时把移动角吸附到窗口/图像边缘或屏幕中线；Shift/Alt 手势跳过 */
 function snapDrag(e: MouseEvent, r: rect): rect {
-    if (e.altKey || e.shiftKey || !rectStartE) {
+    if (e.altKey || e.shiftKey || !rectStartE || !选区吸附) {
         setSnapGuides(null, null);
         return r;
     }
@@ -2890,7 +2890,7 @@ function moveRect(
         finalRect[3] = mainCanvas.height - finalRect[1];
 
     const mode = adjustSnapMode[direction];
-    if (mode) {
+    if (mode && 选区吸附) {
         const snapped = snapAdjustRect(
             finalRect,
             mode,
@@ -2940,16 +2940,23 @@ function movePoly(
     const dy = p.y - op.y;
     if (direction === "move") {
         const oRect = pointsOutRect(oldPoly);
-        const snapped = snapAdjustRect(
-            [oRect[0] + dx, oRect[1] + dy, oRect[2], oRect[3]],
-            adjustSnapMode.move,
-            selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
-            { width: mainCanvas.width, height: mainCanvas.height },
-            6 / editorP.zoom,
-        );
+        const target: rect = [oRect[0] + dx, oRect[1] + dy, oRect[2], oRect[3]];
+        const snapped = 选区吸附
+            ? snapAdjustRect(
+                  target,
+                  adjustSnapMode.move,
+                  selectionEdgesForMode(
+                      edgeRect,
+                      captureSelectionMode,
+                      识别窗口,
+                  ),
+                  { width: mainCanvas.width, height: mainCanvas.height },
+                  6 / editorP.zoom,
+              )
+            : { rect: target, guideX: null, guideY: null };
+        setSnapGuides(snapped.guideX, snapped.guideY);
         const sx = dx + snapped.rect[0] - (oRect[0] + dx);
         const sy = dy + snapped.rect[1] - (oRect[1] + dy);
-        setSnapGuides(snapped.guideX, snapped.guideY);
         freeSelect = oldPoly.map((i) => {
             const x = Math.round(i.x + sx);
             const y = Math.round(i.y + sy);
@@ -3937,6 +3944,7 @@ const 记忆框选值 = store.get("框选.记忆.rects") as {
     [id: string]: rect;
 };
 const 识别窗口 = store.get("框选.识别窗口");
+const 选区吸附 = store.get("框选.选区吸附") ?? true;
 let bSize = store.get("工具栏.按钮大小");
 if (!Number.isFinite(bSize) || bSize < 28 || bSize > 44) bSize = 32;
 
