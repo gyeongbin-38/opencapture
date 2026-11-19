@@ -93,6 +93,7 @@ import type { IconType } from "../../iconTypes";
 import xhistory from "../lib/history";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
+import { type StagedRegion, createCaptureStaging } from "./captureStaging";
 import { createCaptureWorkspace } from "./captureWorkspace";
 import {
     LatestLiveTranslation,
@@ -116,10 +117,6 @@ let immutableSourceData: string | undefined;
 let captureInitSequence = 0;
 let screenRequestSequence = 0;
 let captureInitQueue: Promise<void> = Promise.resolve();
-/** 已暂存的多区域：rect 是外接框，points 存在时是自由形选区 */
-type StagedRegion = { rect: rect; key?: number; points?: point[] };
-let batchRegions: StagedRegion[] = [];
-let stagedHighlightKey: number | null = null;
 /** mousedown이 보관 마커 안에서 시작됐고 mouseup까지 안 움직이면 복원 클릭 */
 let stagedClickEntry: StagedRegion | null = null;
 let stagedClickPoint = { x: 0, y: 0 };
@@ -2020,7 +2017,7 @@ function refreshLines() {
         polyFrameOutline.setAttribute("stroke-width", `${w * 3}`);
         polyFrameLine.setAttribute("stroke-width", `${w}`);
     }
-    renderStagedRegions();
+    staging.render();
     if (nowMouseE) {
         const e = e2srcPoint(nowMouseE);
         ckx(e);
@@ -2128,122 +2125,12 @@ function snapDrag(e: MouseEvent, r: rect): rect {
     return snapped.rect;
 }
 
-/** 已暂存的多区域：半透明轮廓 + 序号徽标，告诉你已捕获了哪里 */
-let stagedRegionsKey = "";
-function renderStagedRegions() {
-    const w = lineW();
-    const key = `${w}|${stagedHighlightKey ?? ""}|${batchRegions.map((i) => `${i.key ?? ""}:${i.rect.join(",")}:${i.points?.length ?? ""}`).join(";")}`;
-    if (key === stagedRegionsKey) return;
-    stagedRegionsKey = key;
-    const badgeSize = Math.max(16, 18 / editorP.zoom);
-    stagedRegionsEl.el.replaceChildren(
-        ...batchRegions.map((entry, i) => {
-            const active =
-                entry.key != null && entry.key === stagedHighlightKey;
-            const box = document.createElement("div");
-            box.className = "capture-staged-box";
-            box.classList.toggle("is-active", active);
-            setElBox(
-                box,
-                entry.rect[0],
-                entry.rect[1],
-                entry.rect[2],
-                entry.rect[3],
-            );
-            box.style.boxSizing = "border-box";
-            box.style.border = `${w}px ${active ? "solid" : "dashed"} ${active ? "#fff" : "#ffffffb3"}`;
-            box.style.background = active ? "#ffffff26" : "#00000012";
-            if (entry.points) {
-                box.style.border = "none";
-                box.style.background = "none";
-                const svg = document.createElementNS(
-                    "http://www.w3.org/2000/svg",
-                    "svg",
-                );
-                svg.setAttribute(
-                    "viewBox",
-                    `0 0 ${entry.rect[2]} ${entry.rect[3]}`,
-                );
-                svg.style.cssText =
-                    "position:absolute;inset:0;width:100%;height:100%;overflow:visible";
-                const poly = document.createElementNS(
-                    "http://www.w3.org/2000/svg",
-                    "polygon",
-                );
-                poly.setAttribute(
-                    "points",
-                    entry.points
-                        .map(
-                            (p) =>
-                                `${p.x - entry.rect[0]},${p.y - entry.rect[1]}`,
-                        )
-                        .join(" "),
-                );
-                poly.setAttribute("fill", active ? "#ffffff26" : "#00000012");
-                poly.setAttribute("stroke", active ? "#fff" : "#ffffffb3");
-                poly.setAttribute("stroke-width", String(w));
-                poly.setAttribute(
-                    "stroke-dasharray",
-                    active ? "none" : `${w * 3} ${w * 2}`,
-                );
-                svg.append(poly);
-                box.append(svg);
-            }
-            const badge = document.createElement("div");
-            badge.className = "capture-staged-badge";
-            badge.textContent = `${i + 1}`;
-            badge.style.width = `${badgeSize}px`;
-            badge.style.height = `${badgeSize}px`;
-            badge.style.fontSize = `${badgeSize * 0.62}px`;
-            box.append(badge);
-            return box;
-        }),
-    );
-}
-
-function highlightStagedRegion(key: number | null) {
-    if (stagedHighlightKey === key) return;
-    stagedHighlightKey = key;
-    renderStagedRegions();
-}
-
-function removeStagedRegion(key: number) {
-    const i = batchRegions.findIndex((r) => r.key === key);
-    if (i < 0) return;
-    batchRegions.splice(i, 1);
-    if (stagedHighlightKey === key) stagedHighlightKey = null;
-    renderStagedRegions();
-}
-
-function pointInPoints(x: number, y: number, pts: point[]) {
-    let inside = false;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-        const { x: xi, y: yi } = pts[i];
-        const { x: xj, y: yj } = pts[j];
-        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
-            inside = !inside;
-    }
-    return inside;
-}
-
-/** 命中测试：指针坐标(画布系)内最上层的已暂存区域 */
-function stagedRegionAt(x: number, y: number) {
-    for (let i = batchRegions.length - 1; i >= 0; i--) {
-        const b = batchRegions[i];
-        const r = b.rect;
-        if (!(x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]))
-            continue;
-        if (!b.points || pointInPoints(x, y, b.points)) return b;
-    }
-    return null;
-}
-
 /** 点击已暂存区域：回到该选区继续编辑，原暂存草稿移入回收站 */
 function restoreStagedRegion(entry: StagedRegion) {
     const i = batchRegions.indexOf(entry);
     if (i < 0) return;
     batchRegions.splice(i, 1);
-    if (stagedHighlightKey === entry.key) stagedHighlightKey = null;
+    staging.highlight(null);
     if (entry.points) {
         setEditType("select", "free");
         freeSelect = entry.points.map((p) => ({ ...p }));
@@ -2256,7 +2143,7 @@ function restoreStagedRegion(entry: StagedRegion) {
     finalRectFix();
     drawClip();
     followBar();
-    renderStagedRegions();
+    staging.render();
     if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
     hisPush();
     captureWorkspace?.showStatus(t("보관된 영역을 다시 선택했습니다"));
@@ -2267,7 +2154,7 @@ function dropStagedRegion(entry: StagedRegion) {
     const i = batchRegions.indexOf(entry);
     if (i < 0) return;
     batchRegions.splice(i, 1);
-    if (stagedHighlightKey === entry.key) stagedHighlightKey = null;
+    staging.highlight(null);
     if (selectionBeforeDrag) {
         finalRect = selectionBeforeDrag.rect;
         freeSelect = selectionBeforeDrag.points;
@@ -2275,7 +2162,7 @@ function dropStagedRegion(entry: StagedRegion) {
         drawClip();
         followBar();
     }
-    renderStagedRegions();
+    staging.render();
     if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
     captureWorkspace?.showStatus(t("휴지통으로 이동됨"));
 }
@@ -4883,6 +4770,13 @@ const stagedRegionsEl = view().attr({ id: "capture_staged" }).style({
     height: "100%",
     pointerEvents: "none",
 });
+const staging = createCaptureStaging({
+    container: stagedRegionsEl.el,
+    lineW,
+    zoom: () => editorP.zoom,
+    setElBox,
+});
+const batchRegions = staging.regions;
 clipEl.append(
     ...clipMaskRect.map((i) => i.el),
     clipMaskPoly.el,
@@ -6317,9 +6211,7 @@ renderOn(
                 };
             immutableSourceData = undefined;
             captureSelectionMode = context?.selectionMode ?? "region";
-            batchRegions = [];
-            stagedHighlightKey = null;
-            renderStagedRegions();
+            staging.clear();
             captureWorkspace?.begin(
                 project?.draftId
                     ? {
@@ -6927,9 +6819,7 @@ clipEl.onmousedown = (e) => {
         inRect = isPointInPolygon({ x: e.offsetX, y: e.offsetY });
     }
     stagedClickEntry =
-        e.button === 0 && !e.shiftKey
-            ? stagedRegionAt(e.offsetX, e.offsetY)
-            : null;
+        e.button === 0 && !e.shiftKey ? staging.at(e.offsetX, e.offsetY) : null;
     stagedClickPoint = { x: e.clientX, y: e.clientY };
     stagedClickAlt = e.altKey;
     if (e.button === 0) {
@@ -6945,7 +6835,7 @@ clipEl.onmousedown = (e) => {
                 key: captureWorkspace?.queue.current?.key,
                 points: isRect ? undefined : freeSelect.map((p) => ({ ...p })),
             });
-            renderStagedRegions();
+            staging.render();
             captureWorkspace?.nextRegion(batchRegions.length);
             inRect = false;
         }
@@ -7691,8 +7581,8 @@ captureWorkspace = createCaptureWorkspace({
         followBar();
     },
     settleElement: () => selectionHandles.el,
-    highlightStagedRegion,
-    stagedRegionTrashed: removeStagedRegion,
+    highlightStagedRegion: staging.highlight,
+    stagedRegionTrashed: staging.removeByKey,
     redact: (lines: OcrTextLine[], r) => {
         for (const line of lines) {
             const pad = Math.max(2, line.box.height * 0.15);
