@@ -635,6 +635,37 @@ app.whenReady().then(async () => {
             "Staged highlight did not clear on pointer leave",
         );
         report.checks.push({ stagedHover: hoverHi });
+        // Clicking a staged marker restores that region as the live
+        // selection and removes the marker from the overlay.
+        const markerClick = {
+            x: Math.round(staged2[1].x + staged2[1].w / 2),
+            y: Math.round(staged2[1].y + staged2[1].h / 2),
+        };
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...markerClick,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            ...markerClick,
+        });
+        await pause(200);
+        const restored = await clip(
+            `(() => { const f = document.querySelector('#selection_frame').getBoundingClientRect(); return { markers: document.querySelectorAll('#capture_staged > div').length, frame: { x: f.x, y: f.y, w: f.width, h: f.height } }; })()`,
+        );
+        assert(
+            restored.markers === 1 &&
+                Math.abs(restored.frame.x - staged2[1].x) <= 12 &&
+                Math.abs(restored.frame.y - staged2[1].y) <= 12 &&
+                Math.abs(restored.frame.w - staged2[1].w) <= 12,
+            `Staged marker click did not restore region: ${JSON.stringify(restored)}`,
+        );
+        report.checks.push({ stagedRestore: restored });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);

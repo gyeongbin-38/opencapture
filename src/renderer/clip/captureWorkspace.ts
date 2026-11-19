@@ -52,6 +52,7 @@ export function createCaptureWorkspace(options: {
         { result: StageCaptureResult; data: string }
     >();
     const thumbnailKeys = new Map<string, number>();
+    const pendingDiscards = new Set<number>();
     const textLayer = view().attr({ id: "capture_text_layer" }).addInto();
     const palette = view("x")
         .attr({ id: "capture_palette" })
@@ -106,6 +107,12 @@ export function createCaptureWorkspace(options: {
         snapshot: options.snapshot,
         stage: (value) => ipcRenderer.invoke("oc:draft:stage", value),
         committed: (result, snapshot, record) => {
+            if (pendingDiscards.delete(record.key)) {
+                void ipcRenderer
+                    .invoke("oc:items:trash", [result.id])
+                    .catch(showError);
+                return;
+            }
             thumbnailKeys.set(result.id, record.key);
             const isNew = !thumbnails.has(result.id);
             void addThumbnail(result, snapshot.previewDataURL)
@@ -299,6 +306,16 @@ export function createCaptureWorkspace(options: {
         queue.begin();
         queue.initialized();
     }
+    function discardStagedRegion(key: number) {
+        pendingDiscards.add(key);
+        for (const [id, k] of thumbnailKeys) {
+            if (k !== key) continue;
+            thumbnailKeys.delete(id);
+            thumbnails.delete(id);
+            void ipcRenderer.invoke("oc:items:trash", [id]).catch(showError);
+        }
+        renderStrip();
+    }
     async function compare() {
         const result = await stage();
         if (!result) return;
@@ -486,6 +503,7 @@ export function createCaptureWorkspace(options: {
         changed: () => queue.changed(),
         flush: () => queue.flush(),
         nextRegion,
+        discardStagedRegion,
         loadPreferences,
         configurePreferences,
         showStatus,

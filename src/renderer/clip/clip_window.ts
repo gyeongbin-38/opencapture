@@ -118,6 +118,9 @@ let screenRequestSequence = 0;
 let captureInitQueue: Promise<void> = Promise.resolve();
 let batchRegions: { rect: rect; key?: number }[] = [];
 let stagedHighlightKey: number | null = null;
+/** mousedown이 보관 마커 안에서 시작됐고 mouseup까지 안 움직이면 복원 클릭 */
+let stagedClickEntry: { rect: rect; key?: number } | null = null;
+let stagedClickPoint = { x: 0, y: 0 };
 let selectionBeforeDrag: {
     rect: rect;
     points: point[];
@@ -2152,6 +2155,33 @@ function removeStagedRegion(key: number) {
     batchRegions.splice(i, 1);
     if (stagedHighlightKey === key) stagedHighlightKey = null;
     renderStagedRegions();
+}
+
+/** 命中测试：指针坐标(画布系)内最上层的已暂存区域 */
+function stagedRegionAt(x: number, y: number) {
+    for (let i = batchRegions.length - 1; i >= 0; i--) {
+        const r = batchRegions[i].rect;
+        if (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3])
+            return batchRegions[i];
+    }
+    return null;
+}
+
+/** 点击已暂存区域：回到该选区继续编辑，原暂存草稿移入回收站 */
+function restoreStagedRegion(entry: { rect: rect; key?: number }) {
+    const i = batchRegions.indexOf(entry);
+    if (i < 0) return;
+    batchRegions.splice(i, 1);
+    if (stagedHighlightKey === entry.key) stagedHighlightKey = null;
+    isRect = true;
+    rectSelect = true;
+    finalRect = [...entry.rect];
+    finalRectFix();
+    drawClip();
+    followBar();
+    renderStagedRegions();
+    if (entry.key != null) captureWorkspace?.discardStagedRegion(entry.key);
+    captureWorkspace?.showStatus(t("보관된 영역을 다시 선택했습니다"));
 }
 
 /** 提示框没变化就不动 DOM */
@@ -6768,6 +6798,11 @@ clipEl.onmousedown = (e) => {
     } else {
         inRect = isPointInPolygon({ x: e.offsetX, y: e.offsetY });
     }
+    stagedClickEntry =
+        e.button === 0 && !e.shiftKey
+            ? stagedRegionAt(e.offsetX, e.offsetY)
+            : null;
+    stagedClickPoint = { x: e.clientX, y: e.clientY };
     if (e.button === 0) {
         if (e.shiftKey && finalRect[2] > 1 && finalRect[3] > 1 && rectSelect) {
             if (batchRegions.length >= 11) {
@@ -6816,6 +6851,17 @@ document.onmouseup = (e) => {
             rememberLastRect();
             scheduleLiveTranslation();
         }
+    }
+    if (stagedClickEntry) {
+        const entry = stagedClickEntry;
+        stagedClickEntry = null;
+        if (
+            Math.hypot(
+                e.clientX - stagedClickPoint.x,
+                e.clientY - stagedClickPoint.y,
+            ) <= 4
+        )
+            restoreStagedRegion(entry);
     }
     const hasSelection = finalRect[2] > 0 && finalRect[3] > 0;
     toolBar.style.pointerEvents = whEl.el.style.pointerEvents = hasSelection

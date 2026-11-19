@@ -2493,5 +2493,7 @@
     "82802f": "Simplifies the boundary when a free-form selection is released; higher strength smooths more",
     "d73f86": "Light",
     "ace7a6": "Dimensions bar",
-    "9e45bd": "Automatic position of the dimensions bar"
+    "9e45bd": "Automatic position of the dimensions bar",
+    "a73e27": "Click to select this region again",
+    "a74758": "Staged region selected again"
 }
