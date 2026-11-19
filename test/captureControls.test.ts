@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
     captureDock,
+    dimBarX,
     dimBarY,
+    evalDimExpression,
     fitCaptureToolbar,
     radialLayout,
+    rectsOverlap,
+    toolbarDock,
 } from "../lib/captureControls";
 
 describe("capture toolbar sizing", () => {
@@ -142,5 +146,63 @@ describe("capture controls at screen edges", () => {
                 expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(48);
             }
         }
+    });
+});
+
+describe("dimBarX", () => {
+    it("centers on the selection and clamps inside the viewport", () => {
+        expect(
+            dimBarX({ x: 100, width: 400 }, 1000, 200, 8),
+        ).toBe(200);
+        expect(dimBarX({ x: 0, width: 100 }, 1000, 200, 8)).toBe(8);
+        expect(dimBarX({ x: 950, width: 40 }, 1000, 200, 8)).toBe(792);
+    });
+});
+
+describe("toolbarDock", () => {
+    const selection = { x: 100, y: 100, width: 300, height: 200 };
+    const viewport = { width: 1000, height: 800 };
+    const toolbar = { width: 240, height: 40 };
+
+    it("clamps a pinned position inside the viewport", () => {
+        expect(
+            toolbarDock(selection, viewport, toolbar, {
+                left: 2000,
+                top: -50,
+            }),
+        ).toEqual({ x: 760, y: 0 });
+    });
+
+    it("falls back to captureDock without a pin", () => {
+        expect(toolbarDock(selection, viewport, toolbar, null)).toEqual(
+            captureDock(selection, viewport, toolbar),
+        );
+    });
+});
+
+describe("rectsOverlap", () => {
+    it("detects intersection and edge-touch separation", () => {
+        const a = { x: 0, y: 0, width: 100, height: 50 };
+        expect(
+            rectsOverlap(a, { x: 50, y: 25, width: 100, height: 50 }),
+        ).toBe(true);
+        expect(
+            rectsOverlap(a, { x: 100, y: 0, width: 50, height: 50 }),
+        ).toBe(false);
+        expect(rectsOverlap(a, { x: 0, y: 50, width: 50, height: 50 })).toBe(
+            false,
+        );
+    });
+});
+
+describe("evalDimExpression", () => {
+    it("evaluates arithmetic and rejects anything else", () => {
+        expect(evalDimExpression("300")).toBe(300);
+        expect(evalDimExpression("100+50*2")).toBe(200);
+        expect(evalDimExpression("(8-3)/5")).toBe(1);
+        expect(evalDimExpression("alert(1)")).toBeNull();
+        expect(evalDimExpression("1e3")).toBeNull();
+        expect(evalDimExpression("")).toBeNull();
+        expect(evalDimExpression("1/0")).toBeNull();
     });
 });

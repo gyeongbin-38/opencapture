@@ -100,6 +100,62 @@ export function dimBarY(
     );
 }
 
+/** 大小栏 x：选区水平居中，夹进视口 */
+export function dimBarX(
+    selection: { x: number; width: number },
+    viewportWidth: number,
+    barWidth: number,
+    gap = 8,
+) {
+    const x = selection.x + selection.width / 2 - barWidth / 2;
+    return Math.max(
+        gap,
+        Math.min(viewportWidth - barWidth - gap, Math.round(x)),
+    );
+}
+
+/** 工具栏停靠位置：固定坐标优先，否则自动贴边 */
+export function toolbarDock(
+    selection: CaptureBox,
+    viewport: { width: number; height: number },
+    toolbar: { width: number; height: number },
+    pinned?: { left: number; top: number } | null,
+) {
+    if (pinned)
+        return {
+            x: Math.max(
+                0,
+                Math.min(pinned.left, viewport.width - toolbar.width),
+            ),
+            y: Math.max(
+                0,
+                Math.min(pinned.top, viewport.height - toolbar.height),
+            ),
+        };
+    return captureDock(selection, viewport, toolbar);
+}
+
+export function rectsOverlap(a: CaptureBox, b: CaptureBox) {
+    return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+    );
+}
+
+/** 排除（数字运算符空格）之外的非法输入 */
+export function evalDimExpression(input: string) {
+    if (input.match(/[\d+\-*/.\s()]/g)?.length !== input.length) return null;
+    try {
+        // biome-ignore lint/security/noGlobalEval: Only numeric arithmetic characters are accepted above.
+        const v = eval(input) as unknown;
+        return typeof v === "number" && Number.isFinite(v) ? v : null;
+    } catch {
+        return null;
+    }
+}
+
 export function radialLayout(
     pointer: { x: number; y: number },
     viewport: { width: number; height: number },

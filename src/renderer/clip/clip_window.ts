@@ -5,9 +5,13 @@ import chroma from "chroma-js";
 import hotkeys from "hotkeys-js";
 import {
     captureDock,
+    dimBarX,
     dimBarY,
+    evalDimExpression,
     fitCaptureToolbar,
     radialLayout,
+    rectsOverlap,
+    toolbarDock,
 } from "../../../lib/captureControls";
 import { ele2jsKeyCode, jsKeyCodeDisplay } from "../../../lib/key";
 import {
@@ -2286,27 +2290,21 @@ function whBar(finalRect: rect) {
     const dh = 34;
     const gap = 8;
 
-    let x: number;
-    x = zx + zw / 2 - dw / 2;
-    x = Math.max(gap, Math.min(winWidth - dw - gap, Math.round(x)));
+    let x = dimBarX({ x: zx, width: zw }, winWidth, dw, gap);
 
     const tW = toolBar.offsetWidth;
     const tH = toolBar.offsetHeight;
-    const tPos = toolbarPinnedPos
-        ? {
-              x: Math.max(0, Math.min(toolbarPinnedPos.left, winWidth - tW)),
-              y: Math.max(0, Math.min(toolbarPinnedPos.top, winHeight - tH)),
-          }
-        : captureDock(
-              { x: zx, y: zy, width: zw, height: zh },
-              { width: winWidth, height: winHeight },
-              { width: tW, height: tH },
-          );
+    const tPos = toolbarDock(
+        { x: zx, y: zy, width: zw, height: zh },
+        { width: winWidth, height: winHeight },
+        { width: tW, height: tH },
+        toolbarPinnedPos,
+    );
     const overlapsToolbar = (cy: number) =>
-        x < tPos.x + tW &&
-        x + dw > tPos.x &&
-        cy < tPos.y + tH &&
-        cy + dh > tPos.y;
+        rectsOverlap(
+            { x, y: cy, width: dw, height: dh },
+            { x: tPos.x, y: tPos.y, width: tW, height: tH },
+        );
 
     let y = dimBarY(
         { y: zy, height: zh },
@@ -2345,17 +2343,7 @@ function changeWH(el: ElType<HTMLInputElement>) {
         return;
     }
     const l0 = whL.map((i) => i.el.value);
-    const l = l0.map((string) => {
-        // 排除（数字运算符空格）之外的非法输入
-        if (string.match(/[\d+\-*/.\s()]/g)?.length !== string.length)
-            return null;
-        try {
-            // biome-ignore lint/security/noGlobalEval: Only numeric arithmetic characters are accepted above.
-            return eval(string);
-        } catch {
-            return null;
-        }
-    });
+    const l = l0.map(evalDimExpression);
 
     if (
         l.some((value) => !Number.isFinite(value)) ||
