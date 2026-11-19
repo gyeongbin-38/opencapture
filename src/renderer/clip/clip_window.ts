@@ -4721,6 +4721,8 @@ const startHintItems: [string, string][] = [
     ["드래그", t("영역 선택")],
     ["S", t("자동 선택")],
     ["F", t("自由选择")],
+    ["W", t("창 선택")],
+    ["Shift+드래그", t("영역 추가")],
 ];
 for (const [tool, label] of [
     ["copy", "복사"],

@@ -178,6 +178,13 @@ app.whenReady().then(async () => {
         assert(hintInitial.exists, "Start hint missing");
         assert(!hintInitial.hidden, "Start hint hidden on first open");
         assert(hintInitial.items >= 5, "Start hint incomplete");
+        const hintKeys = await clip(
+            `[...document.querySelectorAll('.capture-start-hint-item kbd')].map((k) => k.textContent)`,
+        );
+        assert(
+            hintKeys.includes("W") && hintKeys.includes("Shift+드래그"),
+            `Start hint missing mode toggles: ${JSON.stringify(hintKeys)}`,
+        );
         const primaryTool = await clip(
             'document.querySelector(".capture-tool.is-primary")?.dataset.captureAction ?? null',
         );
