@@ -2092,7 +2092,7 @@ function snapDrag(e: MouseEvent, r: rect): rect {
         rectStartE,
         selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
         { width: mainCanvas.width, height: mainCanvas.height },
-        6 / editorP.zoom,
+        吸附距离 / editorP.zoom,
     );
     setSnapGuides(snapped.guideX, snapped.guideY);
     return snapped.rect;
@@ -2934,7 +2934,7 @@ function moveRect(
             mode,
             selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
             { width: mainCanvas.width, height: mainCanvas.height },
-            6 / editorP.zoom,
+            吸附距离 / editorP.zoom,
         );
         finalRect = snapped.rect;
         setSnapGuides(snapped.guideX, snapped.guideY);
@@ -2989,7 +2989,7 @@ function movePoly(
                       识别窗口,
                   ),
                   { width: mainCanvas.width, height: mainCanvas.height },
-                  6 / editorP.zoom,
+                  吸附距离 / editorP.zoom,
               )
             : { rect: target, guideX: null, guideY: null };
         setSnapGuides(snapped.guideX, snapped.guideY);
@@ -3983,6 +3983,7 @@ const 记忆框选值 = store.get("框选.记忆.rects") as {
 };
 const 识别窗口 = store.get("框选.识别窗口");
 const 选区吸附 = store.get("框选.选区吸附") ?? true;
+const 吸附距离 = store.get("框选.吸附距离") ?? 6;
 let bSize = store.get("工具栏.按钮大小");
 if (!Number.isFinite(bSize) || bSize < 28 || bSize > 44) bSize = 32;
 

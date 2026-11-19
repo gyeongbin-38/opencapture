@@ -5667,6 +5667,7 @@ const defaultSetting: setting = {
         },
         识别窗口: false,
         选区吸附: true,
+        吸附距离: 6,
         记忆: { 开启: false, rects: {}, 启动提示: false },
         颜色: {
             遮罩: "#0008",

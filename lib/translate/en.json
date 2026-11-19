@@ -2484,5 +2484,7 @@
     "ac9196": "Pinned to screen",
     "da1061": "Select window",
     "db19ee": "Selection snapping",
-    "876d35": "Snap selections to window and canvas edges while dragging or resizing, with guides"
+    "876d35": "Snap selections to window and canvas edges while dragging or resizing, with guides",
+    "73fc95": "Snap distance",
+    "882fbb": "Selections snap when they come within this distance of an edge; larger values snap sooner"
 }
