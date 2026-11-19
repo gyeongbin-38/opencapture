@@ -6586,7 +6586,7 @@ clipEl.onmousedown = (e) => {
                 return;
             }
             batchRegions.push([...finalRect]);
-            captureWorkspace?.nextRegion();
+            captureWorkspace?.nextRegion(batchRegions.length);
             inRect = false;
         }
         clipStart(e, inRect);

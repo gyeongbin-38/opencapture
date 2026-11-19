@@ -98,6 +98,7 @@ export function createCaptureWorkspace(options: {
     function showError(error: unknown) {
         statusQueue.fail(error);
     }
+    let regionBatchCount = 0;
     const queue = new CaptureDraftQueue({
         snapshot: options.snapshot,
         stage: (value) => ipcRenderer.invoke("oc:draft:stage", value),
@@ -108,7 +109,14 @@ export function createCaptureWorkspace(options: {
                     if (isNew) feedback.commit(strip.el);
                 })
                 .catch(showError);
-            showStatus(t("임시 저장됨"));
+            showStatus(
+                regionBatchCount > 0
+                    ? t("{count}개 영역 보관됨").replace(
+                          "{count}",
+                          String(thumbnails.size + 1),
+                      )
+                    : t("임시 저장됨"),
+            );
         },
         failed: showError,
     });
@@ -243,6 +251,7 @@ export function createCaptureWorkspace(options: {
     function begin(draft?: Pick<CaptureDraft, "id" | "revision">) {
         dismiss();
         statusQueue.reset();
+        regionBatchCount = 0;
         queue.begin(draft);
     }
     async function stage(audible = false) {
@@ -251,7 +260,8 @@ export function createCaptureWorkspace(options: {
         if (result && audible) feedback.commit(undefined, true);
         return result;
     }
-    function nextRegion() {
+    function nextRegion(count: number) {
+        regionBatchCount = count;
         const saved = queue.save(true);
         void saved.catch(showError);
         queue.begin();

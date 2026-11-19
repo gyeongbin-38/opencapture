@@ -438,6 +438,49 @@ app.whenReady().then(async () => {
             'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
         );
         await pause(120);
+        // Shift+drag stages the current region and reports the running count.
+        const batchDrag = [
+            {
+                x: Math.round(rectangle.x + rectangle.width * 0.55),
+                y: Math.round(rectangle.y + rectangle.height * 0.55),
+            },
+            {
+                x: Math.round(rectangle.x + rectangle.width * 0.7),
+                y: Math.round(rectangle.y + rectangle.height * 0.72),
+            },
+        ];
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...batchDrag[0],
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            modifiers: ["shift"],
+            ...batchDrag[1],
+        });
+        await pause(80);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...batchDrag[1],
+        });
+        const regionStatus = await until(
+            () =>
+                clip(
+                    '(() => { const s=document.querySelector(".capture-workspace-status"); return s?.textContent.includes("영역 보관됨") ? s.textContent : null; })()',
+                ),
+            "Region count status did not appear",
+            400,
+        );
+        const shelfCount = await clip(
+            'document.querySelector(".capture-shelf-count")?.textContent ?? ""',
+        );
+        report.checks.push({ regionStatus, shelfCount });
         // W toggles region/window selection modes with visible feedback.
         await clip(
             'document.dispatchEvent(new KeyboardEvent("keydown",{key:"w",keyCode:87,which:87,bubbles:true}))',
