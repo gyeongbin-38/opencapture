@@ -2149,6 +2149,7 @@ function whBar(finalRect: rect) {
     const zx = (finalRect[0] + editorP.x) * editorP.zoom;
     const zy = (finalRect[1] + editorP.y) * editorP.zoom;
     const zw = finalRect[2] * editorP.zoom;
+    const zh = finalRect[3] * editorP.zoom;
     const dw = whEl.el.offsetWidth || width;
     const dh = 34;
     const gap = 8;
@@ -2157,7 +2158,33 @@ function whBar(finalRect: rect) {
     x = zx + zw / 2 - dw / 2;
     x = Math.max(gap, Math.min(winWidth - dw - gap, Math.round(x)));
 
+    const tW = toolBar.offsetWidth;
+    const tH = toolBar.offsetHeight;
+    const tPos = toolbarPinnedPos
+        ? {
+              x: Math.max(0, Math.min(toolbarPinnedPos.left, winWidth - tW)),
+              y: Math.max(0, Math.min(toolbarPinnedPos.top, winHeight - tH)),
+          }
+        : captureDock(
+              { x: zx, y: zy, width: zw, height: zh },
+              { width: winWidth, height: winHeight },
+              { width: tW, height: tH },
+          );
+    const overlapsToolbar = (cy: number) =>
+        x < tPos.x + tW &&
+        x + dw > tPos.x &&
+        cy < tPos.y + tH &&
+        cy + dh > tPos.y;
+
     let y = zy - dh - gap;
+    if (y < gap || overlapsToolbar(y)) {
+        const insideFits = zh >= dh + gap * 2;
+        const insideTop = zy + gap;
+        const insideBottom = zy + zh - dh - gap;
+        if (insideFits && !overlapsToolbar(insideTop)) y = insideTop;
+        else if (insideFits && !overlapsToolbar(insideBottom)) y = insideBottom;
+        else if (y < gap) y = gap;
+    }
     y = Math.max(gap, Math.min(winHeight - dh - gap, Math.round(y)));
 
     whEl.style({

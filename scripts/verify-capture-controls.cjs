@@ -335,6 +335,20 @@ app.whenReady().then(async () => {
             "Snap guide did not clear after drag",
         );
         report.checks.push({ snapGuides: guideCount });
+        // Cover the full canvas: the dimensions bar must not overlap the toolbar.
+        await clip(
+            '(() => { const rl=document.querySelector(\'#clip_wh button[aria-pressed="true"]\'); rl?.click(); const inputs=document.querySelectorAll("#clip_wh input"); for (const [i,v] of [[0,"0"],[1,"0"],[4,String(innerWidth*2)],[5,String(innerHeight*2)]]) { inputs[i].value=v; inputs[i].dispatchEvent(new Event("change",{bubbles:true})); } })()',
+        );
+        await pause(120);
+        const dimBar = await clip(
+            '(() => { const wh=document.querySelector("#clip_wh").getBoundingClientRect(); const tb=document.querySelector("#quick_toolbar").getBoundingClientRect(); return { wh:JSON.parse(JSON.stringify(wh)), tb:JSON.parse(JSON.stringify(tb)), intersects: wh.left < tb.right && wh.right > tb.left && wh.top < tb.bottom && wh.bottom > tb.top }; })()',
+        );
+        assert(
+            !dimBar.intersects,
+            `Dimensions bar overlaps toolbar on full-screen selection: ${JSON.stringify(dimBar)}`,
+        );
+        report.checks.push({ dimBar });
+        await shot(capture, "capture-fullscreen-dimbar");
         const scrollHint = await clip(
             '(() => { const h=document.querySelector(".capture-scroll-hint"); return { exists: Boolean(h), hidden: h?.hidden ?? null }; })()',
         );
