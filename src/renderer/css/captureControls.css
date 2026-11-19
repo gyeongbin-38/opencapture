@@ -114,7 +114,8 @@ body {
     opacity: 0.45;
 }
 .capture-grip:hover,
-#quick_toolbar[data-pinned] .capture-grip {
+#quick_toolbar[data-pinned] .capture-grip,
+#clip_wh[data-pinned] .capture-grip {
     opacity: 0.95;
 }
 #capture_tools {

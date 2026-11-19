@@ -88,6 +88,9 @@ export interface setting {
         功能: 功能[];
         稍后出现: boolean;
     };
+    大小栏: {
+        快捷位置: { left: number; top: number } | null;
+    };
     字体: {
         主要字体: string;
         等宽字体: string;

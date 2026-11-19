@@ -2244,6 +2244,12 @@ function whBar(finalRect: rect) {
     }
     y = Math.max(gap, Math.min(winHeight - dh - gap, Math.round(y)));
 
+    if (whPinnedPos) {
+        x = Math.max(gap, Math.min(winWidth - dw - gap, whPinnedPos.left));
+        y = Math.max(gap, Math.min(winHeight - dh - gap, whPinnedPos.top));
+    }
+    whBarPos = { x, y };
+    whEl.el.toggleAttribute("data-pinned", Boolean(whPinnedPos));
     whEl.style({
         transform: `translate(${x}px, ${y}px)`,
     });
@@ -4351,6 +4357,21 @@ const drawBarSideElChildren: { w: number; el: ElType<HTMLElement> }[] = [
 drawBarSideEl.add(drawBarSideElChildren.map((i) => i.el));
 
 const whEl = view("x").attr({ id: "clip_wh" }).class(Class.glassBar, Class.gap);
+let whPinnedPos = store.get("大小栏.快捷位置");
+let whBarPos = { x: 0, y: 0 };
+const whGrip = view()
+    .class("capture-grip")
+    .attr({
+        title: t("이동 · 더블클릭으로 위치 초기화"),
+        ariaLabel: t("이동 · 더블클릭으로 위치 초기화"),
+    })
+    .on("dblclick", (e) => {
+        e.stopPropagation();
+        whPinnedPos = null;
+        store.set("大小栏.快捷位置", null);
+        whEl.el.toggleAttribute("data-pinned", false);
+        whBar(finalRect);
+    });
 const whX0 = input();
 const whY0 = input();
 const whX1 = input();
@@ -4433,6 +4454,7 @@ const ratioToggle = button(txt("a:b"))
 whW.attr({ ariaLabel: t("너비"), inputMode: "numeric" });
 whH.attr({ ariaLabel: t("높이"), inputMode: "numeric" });
 whEl.add([
+    whGrip,
     whCoordinates,
     whRatios,
     view("x")
@@ -6442,6 +6464,44 @@ trackPoint(pack(toolBar), {
         };
         store.set("工具栏.快捷位置", toolbarPinnedPos);
         toolBar.toggleAttribute("data-pinned", true);
+    },
+});
+
+trackPoint(pack(whEl.el), {
+    start: (e) => {
+        const target = e.target as HTMLElement;
+        if (!whEl.el.contains(target)) return null;
+        if (
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.closest("button")
+        )
+            return null;
+        whEl.el.style.transition = "none";
+        return { x: whBarPos.x, y: whBarPos.y };
+    },
+    ing: (p) => {
+        const w = whEl.el.offsetWidth;
+        const h = whEl.el.offsetHeight;
+        const margin = 12;
+        const snap = 14;
+        let x = Math.max(0, Math.min(p.x, window.innerWidth - w));
+        let y = Math.max(0, Math.min(p.y, window.innerHeight - h));
+        if (Math.abs(x - margin) <= snap) x = margin;
+        else if (Math.abs(innerWidth - w - margin - x) <= snap)
+            x = innerWidth - w - margin;
+        if (Math.abs(y - margin) <= snap) y = margin;
+        else if (Math.abs(innerHeight - h - margin - y) <= snap)
+            y = innerHeight - h - margin;
+        whBarPos = { x, y };
+        whEl.style({ transform: `translate(${x}px, ${y}px)` });
+    },
+    end: (_e, { moved }) => {
+        whEl.el.style.transition = "";
+        if (!moved) return;
+        whPinnedPos = { left: whBarPos.x, top: whBarPos.y };
+        store.set("大小栏.快捷位置", whPinnedPos);
+        whEl.el.toggleAttribute("data-pinned", true);
     },
 });
 

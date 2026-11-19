@@ -363,6 +363,76 @@ app.whenReady().then(async () => {
         );
         report.checks.push({ dimBar });
         await shot(capture, "capture-fullscreen-dimbar");
+        // The dimensions bar can be dragged by its grip and stays pinned.
+        const whGripPos = await clip(
+            '(() => { const g=document.querySelector("#clip_wh .capture-grip").getBoundingClientRect(); return {x:Math.round(g.left+g.width/2),y:Math.round(g.top+g.height/2)}; })()',
+        );
+        const whBefore = await clip(
+            '(() => { const r=document.querySelector("#clip_wh").getBoundingClientRect(); return {x:r.left,y:r.top}; })()',
+        );
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            ...whGripPos,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...whGripPos,
+        });
+        for (const step of [1, 2, 3, 4, 5, 6]) {
+            capture.webContents.sendInputEvent({
+                type: "mouseMove",
+                x: whGripPos.x + step * 24,
+                y: whGripPos.y + step * 12,
+            });
+            await pause(40);
+        }
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: whGripPos.x + 144,
+            y: whGripPos.y + 72,
+        });
+        await pause(150);
+        const whAfter = await clip(
+            '(() => { const el=document.querySelector("#clip_wh"); const r=el.getBoundingClientRect(); return {x:r.left,y:r.top,pinned:el.hasAttribute("data-pinned")}; })()',
+        );
+        assert(
+            whAfter.pinned &&
+                Math.abs(whAfter.x - whBefore.x - 144) <= 30 &&
+                Math.abs(whAfter.y - whBefore.y - 72) <= 30,
+            `Dimensions bar drag failed: ${JSON.stringify({ whBefore, whAfter })}`,
+        );
+        // Resizing the selection re-runs whBar; the pinned bar must stay put.
+        await clip(
+            '(() => { const inputs=document.querySelectorAll(".capture-dimensions input"); inputs[0].value="640"; inputs[0].dispatchEvent(new Event("change",{bubbles:true})); })()',
+        );
+        await pause(150);
+        const whPinnedNow = await clip(
+            '(() => { const r=document.querySelector("#clip_wh").getBoundingClientRect(); return {x:r.left,y:r.top}; })()',
+        );
+        assert(
+            Math.abs(whPinnedNow.x - whAfter.x) <= 1 &&
+                Math.abs(whPinnedNow.y - whAfter.y) <= 1,
+            `Pinned dimensions bar moved: ${JSON.stringify({ whAfter, whPinnedNow })}`,
+        );
+        // Double-clicking the grip restores automatic docking.
+        await clip(
+            'document.querySelector("#clip_wh .capture-grip").dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))',
+        );
+        await pause(150);
+        const whReset = await clip(
+            '(() => { const el=document.querySelector("#clip_wh"); const r=el.getBoundingClientRect(); return {x:r.left,y:r.top,pinned:el.hasAttribute("data-pinned")}; })()',
+        );
+        assert(
+            !whReset.pinned &&
+                (Math.abs(whReset.x - whAfter.x) > 1 ||
+                    Math.abs(whReset.y - whAfter.y) > 1),
+            `Dimensions bar reset failed: ${JSON.stringify({ whAfter, whReset })}`,
+        );
+        report.checks.push({ whBarPin: { whBefore, whAfter, whReset } });
         // F toggles rect/free selection mode with visible feedback.
         await pressKey("f", 70);
         await until(

@@ -5638,6 +5638,9 @@ const defaultSetting: setting = {
         ],
         稍后出现: false,
     },
+    大小栏: {
+        快捷位置: null,
+    },
     字体: {
         主要字体: "",
         等宽字体: "",
