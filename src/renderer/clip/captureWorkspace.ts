@@ -2,6 +2,7 @@ import { button, ele, input, txt, view } from "dkh-ui";
 import { CaptureDraftQueue } from "../../../lib/captureDraftQueue";
 import type { DraftSnapshot } from "../../../lib/captureDraftQueue";
 import { DEFAULT_CAPTURE_EXPERIENCE } from "../../../lib/captureExperience";
+import { CaptureStatusQueue } from "../../../lib/captureStatusQueue";
 import type {
     CaptureDraft,
     CaptureExperiencePreferences,
@@ -34,11 +35,11 @@ export function createCaptureWorkspace(options: {
     const retry = button(t("재시도"))
         .addInto(status)
         .on("click", () => {
+            statusQueue.clearError();
             void queue.retry().catch(showError);
         });
     retry.el.hidden = true;
     status.el.hidden = true;
-    let statusTimer: ReturnType<typeof setTimeout> | undefined;
     const strip = view("x")
         .attr({ id: "capture_inline_shelf" })
         .class("capture-inline-shelf")
@@ -72,22 +73,30 @@ export function createCaptureWorkspace(options: {
     let candidateDraft: { id: string; revision: number; epoch: number } | null =
         null;
 
+    const statusQueue = new CaptureStatusQueue({
+        show: (text) => {
+            statusText.el.textContent = text;
+            status.el.hidden = false;
+            retry.el.hidden = true;
+            status.el.classList.remove("has-error");
+        },
+        hide: () => {
+            status.el.classList.remove("has-error");
+            status.el.hidden = true;
+        },
+        showError: (text) => {
+            statusText.el.textContent = text;
+            status.el.hidden = false;
+            retry.el.hidden = false;
+            status.el.classList.add("has-error");
+        },
+    });
     function showStatus(message: string, error = false) {
-        if (statusTimer) clearTimeout(statusTimer);
-        statusText.el.textContent = message;
-        status.el.hidden = false;
-        retry.el.hidden = !error;
-        status.el.classList.toggle("has-error", error);
-        if (!error)
-            statusTimer = setTimeout(() => {
-                status.el.hidden = true;
-            }, 1700);
+        if (error) statusQueue.fail(message);
+        else statusQueue.push(message);
     }
     function showError(error: unknown) {
-        showStatus(
-            error instanceof Error ? error.message : String(error),
-            true,
-        );
+        statusQueue.fail(error);
     }
     const queue = new CaptureDraftQueue({
         snapshot: options.snapshot,
@@ -233,7 +242,7 @@ export function createCaptureWorkspace(options: {
     }
     function begin(draft?: Pick<CaptureDraft, "id" | "revision">) {
         dismiss();
-        status.el.hidden = true;
+        statusQueue.reset();
         queue.begin(draft);
     }
     async function stage(audible = false) {
