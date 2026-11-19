@@ -2004,6 +2004,7 @@ function refreshLines() {
         polyFrameOutline.setAttribute("stroke-width", `${w * 3}`);
         polyFrameLine.setAttribute("stroke-width", `${w}`);
     }
+    renderStagedRegions();
     if (nowMouseE) {
         const e = e2srcPoint(nowMouseE);
         ckx(e);
@@ -2090,6 +2091,33 @@ function snapDrag(e: MouseEvent, r: rect): rect {
     );
     setSnapGuides(snapped.guideX, snapped.guideY);
     return snapped.rect;
+}
+
+/** 已暂存的多区域：半透明轮廓 + 序号徽标，告诉你已捕获了哪里 */
+let stagedRegionsKey = "";
+function renderStagedRegions() {
+    const w = lineW();
+    const key = `${w}|${batchRegions.map((i) => i.join(",")).join(";")}`;
+    if (key === stagedRegionsKey) return;
+    stagedRegionsKey = key;
+    const badgeSize = Math.max(16, 18 / editorP.zoom);
+    stagedRegionsEl.el.replaceChildren(
+        ...batchRegions.map((r, i) => {
+            const box = document.createElement("div");
+            setElBox(box, r[0], r[1], r[2], r[3]);
+            box.style.boxSizing = "border-box";
+            box.style.border = `${w}px dashed #ffffffb3`;
+            box.style.background = "#00000012";
+            const badge = document.createElement("div");
+            badge.className = "capture-staged-badge";
+            badge.textContent = `${i + 1}`;
+            badge.style.width = `${badgeSize}px`;
+            badge.style.height = `${badgeSize}px`;
+            badge.style.fontSize = `${badgeSize * 0.62}px`;
+            box.append(badge);
+            return box;
+        }),
+    );
 }
 
 /** 提示框没变化就不动 DOM */
@@ -4680,6 +4708,14 @@ const snapGuideEl = view().attr({ id: "capture_snap_guides" }).style({
 });
 /** 自由选区绘制起点：回到此处松开可干净闭合 */
 const freeStartEl = view().class("capture-free-start");
+/** Shift 连拍已暂存的区域 */
+const stagedRegionsEl = view().attr({ id: "capture_staged" }).style({
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+});
 clipEl.append(
     ...clipMaskRect.map((i) => i.el),
     clipMaskPoly.el,
@@ -4689,6 +4725,7 @@ clipEl.append(
     clipPolyFrame,
     snapGuideEl.el,
     freeStartEl.el,
+    stagedRegionsEl.el,
     ...clipCkx.map((i) => i.el),
 );
 
@@ -6048,6 +6085,7 @@ renderOn(
             immutableSourceData = undefined;
             captureSelectionMode = context?.selectionMode ?? "region";
             batchRegions = [];
+            renderStagedRegions();
             captureWorkspace?.begin(
                 project?.draftId
                     ? {
@@ -6663,6 +6701,7 @@ clipEl.onmousedown = (e) => {
                 return;
             }
             batchRegions.push([...finalRect]);
+            renderStagedRegions();
             captureWorkspace?.nextRegion(batchRegions.length);
             inRect = false;
         }

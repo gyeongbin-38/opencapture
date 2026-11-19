@@ -508,6 +508,9 @@ app.whenReady().then(async () => {
         await pressKey("f", 70);
         await pause(120);
         // Shift+drag stages the current region and reports the running count.
+        const pushedRect = await clip(
+            '(() => { const r=document.querySelector("#selection_frame").getBoundingClientRect(); return {x:r.left,y:r.top,w:r.width,h:r.height}; })()',
+        );
         const batchDrag = [
             {
                 x: Math.round(rectangle.x + rectangle.width * 0.55),
@@ -550,6 +553,64 @@ app.whenReady().then(async () => {
             'document.querySelector(".capture-shelf-count")?.textContent ?? ""',
         );
         report.checks.push({ regionStatus, shelfCount });
+        // Each staged region leaves a numbered marker so captured areas
+        // stay visible while drawing the next one.
+        const staged1 = await clip(
+            `(() => [...document.querySelectorAll('#capture_staged > div')].map(b => { const r=b.getBoundingClientRect(); return {x:r.left,y:r.top,w:r.width,h:r.height,badge:b.querySelector('.capture-staged-badge')?.textContent ?? ''}; }))()`,
+        );
+        assert(
+            staged1.length === 1 &&
+                staged1[0].badge === "1" &&
+                Math.abs(staged1[0].x - pushedRect.x) <= 4 &&
+                Math.abs(staged1[0].y - pushedRect.y) <= 4 &&
+                Math.abs(staged1[0].w - pushedRect.w) <= 4 &&
+                Math.abs(staged1[0].h - pushedRect.h) <= 4,
+            `Staged region marker missing: ${JSON.stringify({ staged1, pushedRect })}`,
+        );
+        const batchDrag2 = [
+            {
+                x: Math.round(rectangle.x + rectangle.width * 0.8),
+                y: Math.round(rectangle.y + rectangle.height * 0.1),
+            },
+            {
+                x: Math.round(rectangle.x + rectangle.width * 0.92),
+                y: Math.round(rectangle.y + rectangle.height * 0.25),
+            },
+        ];
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...batchDrag2[0],
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            modifiers: ["shift"],
+            ...batchDrag2[1],
+        });
+        await pause(80);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...batchDrag2[1],
+        });
+        await pause(150);
+        const staged2 = await clip(
+            `(() => [...document.querySelectorAll('#capture_staged > div')].map(b => { const r=b.getBoundingClientRect(); return {x:r.left,y:r.top,w:r.width,h:r.height,badge:b.querySelector('.capture-staged-badge')?.textContent ?? ''}; }))()`,
+        );
+        assert(
+            staged2.length === 2 &&
+                staged2[0].badge === "1" &&
+                staged2[1].badge === "2" &&
+                Math.abs(staged2[1].x - batchDrag[0].x) <= 12 &&
+                Math.abs(staged2[1].y - batchDrag[0].y) <= 12,
+            `Second staged marker wrong: ${JSON.stringify(staged2)}`,
+        );
+        report.checks.push({ stagedMarkers: staged2 });
+        await shot(capture, "capture-staged-markers");
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);

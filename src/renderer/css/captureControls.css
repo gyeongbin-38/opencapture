@@ -322,6 +322,21 @@ body {
 .capture-motion-reduced .capture-free-start {
     transition: none;
 }
+.capture-staged-badge {
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 72%);
+    border: 1px solid rgb(255 255 255 / 70%);
+    color: #fff;
+    font-family: var(--monospace);
+    font-weight: 600;
+    line-height: 1;
+}
 .capture-scroll-hint {
     position: absolute;
     top: -32px;
