@@ -248,6 +248,21 @@ export function createCaptureWorkspace(options: {
         }
         return preferences;
     }
+    async function configurePreferences(
+        patch: Partial<CaptureExperiencePreferences>,
+    ) {
+        try {
+            preferences = await ipcRenderer.invoke(
+                "oc:preferences:configure",
+                patch,
+            );
+            feedback.sync();
+            options.preferencesChanged(preferences);
+        } catch (error) {
+            showError(error);
+        }
+        return preferences;
+    }
     function begin(draft?: Pick<CaptureDraft, "id" | "revision">) {
         dismiss();
         statusQueue.reset();
@@ -455,6 +470,7 @@ export function createCaptureWorkspace(options: {
         flush: () => queue.flush(),
         nextRegion,
         loadPreferences,
+        configurePreferences,
         showStatus,
         showError,
         showText,

@@ -2298,7 +2298,6 @@ function changeWH(el: ElType<HTMLInputElement>) {
     followBar();
 }
 
-let captureSound = localStorage.getItem("oc:capture-sound") === "1";
 const flashEl = view()
     .style({
         position: "fixed",
@@ -2324,20 +2323,7 @@ function flashCapture() {
 }
 function playDoneSound() {
     flashCapture();
-    if (!captureSound) return;
-    try {
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.06, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.09);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.1);
-        osc.onended = () => void ctx.close();
-    } catch {}
+    void captureWorkspace?.feedback.sound();
 }
 
 function applyAspect(r: number) {
@@ -5162,19 +5148,22 @@ function rebuildCaptureTools() {
             .class("capture-size-setting")
             .add([txt(t("저장 후")), saveCopyToggle]),
     );
+    const soundOn = () => capturePreferences.feedback.sound;
     const soundToggle = button()
-        .class("capture-toggle", captureSound ? "active" : "")
+        .class("capture-toggle", soundOn() ? "active" : "")
         .attr({
             type: "button",
             title: t("완료 시 짧은 소리"),
-            ariaPressed: String(captureSound),
+            ariaPressed: String(soundOn()),
         })
         .add(txt(t("완료음")))
         .on("click", () => {
-            captureSound = !captureSound;
-            localStorage.setItem("oc:capture-sound", captureSound ? "1" : "0");
-            soundToggle.el.classList.toggle("active", captureSound);
-            soundToggle.el.setAttribute("aria-pressed", String(captureSound));
+            const next = !soundOn();
+            soundToggle.el.classList.toggle("active", next);
+            soundToggle.el.setAttribute("aria-pressed", String(next));
+            void captureWorkspace?.configurePreferences({
+                feedback: { ...capturePreferences.feedback, sound: next },
+            });
         });
     toolPopover.add(
         view("x")
@@ -7303,6 +7292,14 @@ captureWorkspace = createCaptureWorkspace({
     copiedText: writeText,
     preferencesChanged: (value) => {
         capturePreferences = value;
+        const legacySound = localStorage.getItem("oc:capture-sound");
+        if (legacySound !== null) {
+            localStorage.removeItem("oc:capture-sound");
+            if (legacySound === "1" && !value.feedback.sound)
+                void captureWorkspace?.configurePreferences({
+                    feedback: { ...value.feedback, sound: true },
+                });
+        }
         rebuildCaptureTools();
         markPrimaryTool();
         followBar();

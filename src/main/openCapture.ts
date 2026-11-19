@@ -2631,7 +2631,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         return getPreferences();
     });
     ipcMain.handle("oc:preferences:configure", (event, patch: unknown) => {
-        assertRole(event, ["dashboard"]);
+        assertRole(event, ["dashboard", "clip"]);
         const current = getPreferences();
         if (!patch || typeof patch !== "object")
             throw new Error("Invalid experience preferences.");

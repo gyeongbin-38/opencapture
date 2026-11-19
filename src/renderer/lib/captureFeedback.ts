@@ -63,5 +63,5 @@ export function createCaptureFeedback(
             );
         if (audible) void sound();
     }
-    return { sync, settle, commit, reduced };
+    return { sync, settle, commit, reduced, sound };
 }
