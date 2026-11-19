@@ -209,9 +209,30 @@ export function createCaptureExperiencePanel(options: {
         );
         optionsGrid.append(settingRow(lt("휴지통 자동 비우기"), trashDays));
 
+        const tone = document.createElement("select");
+        for (const [value, text] of [
+            ["off", lt("끄기")],
+            ["chime", lt("차임")],
+            ["shutter", lt("셔터")],
+        ])
+            tone.add(new Option(text, value));
+        tone.value = current.feedback.sound
+            ? current.feedback.soundTone
+            : "off";
+        tone.addEventListener("change", () => {
+            const next = tone.value;
+            void commit({
+                feedback: {
+                    ...current?.feedback,
+                    sound: next !== "off",
+                    soundTone: next === "shutter" ? "shutter" : "chime",
+                } as CaptureExperiencePreferences["feedback"],
+            });
+        });
+        optionsGrid.append(settingRow(lt("완료음"), tone));
+
         for (const [key, text] of [
             ["visual", lt("시각 피드백")],
-            ["sound", lt("소리 (기본 꺼짐)")],
             ["shelfEnabled", lt("캡처 선반")],
         ] as const) {
             const checkbox = document.createElement("input");

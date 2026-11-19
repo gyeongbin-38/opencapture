@@ -5253,21 +5253,36 @@ function rebuildCaptureTools() {
             .class("capture-size-setting")
             .add([txt(t("저장 후")), saveCopyToggle]),
     );
-    const soundOn = () => capturePreferences.feedback.sound;
+    const soundTones = ["off", "chime", "shutter"] as const;
+    const soundState = () =>
+        capturePreferences.feedback.sound
+            ? capturePreferences.feedback.soundTone
+            : "off";
+    const soundLabel = (state: (typeof soundTones)[number]) =>
+        state === "off" ? t("꺼짐") : state === "chime" ? t("차임") : t("셔터");
+    const soundText = () => `${t("완료음")} ${soundLabel(soundState())}`;
     const soundToggle = button()
-        .class("capture-toggle", soundOn() ? "active" : "")
+        .class("capture-toggle", soundState() !== "off" ? "active" : "")
         .attr({
             type: "button",
             title: t("완료 시 짧은 소리"),
-            ariaPressed: String(soundOn()),
+            ariaPressed: String(soundState() !== "off"),
         })
-        .add(txt(t("완료음")))
+        .add(txt(soundText()))
         .on("click", () => {
-            const next = !soundOn();
-            soundToggle.el.classList.toggle("active", next);
-            soundToggle.el.setAttribute("aria-pressed", String(next));
+            const next =
+                soundTones[
+                    (soundTones.indexOf(soundState()) + 1) % soundTones.length
+                ];
+            soundToggle.el.classList.toggle("active", next !== "off");
+            soundToggle.el.setAttribute("aria-pressed", String(next !== "off"));
+            soundToggle.el.textContent = `${t("완료음")} ${soundLabel(next)}`;
             void captureWorkspace?.configurePreferences({
-                feedback: { ...capturePreferences.feedback, sound: next },
+                feedback: {
+                    ...capturePreferences.feedback,
+                    sound: next !== "off",
+                    soundTone: next === "shutter" ? "shutter" : "chime",
+                },
             });
         });
     toolPopover.add(

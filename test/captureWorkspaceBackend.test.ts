@@ -63,6 +63,7 @@ describe("capture experience contract", () => {
         expect(DEFAULT_CAPTURE_EXPERIENCE.feedback).toEqual({
             visual: true,
             sound: false,
+            soundTone: "chime",
             motion: "system",
         });
         const parsed = parseCaptureExperience({
@@ -77,8 +78,28 @@ describe("capture experience contract", () => {
         expect(parsed.feedback).toEqual({
             visual: true,
             sound: true,
+            soundTone: "chime",
             motion: "reduced",
         });
+    });
+
+    it("keeps legacy sound booleans and accepts explicit tones", () => {
+        const legacy = parseCaptureExperience({ feedback: { sound: true } });
+        expect(legacy.feedback.sound).toBe(true);
+        expect(legacy.feedback.soundTone).toBe("chime");
+        const muted = parseCaptureExperience({ feedback: { sound: false } });
+        expect(muted.feedback.sound).toBe(false);
+        const shutter = parseCaptureExperience({
+            feedback: { sound: true, soundTone: "shutter" },
+        });
+        expect(shutter.feedback).toMatchObject({
+            sound: true,
+            soundTone: "shutter",
+        });
+        const unknown = parseCaptureExperience({
+            feedback: { sound: true, soundTone: "siren" },
+        });
+        expect(unknown.feedback.soundTone).toBe("chime");
     });
 });
 

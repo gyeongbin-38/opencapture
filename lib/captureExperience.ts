@@ -31,6 +31,7 @@ export const DEFAULT_CAPTURE_EXPERIENCE: CaptureExperiencePreferences = {
     feedback: {
         visual: true,
         sound: false,
+        soundTone: "chime",
         motion: "system",
     },
     defaultPreset: "stage-only",
@@ -92,6 +93,7 @@ export function parseCaptureExperience(
         feedback: {
             visual: feedback.visual !== false,
             sound: feedback.sound === true,
+            soundTone: feedback.soundTone === "shutter" ? "shutter" : "chime",
             motion:
                 motion === "full" || motion === "reduced" ? motion : "system",
         },

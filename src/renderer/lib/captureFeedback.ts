@@ -31,22 +31,47 @@ export function createCaptureFeedback(
         );
     }
     async function sound() {
-        if (!preferences().sound) return;
+        const prefs = preferences();
+        if (!prefs.sound) return;
         try {
             audio ??= new AudioContext();
             await audio.resume();
-            const oscillator = audio.createOscillator();
-            const gain = audio.createGain();
             const now = audio.currentTime;
-            oscillator.type = "triangle";
-            oscillator.frequency.setValueAtTime(1040, now);
-            oscillator.frequency.exponentialRampToValueAtTime(680, now + 0.045);
-            gain.gain.setValueAtTime(0.035, now);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
-            oscillator.connect(gain);
-            gain.connect(audio.destination);
-            oscillator.start(now);
-            oscillator.stop(now + 0.06);
+            if (prefs.soundTone === "shutter") {
+                for (const [at, frequency, peak] of [
+                    [0, 2400, 0.05],
+                    [0.055, 1500, 0.045],
+                ] as const) {
+                    const click = audio.createOscillator();
+                    const gate = audio.createGain();
+                    click.type = "square";
+                    click.frequency.setValueAtTime(frequency, now + at);
+                    gate.gain.setValueAtTime(peak, now + at);
+                    gate.gain.exponentialRampToValueAtTime(
+                        0.0001,
+                        now + at + 0.022,
+                    );
+                    click.connect(gate);
+                    gate.connect(audio.destination);
+                    click.start(now + at);
+                    click.stop(now + at + 0.028);
+                }
+            } else {
+                const oscillator = audio.createOscillator();
+                const gain = audio.createGain();
+                oscillator.type = "triangle";
+                oscillator.frequency.setValueAtTime(1040, now);
+                oscillator.frequency.exponentialRampToValueAtTime(
+                    680,
+                    now + 0.045,
+                );
+                gain.gain.setValueAtTime(0.035, now);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+                oscillator.connect(gain);
+                gain.connect(audio.destination);
+                oscillator.start(now);
+                oscillator.stop(now + 0.06);
+            }
         } catch {
             /* Audio availability never blocks capture. */
         }

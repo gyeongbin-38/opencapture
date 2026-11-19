@@ -164,6 +164,7 @@ export interface CaptureItemsQueryResult {
 export interface CaptureFeedbackPreferences {
     visual: boolean;
     sound: boolean;
+    soundTone: "chime" | "shutter";
     motion: "system" | "full" | "reduced";
 }
 
