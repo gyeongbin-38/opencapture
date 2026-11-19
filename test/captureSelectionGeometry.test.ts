@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import {
+    selectionEdgesForMode,
+    snapAdjustRect,
+} from "../lib/captureWindowSelection";
 
 const filename = new URL(
     "../src/renderer/clip/clip_window.ts",
@@ -64,6 +68,16 @@ describe("production capture selection geometry", () => {
                     direction: "move",
                     ratioLock: false,
                     ratioLockValue: 0,
+                    adjustSnapMode: {
+                        move: { x: "translate", y: "translate" },
+                    },
+                    snapAdjustRect,
+                    selectionEdgesForMode,
+                    edgeRect: [],
+                    captureSelectionMode: "region",
+                    识别窗口: false,
+                    editorP: { zoom: 1 },
+                    setSnapGuides: vi.fn(),
                 },
                 ["finalRectFix"],
             );
@@ -159,6 +173,7 @@ describe("production capture selection geometry", () => {
             followBar: vi.fn(),
             isShowBars: true,
             finishHandleResize: vi.fn(),
+            setSnapGuides: vi.fn(),
         });
         h.subject();
         expect(h.finalRect).toEqual(saved.rect);
@@ -192,6 +207,7 @@ describe("production capture selection geometry", () => {
                 hisPush: vi.fn(),
                 drawClip: vi.fn(),
                 followBar: vi.fn(),
+                setSnapGuides: vi.fn(),
             },
             ["finalRectFix"],
         );
@@ -218,6 +234,7 @@ describe("production capture selection geometry", () => {
                 hisPush: vi.fn(),
                 drawClip: vi.fn(),
                 followBar: vi.fn(),
+                setSnapGuides: vi.fn(),
             },
             ["finalRectFix"],
         );

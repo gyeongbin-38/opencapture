@@ -507,7 +507,13 @@ function lineW() {
     return Math.max(1, 1 / editorP.zoom);
 }
 
-function setElBox(el: HTMLElement, x: number, y: number, w: number, h: number) {
+function setElBox(
+    el: HTMLElement | SVGSVGElement,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+) {
     const s = el.style;
     const l = `${x}px`;
     const t = `${y}px`;
@@ -1892,6 +1898,7 @@ function showMask(type: "rect" | "poly" | null) {
     for (const el of clipSelectLines) el.el.style.display = rectV ? "" : "none";
     selectionFrameEl.el.style.display = rectV ? "" : "none";
     clipMaskPoly.el.style.display = type === "poly" ? "" : "none";
+    clipPolyFrame.style.display = type === "poly" ? "" : "none";
 }
 
 function drawSelectLines() {
@@ -1953,6 +1960,15 @@ function drawClipPoly(points: point[]) {
     // evenodd 让选区多边形成为遮罩的洞
     clipMaskPoly.el.style.clipPath = `path(evenodd, "M0 0H${cw}V${ch}H0Z${path}Z")`;
 
+    const d = `${path}Z`;
+    const w = lineW();
+    polyFrameOutline.setAttribute("d", d);
+    polyFrameOutline.setAttribute("stroke-width", `${w * 3}`);
+    polyFrameLine.setAttribute("d", d);
+    polyFrameLine.setAttribute("stroke-width", `${w}`);
+    clipPolyFrame.setAttribute("viewBox", `0 0 ${cw} ${ch}`);
+    setElBox(clipPolyFrame, 0, 0, cw, ch);
+
     // 大小栏
     whBar(pointsOutRect(points));
     selectionHandles.el.hidden = true;
@@ -1983,6 +1999,11 @@ function cleanClip() {
 /** 缩放、平移后刷新参考线，本地线宽随缩放变化 */
 function refreshLines() {
     if (isRect) drawSelectLines();
+    else if (maskType === "poly") {
+        const w = lineW();
+        polyFrameOutline.setAttribute("stroke-width", `${w * 3}`);
+        polyFrameLine.setAttribute("stroke-width", `${w}`);
+    }
     if (nowMouseE) {
         const e = e2srcPoint(nowMouseE);
         ckx(e);
@@ -2918,9 +2939,20 @@ function movePoly(
     const dx = p.x - op.x;
     const dy = p.y - op.y;
     if (direction === "move") {
+        const oRect = pointsOutRect(oldPoly);
+        const snapped = snapAdjustRect(
+            [oRect[0] + dx, oRect[1] + dy, oRect[2], oRect[3]],
+            adjustSnapMode.move,
+            selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口),
+            { width: mainCanvas.width, height: mainCanvas.height },
+            6 / editorP.zoom,
+        );
+        const sx = dx + snapped.rect[0] - (oRect[0] + dx);
+        const sy = dy + snapped.rect[1] - (oRect[1] + dy);
+        setSnapGuides(snapped.guideX, snapped.guideY);
         freeSelect = oldPoly.map((i) => {
-            const x = Math.round(i.x + dx);
-            const y = Math.round(i.y + dy);
+            const x = Math.round(i.x + sx);
+            const y = Math.round(i.y + sy);
             return { x, y };
         });
     }
@@ -4579,6 +4611,30 @@ const selectionFrameEl = view().attr({ id: "selection_frame" }).style({
     pointerEvents: "none",
     boxSizing: "border-box",
 });
+/** 自由选区边界：与矩形一致的内外双色描边 */
+const clipPolyFrame = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "svg",
+);
+clipPolyFrame.id = "selection_frame_poly";
+clipPolyFrame.style.cssText =
+    "position:absolute;pointer-events:none;overflow:visible;display:none";
+const polyFrameOutline = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path",
+);
+const polyFrameLine = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path",
+);
+for (const el of [polyFrameOutline, polyFrameLine]) {
+    el.setAttribute("fill", "none");
+    el.setAttribute("stroke-linejoin", "round");
+    el.setAttribute("stroke-linecap", "round");
+}
+polyFrameOutline.setAttribute("stroke", "#fff");
+polyFrameLine.setAttribute("stroke", "#000");
+clipPolyFrame.append(polyFrameOutline, polyFrameLine);
 /** 自动框选提示 */
 const clipEdge = view().attr({ id: "capture_edge" }).style({
     left: "0",
@@ -4599,6 +4655,7 @@ clipEl.append(
     ...clipSelectLines.map((i) => i.el),
     clipEdge.el,
     selectionFrameEl.el,
+    clipPolyFrame,
     snapGuideEl.el,
     ...clipCkx.map((i) => i.el),
 );

@@ -380,6 +380,64 @@ app.whenReady().then(async () => {
             400,
         );
         report.checks.push({ freeSelectToggle: true });
+        // F converts the active rect into a free-form polygon; it gets the
+        // crisp SVG frame and moving it snaps the bounding box like rects.
+        await clip(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
+        );
+        await pause(150);
+        const polyFrame = await clip(
+            `(() => { const svg=document.querySelector('#selection_frame_poly'); const line=svg?.querySelectorAll('path')[1]; const d=line?.getAttribute('d') ?? ''; return { display: svg ? getComputedStyle(svg).display : 'missing', segments: (d.match(/L/g) ?? []).length, closed: d.endsWith('Z'), outline: svg?.querySelector('path')?.getAttribute('stroke-width') ?? '' }; })()`,
+        );
+        assert(
+            polyFrame.display !== "none" &&
+                polyFrame.segments >= 3 &&
+                polyFrame.closed,
+            `Free-form frame missing: ${JSON.stringify(polyFrame)}`,
+        );
+        report.checks.push({ polyFrame });
+        await shot(capture, "capture-freeform-frame");
+        // Dragging the polygon snaps its bounding box to the canvas edge.
+        const grab = {
+            x: Math.round(rectangle.x + rectangle.width * 0.5),
+            y: Math.round(rectangle.y + rectangle.height * 0.5),
+        };
+        capture.webContents.sendInputEvent({ type: "mouseMove", ...grab });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...grab,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: grab.x + 3,
+            y: grab.y,
+        });
+        await pause(120);
+        const polyGuides = await clip(
+            'document.querySelectorAll("#capture_snap_guides > *").length',
+        );
+        assert(polyGuides >= 1, "Polygon move did not snap to canvas edge");
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: grab.x + 3,
+            y: grab.y,
+        });
+        await pause(120);
+        assert(
+            (await clip(
+                'document.querySelectorAll("#capture_snap_guides > *").length',
+            )) === 0,
+            "Polygon snap guides did not clear",
+        );
+        report.checks.push({ polySnap: polyGuides });
+        await clip(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
+        );
+        await pause(120);
         // W toggles region/window selection modes with visible feedback.
         await clip(
             'document.dispatchEvent(new KeyboardEvent("keydown",{key:"w",keyCode:87,which:87,bubbles:true}))',
