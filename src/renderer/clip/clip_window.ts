@@ -5378,6 +5378,16 @@ document.addEventListener(
 
 const selectionHandles = view().attr({ id: "selection_handles" }).addInto();
 selectionHandles.el.hidden = true;
+const scrollCaptureHint = button(captureIcon("long"))
+    .add(txt(t("스크롤 캡처")))
+    .class("capture-scroll-hint")
+    .attr({ type: "button", title: t("스크롤 캡처") })
+    .addInto(selectionHandles);
+scrollCaptureHint.el.hidden = true;
+scrollCaptureHint.on("click", (e) => {
+    e.stopPropagation();
+    toolsX.long.f();
+});
 const handleDirections = [
     ["nw", "西北"],
     ["n", "北"],
@@ -5472,6 +5482,34 @@ function syncSelectionHandles() {
         width: `${finalRect[2] * editorP.zoom}px`,
         height: `${finalRect[3] * editorP.zoom}px`,
     });
+    updateScrollCaptureHint();
+}
+
+/** 선택 영역이 스크롤 가능한 창 안에 있을 때만 롱캡처 제안을 표시 */
+function updateScrollCaptureHint() {
+    const insideTallWindow =
+        rectSelect &&
+        selectionEdgesForMode(edgeRect, captureSelectionMode, 识别窗口).some(
+            (edge) =>
+                edge.type === "system" &&
+                edge.height >= mainCanvas.height * 0.55 &&
+                edge.x <= finalRect[0] &&
+                edge.y <= finalRect[1] &&
+                edge.x + edge.width >= finalRect[0] + finalRect[2] &&
+                edge.y + edge.height >= finalRect[1] + finalRect[3],
+        );
+    const show =
+        !selectionHandles.el.hidden &&
+        captureSelectionMode === "region" &&
+        !moving &&
+        !longRunning &&
+        insideTallWindow &&
+        finalRect[3] >= mainCanvas.height * 0.15;
+    scrollCaptureHint.el.hidden = !show;
+    scrollCaptureHint.el.classList.toggle(
+        "capture-scroll-hint--inside",
+        (finalRect[1] + editorP.y) * editorP.zoom < 40,
+    );
 }
 
 window.addEventListener("resize", () => {

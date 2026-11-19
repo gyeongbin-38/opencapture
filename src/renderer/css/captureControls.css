@@ -303,6 +303,36 @@ body {
 .capture-motion-reduced .capture-start-hint {
     transition: none;
 }
+.capture-scroll-hint {
+    position: absolute;
+    top: -32px;
+    right: -1px;
+    z-index: 13;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px !important;
+    border: 1px solid var(--capture-border) !important;
+    border-radius: var(--r-md) !important;
+    background: var(--capture-surface) !important;
+    box-shadow: var(--shadow);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+    pointer-events: auto;
+}
+.capture-scroll-hint svg {
+    width: 12px;
+    height: 12px;
+}
+.capture-scroll-hint:hover {
+    background: var(--surface-soft) !important;
+    color: var(--capture-text);
+}
+.capture-scroll-hint.capture-scroll-hint--inside {
+    top: 4px;
+    right: 4px;
+}
 [hidden][hidden] {
     display: none !important;
 }

@@ -199,7 +199,7 @@ app.whenReady().then(async () => {
         });
         await pause(200);
         const ui = await clip(
-            `(() => { const selection=document.querySelector('#selection_handles'); const toolbar=document.querySelector('#quick_toolbar'); return { handles:selection.querySelectorAll('button').length, hidden:selection.hidden, selection:JSON.parse(JSON.stringify(selection.getBoundingClientRect())), toolbar:JSON.parse(JSON.stringify(toolbar.getBoundingClientRect())), size:[...document.querySelectorAll('.capture-dimensions input')].map(i=>i.value), background:getComputedStyle(toolbar).backgroundColor, colorPanelHidden:document.querySelector('#mouse_bar').classList.contains('mouse_bar_hide') } })()`,
+            `(() => { const selection=document.querySelector('#selection_handles'); const toolbar=document.querySelector('#quick_toolbar'); return { handles:selection.querySelectorAll('.capture-handle').length, hidden:selection.hidden, selection:JSON.parse(JSON.stringify(selection.getBoundingClientRect())), toolbar:JSON.parse(JSON.stringify(toolbar.getBoundingClientRect())), size:[...document.querySelectorAll('.capture-dimensions input')].map(i=>i.value), background:getComputedStyle(toolbar).backgroundColor, colorPanelHidden:document.querySelector('#mouse_bar').classList.contains('mouse_bar_hide') } })()`,
         );
         assert(
             ui.handles === 8 && !ui.hidden,
@@ -335,6 +335,11 @@ app.whenReady().then(async () => {
             "Snap guide did not clear after drag",
         );
         report.checks.push({ snapGuides: guideCount });
+        const scrollHint = await clip(
+            '(() => { const h=document.querySelector(".capture-scroll-hint"); return { exists: Boolean(h), hidden: h?.hidden ?? null }; })()',
+        );
+        assert(scrollHint.exists, "Scroll capture hint missing");
+        report.checks.push({ scrollHint });
         await clip(
             'document.querySelectorAll("#quick_toolbar button")[4].click();',
         );
