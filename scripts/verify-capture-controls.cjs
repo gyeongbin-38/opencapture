@@ -219,6 +219,29 @@ app.whenReady().then(async () => {
         );
         report.checks.push({ captureLayout: ui, startHint: hintInitial });
         await shot(capture, "capture-toolbar");
+        await until(
+            () =>
+                clip(
+                    'Boolean(document.querySelector(".capture-shelf-card .capture-shelf-action"))',
+                ),
+            "Shelf card actions did not appear",
+        );
+        const shelfCard = await clip(
+            '(() => { const card=document.querySelector(".capture-shelf-card"); return { cards:document.querySelectorAll(".capture-shelf-card").length, actions:card.querySelectorAll(".capture-shelf-action").length, titles:[...card.querySelectorAll(".capture-shelf-action")].map((b)=>b.dataset.title) }; })()',
+        );
+        assert(
+            shelfCard.cards === 1 && shelfCard.actions === 3,
+            "Shelf quick actions missing",
+        );
+        await clip('document.querySelector(".capture-shelf-action").click()');
+        await until(
+            async () =>
+                await clip(
+                    '(() => { const s=document.querySelector(".capture-workspace-status"); return Boolean(s && !s.classList.contains("has-error") && s.textContent.includes("이미지를 복사했습니다.")); })()',
+                ),
+            "Shelf copy action did not confirm",
+        );
+        report.checks.push({ shelfCard });
         const before = ui.size.map(Number);
         await clip(
             'const widthInput=document.querySelector(".capture-dimensions input"); widthInput.value="480"; widthInput.dispatchEvent(new Event("change",{bubbles:true}));',

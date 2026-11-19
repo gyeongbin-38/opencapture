@@ -140,6 +140,24 @@ export function createCaptureWorkspace(options: {
             image.src = "";
         }
     }
+    const shelfActionIcons: Record<string, string> = {
+        copy: '<rect x="7" y="7" width="10" height="11" rx="2"/><path d="M13 7V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/>',
+        pin: '<path d="m7 2 6 0-1 5 3 3v2H5v-2l3-3-1-5Zm3 10v6"/>',
+        trash: '<path d="M3 5h14M7 5V2h6v3M5 5l1 13h8l1-13M8 8v7m4-7v7"/>',
+    };
+    function shelfActionButton(name: string, label: string, act: () => void) {
+        const icon = view()
+            .class("capture-shelf-action-icon")
+            .attr({ ariaHidden: "true" });
+        icon.el.innerHTML = `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${shelfActionIcons[name]}</svg>`;
+        return button(icon)
+            .class("capture-shelf-action")
+            .attr({ type: "button", title: label })
+            .on("click", (event) => {
+                event.stopPropagation();
+                act();
+            });
+    }
     function renderStrip() {
         strip.clear();
         strip.add(
@@ -170,7 +188,35 @@ export function createCaptureWorkspace(options: {
                     .then(() => ipcRenderer.invoke("oc:clip:open-draft", id))
                     .catch(showError);
             });
-            strip.add(thumbnail);
+            const actions = view("x")
+                .class("capture-shelf-actions")
+                .add([
+                    shelfActionButton("copy", t("복사"), () =>
+                        ipcRenderer
+                            .invoke("oc:shelf:action", "copy", id)
+                            .then(() => showStatus(t("이미지를 복사했습니다.")))
+                            .catch(showError),
+                    ),
+                    shelfActionButton("pin", t("고정"), () =>
+                        ipcRenderer
+                            .invoke("oc:shelf:action", "pin", id)
+                            .then(() => showStatus(t("화면에 고정됨")))
+                            .catch(showError),
+                    ),
+                    shelfActionButton("trash", t("휴지통으로 이동"), () =>
+                        ipcRenderer
+                            .invoke("oc:items:trash", [id])
+                            .then(() => {
+                                thumbnails.delete(id);
+                                renderStrip();
+                                showStatus(t("휴지통으로 이동됨"));
+                            })
+                            .catch(showError),
+                    ),
+                ]);
+            strip.add(
+                view().class("capture-shelf-card").add([thumbnail, actions]),
+            );
         }
         strip.el.hidden = !thumbnails.size;
     }

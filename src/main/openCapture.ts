@@ -2801,7 +2801,16 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     ipcMain.handle(
         "oc:shelf:action",
         async (event, name: unknown, id: unknown) => {
-            assertRole(event, ["shelf"]);
+            const role = assertRole(event, ["shelf", "clip"]);
+            if (role === "clip") {
+                if (name !== "copy" && name !== "pin")
+                    throw new Error("Shelf action is not permitted.");
+                if (
+                    typeof id !== "string" ||
+                    !renderers.get(event.sender.id)?.ownedDraftIds.has(id)
+                )
+                    throw new Error("Clip renderer does not own this draft.");
+            }
             const item = shelfItem(id);
             if (name === "copy") await writeClipboardImage(item.path);
             else if (name === "pin") await hooks.pin(item.path);
