@@ -7819,6 +7819,18 @@ document.addEventListener(
     },
     true,
 );
+document.addEventListener(
+    "keydown",
+    (e) => {
+        if (e.key === "Escape" && (down || selecting || moving || direction)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            cancelSelectionInteraction();
+        }
+    },
+    true,
+);
+
 window.addEventListener("blur", () => {
     closeRadial();
     cancelSelectionInteraction();

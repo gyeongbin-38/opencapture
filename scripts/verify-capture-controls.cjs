@@ -805,6 +805,49 @@ app.whenReady().then(async () => {
             `Alt+click did not drop staged region: ${JSON.stringify(afterDrop)}`,
         );
         report.checks.push({ stagedDrop: afterDrop });
+        // Esc during an in-progress drag cancels the gesture and restores
+        // the prior selection instead of closing the capture overlay.
+        const escBefore = await clip(
+            `(() => { const r=document.querySelector('#selection_frame').getBoundingClientRect(); return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width)}; })()`,
+        );
+        const escStart = await clip(
+            `(() => { for (const [x, y] of [[500,60],[480,80],[40,120],[500,140]]) { const el = document.elementFromPoint(x, y); if (el && el.id === "clip_photo") return { x, y }; } return null; })()`,
+        );
+        assert(escStart, "No free canvas point for the Esc drag");
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...escStart,
+        });
+        for (const m of [
+            { x: escStart.x - 60, y: escStart.y - 80 },
+            { x: escStart.x - 120, y: escStart.y - 140 },
+        ]) {
+            capture.webContents.sendInputEvent({ type: "mouseMove", ...m });
+            await pause(60);
+        }
+        await pressKey("Escape", 27);
+        await pause(150);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: escStart.x - 120,
+            y: escStart.y - 140,
+        });
+        await pause(150);
+        const escAfter = await clip(
+            `(() => { const r=document.querySelector('#selection_frame').getBoundingClientRect(); return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),alive:Boolean(document.querySelector('#quick_toolbar'))}; })()`,
+        );
+        assert(
+            escAfter.alive &&
+                Math.abs(escAfter.x - escBefore.x) <= 4 &&
+                Math.abs(escAfter.y - escBefore.y) <= 4 &&
+                Math.abs(escAfter.w - escBefore.w) <= 4,
+            `Esc did not restore prior selection: ${JSON.stringify({ escBefore, escAfter })}`,
+        );
+        report.checks.push({ escCancel: escAfter });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);
