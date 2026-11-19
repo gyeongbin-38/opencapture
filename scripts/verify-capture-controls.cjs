@@ -670,6 +670,24 @@ app.whenReady().then(async () => {
             `Marker gesture hint missing: ${markerHint}`,
         );
         report.checks.push({ markerHint });
+        // The ? help panel documents the marker gestures too.
+        await clip(
+            `[...document.querySelectorAll('#clip_wh button')].find((b) => b.textContent === '?')?.click()`,
+        );
+        const helpText = await clip(
+            `(() => { const h = document.querySelector('.capture-help'); return { hidden: h.hidden, text: h.textContent, rows: h.querySelectorAll('.capture-help-row').length }; })()`,
+        );
+        await clip(
+            `(() => { document.querySelector('.capture-help').hidden = true; })()`,
+        );
+        assert(
+            !helpText.hidden &&
+                helpText.text.includes("마커") &&
+                helpText.text.includes("Alt+클릭") &&
+                helpText.rows >= 15,
+            `Help panel missing marker gestures: ${JSON.stringify(helpText)}`,
+        );
+        report.checks.push({ helpPanel: helpText.rows });
         // Hovering a shelf thumbnail highlights its matching region marker.
         await clip(
             `(() => { const t=document.querySelectorAll('.capture-shelf-thumb')[0]; t?.dispatchEvent(new PointerEvent('pointerenter')); })()`,
