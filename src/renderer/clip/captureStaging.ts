@@ -6,6 +6,29 @@ export type StagedRegion = { rect: rect; key?: number; points?: point[] };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+function pointInPoints(x: number, y: number, pts: point[]) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const { x: xi, y: yi } = pts[i];
+        const { x: xj, y: yj } = pts[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
+            inside = !inside;
+    }
+    return inside;
+}
+
+/** 命中测试：指针坐标(画布系)内最上层的已暂存区域 */
+export function stagedRegionAt(regions: StagedRegion[], x: number, y: number) {
+    for (let i = regions.length - 1; i >= 0; i--) {
+        const b = regions[i];
+        const r = b.rect;
+        if (!(x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]))
+            continue;
+        if (!b.points || pointInPoints(x, y, b.points)) return b;
+    }
+    return null;
+}
+
 export function createCaptureStaging(options: {
     container: HTMLElement;
     lineW: () => number;
@@ -23,20 +46,6 @@ export function createCaptureStaging(options: {
     const regions: StagedRegion[] = [];
     let highlightKey: number | null = null;
     let renderKey = "";
-
-    function pointInPoints(x: number, y: number, pts: point[]) {
-        let inside = false;
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-            const { x: xi, y: yi } = pts[i];
-            const { x: xj, y: yj } = pts[j];
-            if (
-                yi > y !== yj > y &&
-                x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
-            )
-                inside = !inside;
-        }
-        return inside;
-    }
 
     /** 半透明轮廓 + 序号徽标，告诉你已捕获了哪里 */
     function render() {
@@ -120,23 +129,8 @@ export function createCaptureStaging(options: {
         render();
     }
 
-    /** 命中测试：指针坐标(画布系)内最上层的已暂存区域 */
     function at(x: number, y: number) {
-        for (let i = regions.length - 1; i >= 0; i--) {
-            const b = regions[i];
-            const r = b.rect;
-            if (
-                !(
-                    x >= r[0] &&
-                    x <= r[0] + r[2] &&
-                    y >= r[1] &&
-                    y <= r[1] + r[3]
-                )
-            )
-                continue;
-            if (!b.points || pointInPoints(x, y, b.points)) return b;
-        }
-        return null;
+        return stagedRegionAt(regions, x, y);
     }
 
     function clear() {
