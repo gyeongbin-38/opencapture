@@ -75,6 +75,9 @@ jobs:
             - name: Fetch pinned assets
               run: node scripts/prepare-assets.cjs
 
+            - name: Stage non-host darwin native dependencies
+              run: node scripts/fetch-macos-natives.cjs
+
             - name: Build app
               run: pnpm run build
 
