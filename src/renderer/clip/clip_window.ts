@@ -4414,6 +4414,7 @@ for (const [key, desc] of [
     ["Ctrl", t("5픽셀 이동")],
     ["Shift", t("드래그 시 정사각형 · 10픽셀 이동")],
     ["Shift+드래그", t("영역 추가 (최대 12개)")],
+    ["F", t("自由选择")],
     ["Alt", t("중심 기준 확장")],
     ["휠 클릭 드래그", t("도넛 빠른 동작 · 캔버스 팬")],
     ["우클릭", t("도넛 메뉴 · 가운데 놓기는 취소")],
@@ -4441,6 +4442,7 @@ let startHintDismissed = Boolean(store.get("框选.记忆.启动提示"));
 const startHintItems: [string, string][] = [
     ["드래그", t("영역 선택")],
     ["S", t("자동 선택")],
+    ["F", t("自由选择")],
 ];
 for (const [tool, label] of [
     ["copy", "복사"],
@@ -5629,6 +5631,7 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
             { name: "宽", keys: [store.get("大小栏快捷键.宽")] },
             { name: "高", keys: [store.get("大小栏快捷键.高")] },
             { name: "自动框选", keys: ["S"] },
+            { name: "自由选择", keys: ["F"] },
             { name: "匹配自动框选", keys: [`Shift ${t("框选")}`] },
         ],
     },
@@ -6564,6 +6567,28 @@ hotkeys("s", () => {
     finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
     drawClipRect();
     void completeSelectionAction();
+});
+
+hotkeys("f", () => {
+    if (captureSelectionMode === "window" || nowType !== "select") return;
+    if (editType.select === "free") {
+        freeSelect = [];
+        setEditType("select", "rect");
+        captureWorkspace?.showStatus(t("矩形选择"));
+    } else {
+        if (isRect && finalRect[2] > 0 && finalRect[3] > 0) {
+            const [x, y, w, h] = finalRect;
+            freeSelect = [
+                { x, y },
+                { x: x + w, y },
+                { x: x + w, y: y + h },
+                { x, y: y + h },
+            ];
+        }
+        setEditType("select", "free");
+        captureWorkspace?.showStatus(t("自由选择"));
+    }
+    drawClip();
 });
 
 const whHotKeyMap = {

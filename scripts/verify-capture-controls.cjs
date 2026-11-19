@@ -349,6 +349,30 @@ app.whenReady().then(async () => {
         );
         report.checks.push({ dimBar });
         await shot(capture, "capture-fullscreen-dimbar");
+        // F toggles rect/free selection mode with visible feedback.
+        await clip(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelector(".capture-workspace-status")?.textContent.includes("자유 선택")',
+                ),
+            "Free selection mode status did not appear",
+            400,
+        );
+        await clip(
+            'document.dispatchEvent(new KeyboardEvent("keydown",{key:"f",keyCode:70,which:70,bubbles:true}))',
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelector(".capture-workspace-status")?.textContent.includes("사각형 선택")',
+                ),
+            "Rect selection mode status did not appear",
+            400,
+        );
+        report.checks.push({ freeSelectToggle: true });
         const scrollHint = await clip(
             '(() => { const h=document.querySelector(".capture-scroll-hint"); return { exists: Boolean(h), hidden: h?.hidden ?? null }; })()',
         );
