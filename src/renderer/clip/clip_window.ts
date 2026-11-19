@@ -5319,10 +5319,30 @@ function rebuildCaptureTools() {
                 },
             });
         });
+    const visualState = () => capturePreferences.feedback.visual;
+    const visualText = () =>
+        `${t("시각 피드백")} ${visualState() ? t("켜짐") : t("꺼짐")}`;
+    const visualToggle = button()
+        .class("capture-toggle", visualState() ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("완료 시 화면 깜빡임"),
+            ariaPressed: String(visualState()),
+        })
+        .add(txt(visualText()))
+        .on("click", () => {
+            const next = !visualState();
+            visualToggle.el.classList.toggle("active", next);
+            visualToggle.el.setAttribute("aria-pressed", String(next));
+            visualToggle.el.textContent = `${t("시각 피드백")} ${next ? t("켜짐") : t("꺼짐")}`;
+            void captureWorkspace?.configurePreferences({
+                feedback: { ...capturePreferences.feedback, visual: next },
+            });
+        });
     toolPopover.add(
         view("x")
             .class("capture-size-setting")
-            .add([txt(t("피드백")), soundToggle]),
+            .add([txt(t("피드백")), soundToggle, visualToggle]),
     );
     const whPosToggle = button()
         .class("capture-toggle", whAutoPos === "bottom" ? "active" : "")

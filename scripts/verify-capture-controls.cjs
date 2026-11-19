@@ -935,6 +935,40 @@ app.whenReady().then(async () => {
             reducedMotion: true,
             toolbarSizeAdjustment: true,
         });
+        // The "more" popover exposes a visual-feedback toggle alongside
+        // the completion-sound tone cycler.
+        await clip(
+            'document.querySelector("[data-capture-action=more]")?.click();',
+        );
+        await pause(150);
+        const feedbackRow = await clip(
+            `(() => { const b=[...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백')); return b ? { text: b.textContent, active: b.classList.contains('active') } : null; })()`,
+        );
+        assert(
+            feedbackRow?.active === true &&
+                feedbackRow.text.includes("켜짐"),
+            `Visual feedback toggle missing: ${JSON.stringify(feedbackRow)}`,
+        );
+        await clip(
+            `(() => { [...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백'))?.click(); })()`,
+        );
+        await pause(150);
+        const feedbackOff = await clip(
+            `(() => { const b=[...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백')); return { text: b?.textContent, active: b?.classList.contains('active') }; })()`,
+        );
+        assert(
+            feedbackOff.active === false && feedbackOff.text.includes("꺼짐"),
+            `Visual feedback did not toggle off: ${JSON.stringify(feedbackOff)}`,
+        );
+        await clip(
+            `(() => { [...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백'))?.click(); })()`,
+        );
+        await pause(150);
+        await clip(
+            'document.querySelector("[data-capture-action=more]")?.click();',
+        );
+        await pause(150);
+        report.checks.push({ visualFeedbackToggle: true });
         capture.hide();
         await run('document.querySelectorAll(".nav-button")[1].click();');
         await until(
