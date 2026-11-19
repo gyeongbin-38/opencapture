@@ -24,6 +24,8 @@ export function createCaptureWorkspace(options: {
     preferencesChanged(value: CaptureExperiencePreferences): void;
     redact(lines: OcrTextLine[], rect: CaptureRect): void;
     settleElement(): HTMLElement;
+    highlightStagedRegion?(key: number | null): void;
+    stagedRegionTrashed?(key: number): void;
 }) {
     let preferences = structuredClone(DEFAULT_CAPTURE_EXPERIENCE);
     const feedback = createCaptureFeedback(() => preferences.feedback);
@@ -49,6 +51,7 @@ export function createCaptureWorkspace(options: {
         string,
         { result: StageCaptureResult; data: string }
     >();
+    const thumbnailKeys = new Map<string, number>();
     const textLayer = view().attr({ id: "capture_text_layer" }).addInto();
     const palette = view("x")
         .attr({ id: "capture_palette" })
@@ -102,7 +105,8 @@ export function createCaptureWorkspace(options: {
     const queue = new CaptureDraftQueue({
         snapshot: options.snapshot,
         stage: (value) => ipcRenderer.invoke("oc:draft:stage", value),
-        committed: (result, snapshot) => {
+        committed: (result, snapshot, record) => {
+            thumbnailKeys.set(result.id, record.key);
             const isNew = !thumbnails.has(result.id);
             void addThumbnail(result, snapshot.previewDataURL)
                 .then(() => {
@@ -150,7 +154,10 @@ export function createCaptureWorkspace(options: {
             thumbnails.set(result.id, { result, data: canvas.toDataURL() });
             while (thumbnails.size > 8) {
                 const oldest = thumbnails.keys().next().value;
-                if (oldest) thumbnails.delete(oldest);
+                if (oldest) {
+                    thumbnails.delete(oldest);
+                    thumbnailKeys.delete(oldest);
+                }
             }
             renderStrip();
         } finally {
@@ -205,6 +212,12 @@ export function createCaptureWorkspace(options: {
                     .then(() => ipcRenderer.invoke("oc:clip:open-draft", id))
                     .catch(showError);
             });
+            thumbnail.on("pointerenter", () =>
+                options.highlightStagedRegion?.(thumbnailKeys.get(id) ?? null),
+            );
+            thumbnail.on("pointerleave", () =>
+                options.highlightStagedRegion?.(null),
+            );
             const actions = view("x")
                 .class("capture-shelf-actions")
                 .add([
@@ -224,7 +237,11 @@ export function createCaptureWorkspace(options: {
                         ipcRenderer
                             .invoke("oc:items:trash", [id])
                             .then(() => {
+                                const key = thumbnailKeys.get(id);
                                 thumbnails.delete(id);
+                                thumbnailKeys.delete(id);
+                                if (key != null)
+                                    options.stagedRegionTrashed?.(key);
                                 renderStrip();
                                 showStatus(t("휴지통으로 이동됨"));
                             })

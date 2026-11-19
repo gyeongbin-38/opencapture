@@ -337,6 +337,11 @@ body {
     font-weight: 600;
     line-height: 1;
 }
+.capture-staged-box.is-active .capture-staged-badge {
+    background: #fff;
+    border-color: #fff;
+    color: #111;
+}
 .capture-scroll-hint {
     position: absolute;
     top: -32px;

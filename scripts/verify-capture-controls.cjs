@@ -610,7 +610,31 @@ app.whenReady().then(async () => {
             `Second staged marker wrong: ${JSON.stringify(staged2)}`,
         );
         report.checks.push({ stagedMarkers: staged2 });
+        // Hovering a shelf thumbnail highlights its matching region marker.
+        await clip(
+            `(() => { const t=document.querySelectorAll('.capture-shelf-thumb')[0]; t?.dispatchEvent(new PointerEvent('pointerenter')); })()`,
+        );
+        await pause(100);
+        const hoverHi = await clip(
+            `(() => { const a=document.querySelectorAll('#capture_staged .is-active'); return { count: a.length, badge: a[0]?.querySelector('.capture-staged-badge')?.textContent ?? '' }; })()`,
+        );
+        assert(
+            hoverHi.count === 1 && hoverHi.badge === "1",
+            `Shelf hover did not highlight marker: ${JSON.stringify(hoverHi)}`,
+        );
         await shot(capture, "capture-staged-markers");
+        await clip(
+            `(() => { const t=document.querySelectorAll('.capture-shelf-thumb')[0]; t?.dispatchEvent(new PointerEvent('pointerleave')); })()`,
+        );
+        await pause(100);
+        const hoverOff = await clip(
+            `document.querySelectorAll('#capture_staged .is-active').length`,
+        );
+        assert(
+            hoverOff === 0,
+            "Staged highlight did not clear on pointer leave",
+        );
+        report.checks.push({ stagedHover: hoverHi });
         // Free-form lasso: while drawing, a marker sits at the start point
         // and is emphasized when the pointer returns near the origin.
         await pressKey("f", 70);

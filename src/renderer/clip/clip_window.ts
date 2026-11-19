@@ -112,7 +112,8 @@ let immutableSourceData: string | undefined;
 let captureInitSequence = 0;
 let screenRequestSequence = 0;
 let captureInitQueue: Promise<void> = Promise.resolve();
-let batchRegions: rect[] = [];
+let batchRegions: { rect: rect; key?: number }[] = [];
+let stagedHighlightKey: number | null = null;
 let selectionBeforeDrag: {
     rect: rect;
     points: point[];
@@ -2102,17 +2103,27 @@ function snapDrag(e: MouseEvent, r: rect): rect {
 let stagedRegionsKey = "";
 function renderStagedRegions() {
     const w = lineW();
-    const key = `${w}|${batchRegions.map((i) => i.join(",")).join(";")}`;
+    const key = `${w}|${stagedHighlightKey ?? ""}|${batchRegions.map((i) => `${i.key ?? ""}:${i.rect.join(",")}`).join(";")}`;
     if (key === stagedRegionsKey) return;
     stagedRegionsKey = key;
     const badgeSize = Math.max(16, 18 / editorP.zoom);
     stagedRegionsEl.el.replaceChildren(
-        ...batchRegions.map((r, i) => {
+        ...batchRegions.map((entry, i) => {
+            const active =
+                entry.key != null && entry.key === stagedHighlightKey;
             const box = document.createElement("div");
-            setElBox(box, r[0], r[1], r[2], r[3]);
+            box.className = "capture-staged-box";
+            box.classList.toggle("is-active", active);
+            setElBox(
+                box,
+                entry.rect[0],
+                entry.rect[1],
+                entry.rect[2],
+                entry.rect[3],
+            );
             box.style.boxSizing = "border-box";
-            box.style.border = `${w}px dashed #ffffffb3`;
-            box.style.background = "#00000012";
+            box.style.border = `${w}px ${active ? "solid" : "dashed"} ${active ? "#fff" : "#ffffffb3"}`;
+            box.style.background = active ? "#ffffff26" : "#00000012";
             const badge = document.createElement("div");
             badge.className = "capture-staged-badge";
             badge.textContent = `${i + 1}`;
@@ -2123,6 +2134,20 @@ function renderStagedRegions() {
             return box;
         }),
     );
+}
+
+function highlightStagedRegion(key: number | null) {
+    if (stagedHighlightKey === key) return;
+    stagedHighlightKey = key;
+    renderStagedRegions();
+}
+
+function removeStagedRegion(key: number) {
+    const i = batchRegions.findIndex((r) => r.key === key);
+    if (i < 0) return;
+    batchRegions.splice(i, 1);
+    if (stagedHighlightKey === key) stagedHighlightKey = null;
+    renderStagedRegions();
 }
 
 /** 提示框没变化就不动 DOM */
@@ -6091,6 +6116,7 @@ renderOn(
             immutableSourceData = undefined;
             captureSelectionMode = context?.selectionMode ?? "region";
             batchRegions = [];
+            stagedHighlightKey = null;
             renderStagedRegions();
             captureWorkspace?.begin(
                 project?.draftId
@@ -6706,7 +6732,10 @@ clipEl.onmousedown = (e) => {
                 );
                 return;
             }
-            batchRegions.push([...finalRect]);
+            batchRegions.push({
+                rect: [...finalRect],
+                key: captureWorkspace?.queue.current?.key,
+            });
             renderStagedRegions();
             captureWorkspace?.nextRegion(batchRegions.length);
             inRect = false;
@@ -7425,6 +7454,8 @@ captureWorkspace = createCaptureWorkspace({
         followBar();
     },
     settleElement: () => selectionHandles.el,
+    highlightStagedRegion,
+    stagedRegionTrashed: removeStagedRegion,
     redact: (lines: OcrTextLine[], r) => {
         for (const line of lines) {
             const pad = Math.max(2, line.box.height * 0.15);
