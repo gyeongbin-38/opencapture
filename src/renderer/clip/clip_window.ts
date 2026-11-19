@@ -116,10 +116,12 @@ let immutableSourceData: string | undefined;
 let captureInitSequence = 0;
 let screenRequestSequence = 0;
 let captureInitQueue: Promise<void> = Promise.resolve();
-let batchRegions: { rect: rect; key?: number }[] = [];
+/** 已暂存的多区域：rect 是外接框，points 存在时是自由形选区 */
+type StagedRegion = { rect: rect; key?: number; points?: point[] };
+let batchRegions: StagedRegion[] = [];
 let stagedHighlightKey: number | null = null;
 /** mousedown이 보관 마커 안에서 시작됐고 mouseup까지 안 움직이면 복원 클릭 */
-let stagedClickEntry: { rect: rect; key?: number } | null = null;
+let stagedClickEntry: StagedRegion | null = null;
 let stagedClickPoint = { x: 0, y: 0 };
 let stagedClickAlt = false;
 let selectionBeforeDrag: {
@@ -2130,7 +2132,7 @@ function snapDrag(e: MouseEvent, r: rect): rect {
 let stagedRegionsKey = "";
 function renderStagedRegions() {
     const w = lineW();
-    const key = `${w}|${stagedHighlightKey ?? ""}|${batchRegions.map((i) => `${i.key ?? ""}:${i.rect.join(",")}`).join(";")}`;
+    const key = `${w}|${stagedHighlightKey ?? ""}|${batchRegions.map((i) => `${i.key ?? ""}:${i.rect.join(",")}:${i.points?.length ?? ""}`).join(";")}`;
     if (key === stagedRegionsKey) return;
     stagedRegionsKey = key;
     const badgeSize = Math.max(16, 18 / editorP.zoom);
@@ -2151,6 +2153,42 @@ function renderStagedRegions() {
             box.style.boxSizing = "border-box";
             box.style.border = `${w}px ${active ? "solid" : "dashed"} ${active ? "#fff" : "#ffffffb3"}`;
             box.style.background = active ? "#ffffff26" : "#00000012";
+            if (entry.points) {
+                box.style.border = "none";
+                box.style.background = "none";
+                const svg = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "svg",
+                );
+                svg.setAttribute(
+                    "viewBox",
+                    `0 0 ${entry.rect[2]} ${entry.rect[3]}`,
+                );
+                svg.style.cssText =
+                    "position:absolute;inset:0;width:100%;height:100%;overflow:visible";
+                const poly = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "polygon",
+                );
+                poly.setAttribute(
+                    "points",
+                    entry.points
+                        .map(
+                            (p) =>
+                                `${p.x - entry.rect[0]},${p.y - entry.rect[1]}`,
+                        )
+                        .join(" "),
+                );
+                poly.setAttribute("fill", active ? "#ffffff26" : "#00000012");
+                poly.setAttribute("stroke", active ? "#fff" : "#ffffffb3");
+                poly.setAttribute("stroke-width", String(w));
+                poly.setAttribute(
+                    "stroke-dasharray",
+                    active ? "none" : `${w * 3} ${w * 2}`,
+                );
+                svg.append(poly);
+                box.append(svg);
+            }
             const badge = document.createElement("div");
             badge.className = "capture-staged-badge";
             badge.textContent = `${i + 1}`;
@@ -2177,25 +2215,44 @@ function removeStagedRegion(key: number) {
     renderStagedRegions();
 }
 
+function pointInPoints(x: number, y: number, pts: point[]) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const { x: xi, y: yi } = pts[i];
+        const { x: xj, y: yj } = pts[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
+            inside = !inside;
+    }
+    return inside;
+}
+
 /** 命中测试：指针坐标(画布系)内最上层的已暂存区域 */
 function stagedRegionAt(x: number, y: number) {
     for (let i = batchRegions.length - 1; i >= 0; i--) {
-        const r = batchRegions[i].rect;
-        if (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3])
-            return batchRegions[i];
+        const b = batchRegions[i];
+        const r = b.rect;
+        if (!(x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]))
+            continue;
+        if (!b.points || pointInPoints(x, y, b.points)) return b;
     }
     return null;
 }
 
 /** 点击已暂存区域：回到该选区继续编辑，原暂存草稿移入回收站 */
-function restoreStagedRegion(entry: { rect: rect; key?: number }) {
+function restoreStagedRegion(entry: StagedRegion) {
     const i = batchRegions.indexOf(entry);
     if (i < 0) return;
     batchRegions.splice(i, 1);
     if (stagedHighlightKey === entry.key) stagedHighlightKey = null;
-    isRect = true;
+    if (entry.points) {
+        setEditType("select", "free");
+        freeSelect = entry.points.map((p) => ({ ...p }));
+        finalRect = pointsOutRect(freeSelect);
+    } else {
+        setEditType("select", "rect");
+        finalRect = [...entry.rect];
+    }
     rectSelect = true;
-    finalRect = [...entry.rect];
     finalRectFix();
     drawClip();
     followBar();
@@ -2205,7 +2262,7 @@ function restoreStagedRegion(entry: { rect: rect; key?: number }) {
 }
 
 /** Alt+点击已暂存区域：直接丢弃该暂存及其草稿 */
-function dropStagedRegion(entry: { rect: rect; key?: number }) {
+function dropStagedRegion(entry: StagedRegion) {
     const i = batchRegions.indexOf(entry);
     if (i < 0) return;
     batchRegions.splice(i, 1);
@@ -6869,6 +6926,7 @@ clipEl.onmousedown = (e) => {
             batchRegions.push({
                 rect: [...finalRect],
                 key: captureWorkspace?.queue.current?.key,
+                points: isRect ? undefined : freeSelect.map((p) => ({ ...p })),
             });
             renderStagedRegions();
             captureWorkspace?.nextRegion(batchRegions.length);

@@ -919,6 +919,63 @@ app.whenReady().then(async () => {
             `Lasso smoothing left too many vertices: ${JSON.stringify(lassoSmooth)}`,
         );
         report.checks.push({ lassoSmooth: lassoSmooth.segments });
+        // Shift+click stages the live free-form selection as a polygon
+        // marker; clicking its centroid restores the polygon as the
+        // live selection and removes the staged draft.
+        const stagePt = await clip(
+            `(() => { for (const [x, y] of [[${jx(0.85)},${jy(0.12)}],[${jx(0.9)},${jy(0.1)}],[${jx(0.8)},${jy(0.15)}]]) { const el = document.elementFromPoint(x, y); if (el && el.id === "clip_photo") return { x, y }; } return null; })()`,
+        );
+        assert(stagePt, "No free canvas point for poly staging");
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...stagePt,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...stagePt,
+        });
+        await pause(250);
+        const stagedPoly = await clip(
+            `(() => { const box=document.querySelector('#capture_staged > div:last-child'); const poly=box?.querySelector('polygon'); return { markers: document.querySelectorAll('#capture_staged > div').length, poly: !!poly, pts: poly?.points?.numberOfItems ?? 0 }; })()`,
+        );
+        assert(
+            stagedPoly.poly && stagedPoly.pts >= 3,
+            `Free-form staged marker missing: ${JSON.stringify(stagedPoly)}`,
+        );
+        const stagedPolyClick = await clip(
+            `(() => { const poly=document.querySelector('#capture_staged > div:last-child polygon'); const svg=poly.ownerSVGElement; const pts=poly.points; let cx=0, cy=0; for (let i=0;i<pts.numberOfItems;i++){const p=pts.getItem(i);cx+=p.x;cy+=p.y;} const pt=svg.createSVGPoint(); pt.x=cx/pts.numberOfItems; pt.y=cy/pts.numberOfItems; const sp=pt.matrixTransform(svg.getScreenCTM()); return { x: Math.round(sp.x), y: Math.round(sp.y) }; })()`,
+        );
+        assert(stagedPolyClick, "No polygon centroid for restore click");
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...stagedPolyClick,
+        });
+        await pause(60);
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            ...stagedPolyClick,
+        });
+        await pause(250);
+        const polyRestored = await clip(
+            `(() => { const pf=document.querySelector('#selection_frame_poly'); return { markers: document.querySelectorAll('#capture_staged > div').length, polyDisplay: pf ? getComputedStyle(pf).display : null }; })()`,
+        );
+        assert(
+            polyRestored.markers === 0 &&
+                polyRestored.polyDisplay !== "none",
+            `Free-form restore failed: ${JSON.stringify(polyRestored)}`,
+        );
+        report.checks.push({ stagedPoly });
         await pressKey("f", 70);
         await pause(120);
         // W toggles region/window selection modes with visible feedback:
