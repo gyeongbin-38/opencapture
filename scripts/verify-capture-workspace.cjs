@@ -863,6 +863,38 @@ app.whenReady().then(async () => {
         );
         report.checks.push({ shelfEditableDoubleClick: firstStage.id });
 
+        await shelfRun(`(() => {
+            document
+                .querySelector('.shelf-card[data-item-id=${JSON.stringify(firstStage.id)}]')
+                .dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));
+            document.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));
+        })()`);
+        capture = await until(
+            () =>
+                BrowserWindow.getAllWindows().find(
+                    (window) =>
+                        window.webContents.getURL().includes("capture.html") &&
+                        !window.webContents.isLoading(),
+                ),
+            "Shelf Enter key did not create the capture editor.",
+        );
+        await until(
+            () =>
+                capture.isVisible() &&
+                clip(
+                    `window.captureDraftBridge.info().id === ${JSON.stringify(firstStage.id)}`,
+                ),
+            "Shelf Enter key did not reopen the editable draft.",
+        );
+        await clip(
+            'document.querySelector("#quick_toolbar [data-capture-action=close]").click()',
+        );
+        await until(
+            () => capture.isDestroyed() || !capture.isVisible(),
+            "Enter-opened editor did not close cleanly.",
+        );
+        report.checks.push({ shelfEnterOpen: firstStage.id });
+
         const beforeMutationRevision = firstPage.catalogRevision;
         await run(
             `window.openCapture.promoteItems(${JSON.stringify([firstStage.id])})`,

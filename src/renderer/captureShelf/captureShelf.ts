@@ -216,6 +216,19 @@ document.addEventListener("keydown", (event) => {
         }
         return;
     }
+    if (event.key === "Enter") {
+        if (
+            event.target instanceof Element &&
+            event.target.closest("[data-shelf-action]")
+        )
+            return;
+        const edit = controls.find((control) => control.key === "e");
+        if (edit && !edit.el.disabled) {
+            event.preventDefault();
+            edit.el.click();
+        }
+        return;
+    }
     const key = event.key === "Delete" ? "d" : event.key.toLowerCase();
     const control = controls.find((control) => control.key === key);
     if (control && !control.el.disabled) control.el.click();
