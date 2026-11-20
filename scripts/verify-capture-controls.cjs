@@ -281,6 +281,42 @@ app.whenReady().then(async () => {
             `Loupe visibility failed: ${JSON.stringify({ loupeShown, loupeHidden, loupeBack })}`,
         );
         report.checks.push({ loupeHover: true });
+        // The color tool expands the loupe into a multi-format panel.
+        const collapsedH = await clip(
+            'document.querySelector("#clip_copy")?.offsetHeight ?? 0',
+        );
+        await clip(
+            'document.querySelector("#quick_toolbar [data-capture-action=more]")?.click()',
+        );
+        await pause(150);
+        await clip(
+            'document.querySelector(".capture-tool[data-capture-action=color]")?.click()',
+        );
+        await pause(300);
+        const loupePanel = await clip(
+            '(() => { const c=document.querySelector("#clip_copy"); return { height: c?.offsetHeight ?? 0, pointer: document.getElementById("mouse_bar")?.style.pointerEvents }; })()',
+        );
+        assert(
+            loupePanel.height > collapsedH && loupePanel.pointer === "auto",
+            `Loupe format panel did not expand: ${JSON.stringify({ collapsedH, loupePanel })}`,
+        );
+        await clip(
+            'document.querySelector("#quick_toolbar [data-capture-action=more]")?.click()',
+        );
+        await pause(150);
+        await clip(
+            'document.querySelector(".capture-tool[data-capture-action=color]")?.click()',
+        );
+        await pause(300);
+        const loupeCollapsed = await clip(
+            'document.querySelector("#clip_copy")?.offsetHeight ?? 0',
+        );
+        assert(
+            loupeCollapsed <= collapsedH + 1,
+            `Loupe format panel did not collapse: ${JSON.stringify({ collapsedH, loupeCollapsed })}`,
+        );
+        await clip('document.getElementById("capture_palette").hidden = true');
+        report.checks.push({ loupeExpand: { expanded: loupePanel.height } });
         await shot(capture, "capture-toolbar");
         await until(
             () =>
