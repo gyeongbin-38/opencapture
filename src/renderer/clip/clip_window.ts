@@ -98,6 +98,7 @@ import type {
 } from "../../ShareTypes.js";
 import type { IconType } from "../../iconTypes";
 import xhistory from "../lib/history";
+import { encodeGif, encodeIco } from "../lib/imageEncode";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
 import { createCaptureRadial } from "./captureRadial";
@@ -1451,32 +1452,19 @@ async function save(message: string) {
             nc.height,
         );
     } else if (_type === "ico") {
-        const nc = getClipPhoto();
-        const pngs: { size: number; png: Buffer }[] = [];
-        for (const dim of [16, 32, 48]) {
-            const iconCanvas = document.createElement("canvas");
-            iconCanvas.width = dim;
-            iconCanvas.height = dim;
-            iconCanvas.getContext("2d")!.drawImage(nc, 0, 0, dim, dim);
-            const f = await getBlob(iconCanvas, "image/png");
-            if (!f) return;
-            pngs.push({
-                size: dim,
-                png: Buffer.from(await f.arrayBuffer()),
-            });
-        }
-        dataBuffer = packIco(pngs);
+        dataBuffer = Buffer.from(await encodeIco(getClipPhoto()));
     } else if (_type === "gif") {
+        dataBuffer = Buffer.from(encodeGif(getClipPhoto()));
+    } else if (_type === "avif") {
         const nc = getClipPhoto();
-        const ctx = nc.getContext("2d")!;
-        const data = ctx.getImageData(0, 0, nc.width, nc.height);
-        const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
-        const palette = quantize(data.data, 256);
-        const index = applyPalette(data.data, palette);
-        const gif = GIFEncoder();
-        gif.writeFrame(index, nc.width, nc.height, { palette });
-        gif.finish();
-        dataBuffer = Buffer.from(gif.bytes());
+        const f = await getBlob(nc, "image/png");
+        if (!f) return;
+        const result = (await ipcRenderer.invoke("oc:convert:encode", {
+            format: "avif",
+            data: Buffer.from(await f.arrayBuffer()),
+            options: {},
+        })) as { data: Uint8Array };
+        dataBuffer = Buffer.from(result.data);
     } else {
         let f: Blob | null = null;
         const nc = getClipPhoto();
@@ -1506,27 +1494,6 @@ async function save(message: string) {
             // todo error
         }
     });
-}
-
-function packIco(entries: { size: number; png: Buffer }[]) {
-    const header = Buffer.alloc(6);
-    header.writeUInt16LE(0, 0);
-    header.writeUInt16LE(1, 2);
-    header.writeUInt16LE(entries.length, 4);
-    const dir = Buffer.alloc(16 * entries.length);
-    let offset = 6 + dir.length;
-    for (const [index, entry] of entries.entries()) {
-        const at = index * 16;
-        const dim = entry.size >= 256 ? 0 : entry.size;
-        dir.writeUInt8(dim, at);
-        dir.writeUInt8(dim, at + 1);
-        dir.writeUInt16LE(1, at + 4);
-        dir.writeUInt16LE(32, at + 6);
-        dir.writeUInt32LE(entry.png.length, at + 8);
-        dir.writeUInt32LE(offset, at + 12);
-        offset += entry.png.length;
-    }
-    return Buffer.concat([header, dir, ...entries.map((e) => e.png)]);
 }
 
 /** 이미지 한 장을 담은 최소 PDF (JPEG DCTDecode) */
@@ -4761,6 +4728,7 @@ const saveTypeList: SaveFileType[] = [
     "png",
     "jpg",
     "webp",
+    "avif",
     "bmp",
     "ico",
     "gif",

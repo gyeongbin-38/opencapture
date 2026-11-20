@@ -19,8 +19,11 @@ import store from "../../../lib/store/renderStore";
 import type { setting } from "../../ShareTypes";
 import { Class, cssVar, getImgUrl, initStyle, setTitle } from "../root/root";
 // biome-ignore format:
-const { nativeImage } = window.require("electron") as typeof import("electron");
+const { nativeImage, ipcRenderer } = window.require(
+    "electron",
+) as typeof import("electron");
 import { writeImage } from "../lib/clipboard";
+import { canvasBytes, encodeGif, encodeIco } from "../lib/imageEncode";
 const { existsSync, writeFileSync } = require("node:fs") as typeof import("fs");
 const { join } = require("node:path") as typeof import("path");
 const ort = require("onnxruntime-node") as typeof import("onnxruntime-node");
@@ -174,16 +177,14 @@ const els = {
         { value: "png", name: noI18n("PNG") },
         { value: "jpg", name: noI18n("JPEG") },
         { value: "webp", name: noI18n("WebP") },
+        { value: "avif", name: noI18n("AVIF") },
         { value: "bmp", name: noI18n("BMP") },
+        { value: "ico", name: noI18n("ICO") },
+        { value: "gif", name: noI18n("GIF") },
     ]).sv(
         (() => {
             const format = store.get("保存.默认格式");
-            return format === "png" ||
-                format === "jpg" ||
-                format === "webp" ||
-                format === "bmp"
-                ? format
-                : "png";
+            return format === "svg" || format === "pdf" ? "png" : format;
         })(),
     ),
     quality: input("number").attr({ max: "1", min: "0", step: "0.1" }).sv("1"),
@@ -294,7 +295,7 @@ const controls = frame("sidebar", {
             _: flexLayout("x"),
             save: button(icon("save"))
                 .attr({ title: `${t("保存")}  Ctrl+S`, ariaLabel: t("保存") })
-                .on("click", doSave),
+                .on("click", () => void doSave()),
             copy: button(icon("copy"))
                 .attr({ title: `${t("复制")}  Ctrl+C`, ariaLabel: t("复制") })
                 .on("click", doCopy),
@@ -302,11 +303,39 @@ const controls = frame("sidebar", {
     },
 });
 
-function doSave() {
-    const path = renderSendSync("save_file_path", [els.formart.gv]);
+async function doSave() {
+    const format = els.formart.gv;
+    const path = renderSendSync("save_file_path", [format]);
     if (!path) return;
-    const img = getImg(true).replace(/^data:image\/\w+;base64,/, "");
-    writeFileSync(path, Buffer.from(img, "base64"));
+    let buf: Buffer;
+    if (format === "ico" || format === "gif" || format === "avif") {
+        const x = outputCanvas();
+        let bytes: Uint8Array;
+        try {
+            if (format === "ico") bytes = await encodeIco(x);
+            else if (format === "gif") bytes = encodeGif(x);
+            else {
+                const png = await canvasBytes(x);
+                if (!png) return;
+                const result = (await ipcRenderer.invoke("oc:convert:encode", {
+                    format: "avif",
+                    data: png,
+                    options: {
+                        quality: Number(els.quality.gv) || undefined,
+                    },
+                })) as { data: Uint8Array };
+                bytes = result.data;
+            }
+        } catch (error) {
+            alert(error instanceof Error ? error.message : String(error));
+            return;
+        }
+        buf = Buffer.from(bytes);
+    } else {
+        const img = getImg(true).replace(/^data:image\/\w+;base64,/, "");
+        buf = Buffer.from(img, "base64");
+    }
+    writeFileSync(path, buf);
     renderSend("ok_save", [path]);
     renderSend("windowClose", []);
 }
@@ -327,7 +356,7 @@ document.addEventListener("keydown", (e) => {
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (e.key === "s" || e.key === "S") {
         e.preventDefault();
-        doSave();
+        void doSave();
     } else if (e.key === "c" || e.key === "C") {
         e.preventDefault();
         void doCopy();
@@ -406,10 +435,7 @@ function autoScale(type: "width" | "height") {
     }
 }
 
-function getImg(): Electron.NativeImage;
-function getImg(base64: true): string;
-function getImg(blob: "blob"): Promise<Blob>;
-function getImg(base64: boolean | "blob" = false) {
+function outputCanvas() {
     const x = ele("canvas").attr({
         width: Number(els.photoW.gv),
         height: Number(els.photoH.gv),
@@ -427,13 +453,24 @@ function getImg(base64: boolean | "blob" = false) {
         x.width,
         x.height,
     );
+    return x;
+}
+
+function getImg(): Electron.NativeImage;
+function getImg(base64: true): string;
+function getImg(blob: "blob"): Promise<Blob>;
+function getImg(base64: boolean | "blob" = false) {
+    const x = outputCanvas();
     const type = {
         png: "image/png",
         jpg: "image/jpeg",
         webp: "image/webp",
         bmp: "image/bmp",
     };
-    const url = x.toDataURL(type[els.formart.gv], Number(els.quality.gv));
+    const url = x.toDataURL(
+        type[els.formart.gv as keyof typeof type] ?? "image/png",
+        Number(els.quality.gv),
+    );
     if (base64 === "blob") {
         return fetch(url).then((r) => r.blob());
     }

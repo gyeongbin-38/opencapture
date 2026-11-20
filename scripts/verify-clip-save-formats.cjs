@@ -115,6 +115,10 @@ app.whenReady().then(async () => {
         const itemId = state.items[0].id;
 
         const signatures = {
+            avif: (bytes) =>
+                bytes.length > 12 &&
+                bytes.toString("ascii", 4, 8) === "ftyp" &&
+                /^(avif|avis)$/.test(bytes.toString("ascii", 8, 12)),
             ico: (bytes) =>
                 bytes.length >= 4 &&
                 bytes[0] === 0 &&
@@ -126,7 +130,7 @@ app.whenReady().then(async () => {
                 /^(GIF87a|GIF89a)$/.test(bytes.toString("ascii", 0, 6)),
         };
         const results = {};
-        for (const format of ["ico", "gif"]) {
+        for (const format of ["avif", "ico", "gif"]) {
             pendingSavePath = path.join(outDir, `qa-save.${format}`);
             await run(
                 `window.openCapture.action("open-item", ${JSON.stringify(itemId)})`,

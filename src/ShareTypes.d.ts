@@ -258,6 +258,7 @@ export interface setting {
             | "webp"
             | "bmp"
             | "pdf"
+            | "avif"
             | "ico"
             | "gif";
         保存路径: { 图片: string; 视频: string };

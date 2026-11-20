@@ -971,6 +971,7 @@ const s: Partial<settingItem<SettingPath>> = {
                     { value: "png", name: "PNG" },
                     { value: "jpg", name: "JPG" },
                     { value: "webp", name: "WebP" },
+                    { value: "avif", name: "AVIF" },
                     { value: "bmp", name: "BMP" },
                     { value: "ico", name: "ICO" },
                     { value: "gif", name: "GIF" },
