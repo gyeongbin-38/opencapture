@@ -349,6 +349,13 @@ app.whenReady().then(async () => {
             '[...document.querySelectorAll(".capture-dimensions input")].map(i=>Number(i.value))',
         );
         assert(sizeAfter[0] === 480, "Width input did not resize capture");
+        const dimTips = await clip(
+            '[...document.querySelectorAll(".capture-dimensions input")].map(i=>i.dataset.title||"")',
+        );
+        assert(
+            dimTips.length === 2 && dimTips.every((d) => d.includes("수식")),
+            `Dimension inputs missing the expression tooltip: ${JSON.stringify(dimTips)}`,
+        );
         await clip(
             'const ratioLock=document.querySelector(\'#clip_wh button[aria-label="비율 고정"]\'); ratioLock.click(); if(ratioLock.getAttribute("aria-pressed")!=="true") throw new Error("Ratio lock did not activate"); const heightInput=document.querySelectorAll(".capture-dimensions input")[1]; heightInput.value="250"; heightInput.dispatchEvent(new Event("change",{bubbles:true}));',
         );

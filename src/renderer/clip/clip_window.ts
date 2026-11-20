@@ -4459,6 +4459,9 @@ const ratioToggle = button(txt("a:b"))
     });
 whW.attr({ ariaLabel: t("너비"), inputMode: "numeric" });
 whH.attr({ ariaLabel: t("높이"), inputMode: "numeric" });
+const dimExprTip = t("수식 입력 가능 (100+50*2)");
+whW.el.setAttribute("data-title", dimExprTip);
+whH.el.setAttribute("data-title", dimExprTip);
 whEl.add([
     whGrip,
     whCoordinates,
