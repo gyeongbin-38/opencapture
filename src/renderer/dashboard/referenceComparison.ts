@@ -695,7 +695,11 @@ export function createReferenceComparison(
                     offsetY:
                         (bOffset.y * activeA.pixels.height) /
                         activeA.image.naturalHeight,
-                    scale: bScale,
+                    scale:
+                        (bScale *
+                            (activeB.image.naturalWidth /
+                                activeB.pixels.width)) /
+                        (activeA.image.naturalWidth / activeA.pixels.width),
                     threshold: numberValue(threshold, 12) * 2.55,
                 });
                 const diffCanvas = document.createElement("canvas");
@@ -745,14 +749,15 @@ export function createReferenceComparison(
         loadGeneration++;
         activeA = activeB = null;
     });
-    selectA.addEventListener(
-        "change",
-        () => void setPair(selectA.value, selectB.value),
-    );
-    selectB.addEventListener(
-        "change",
-        () => void setPair(selectA.value, selectB.value),
-    );
+    const selectPair = () => {
+        bOffset = { x: 0, y: 0 };
+        bScale = 1;
+        notes = [];
+        renderNotes();
+        void setPair(selectA.value, selectB.value);
+    };
+    selectA.addEventListener("change", selectPair);
+    selectB.addEventListener("change", selectPair);
     for (const [key, button] of modeButtons) {
         button.addEventListener("click", () => {
             mode = key;

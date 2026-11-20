@@ -6553,8 +6553,10 @@ window.openCapture.onCompareRequested((ids) => {
         libraryScope = "temporary";
         await refreshLibraryQuery(true);
         const result = await window.openCapture.queryItems({
-            ...currentQuery(0, 80),
             scope: "temporary",
+            sort: "newest",
+            offset: 0,
+            limit: 200,
             queryId: `compare-${Date.now()}`,
             catalogRevision: undefined,
         });
