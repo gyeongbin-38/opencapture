@@ -1438,6 +1438,19 @@ process.on("unhandledRejection", (e) => {
 });
 
 app.whenReady().then(async () => {
+    const startupMark = (() => {
+        const t0 = performance.now();
+        let last = t0;
+        return (stage: string) => {
+            if (!dev) return;
+            const now = performance.now();
+            console.log(
+                `[startup] ${stage}: +${(now - last).toFixed(1)}ms (${(now - t0).toFixed(1)}ms)`,
+            );
+            last = now;
+        };
+    })();
+    startupMark("whenReady");
     console.log(
         `OpenCapture ${app.getVersion()} 启动\n项目地址：https://github.com/gyeongbin-38/opencapture`,
     );
@@ -1449,6 +1462,7 @@ app.whenReady().then(async () => {
     fixSettingTree();
     activeLanguage =
         matchFitLan(store.get("语言.语言") || "", getLans()) ?? "ko";
+    startupMark("settings");
 
     const hotkeyClaim = claimHotkeyOwnership().catch((error) => {
         console.error("Hotkey ownership claim failed:", error);
@@ -2094,7 +2108,9 @@ app.whenReady().then(async () => {
             icon: join(runPath, "assets/logo/64x64.png"),
         }).show();
 
+    startupMark("openCapture install");
     await hotkeyClaim;
+    startupMark("hotkey claim");
     const failedHotkeys: string[] = [];
     const 快捷键 = store.get("快捷键");
     for (const [k, m] of typedEntries(快捷键)) {
@@ -2153,6 +2169,7 @@ app.whenReady().then(async () => {
         notification.on("click", () => createSettingWindow());
         notification.show();
     }
+    startupMark("shortcuts");
     if (!existsSync(tmpDir)) mkdir(tmpDir, () => {});
     if (keepClip) {
         clipWindow = createClipWindow();
@@ -2165,6 +2182,7 @@ app.whenReady().then(async () => {
 
     setTray();
     commands.start(process.argv);
+    startupMark("ready");
 });
 
 function setTray() {
