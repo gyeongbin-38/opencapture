@@ -1504,12 +1504,17 @@ app.whenReady().then(async () => {
             "Countdown window did not appear",
         );
         const delayInfo = await delayWin.webContents.executeJavaScript(
-            '(() => ({ count: document.querySelector(".delay-count")?.textContent, label: document.querySelector(".delay-label")?.textContent }))()',
+            '(() => ({ count: document.querySelector(".delay-count")?.textContent, label: document.querySelector(".delay-label")?.textContent, bar: document.querySelector(".delay-progress-bar")?.style.transitionDuration, role: document.querySelector(".delay-progress")?.getAttribute("role") }))()',
             true,
         );
         assert(
             delayInfo.count === "2" || delayInfo.count === "1",
             `Countdown shows ${delayInfo.count}`,
+        );
+        assert(
+            /^\d+s$/.test(delayInfo.bar ?? "") &&
+                delayInfo.role === "progressbar",
+            `Countdown progress bar missing: ${JSON.stringify(delayInfo)}`,
         );
         await delayWin.webContents.executeJavaScript(
             'document.querySelector(".delay-cancel").click()',

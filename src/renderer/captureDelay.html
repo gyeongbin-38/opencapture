@@ -44,6 +44,25 @@
             font-variant-numeric: tabular-nums;
         }
 
+        .delay-progress {
+            width: 100%;
+            height: 3px;
+            border-radius: 999px;
+            background: #ffffff26;
+            overflow: hidden;
+        }
+
+        .delay-progress-bar {
+            height: 100%;
+            width: 100%;
+            border-radius: inherit;
+            background: #ffffffb3;
+            transform-origin: left center;
+            transform: scaleX(1);
+            transition-property: transform;
+            transition-timing-function: linear;
+        }
+
         .delay-cancel {
             -webkit-app-region: no-drag;
             margin-top: 4px;

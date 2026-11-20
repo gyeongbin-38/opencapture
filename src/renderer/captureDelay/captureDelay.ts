@@ -16,6 +16,17 @@ const total = Math.max(
 
 const countEl = txt(String(total)).class("delay-count");
 
+const progressBar = view()
+    .class("delay-progress-bar")
+    .style({ transitionDuration: `${total}s` });
+const progress = view()
+    .class("delay-progress")
+    .attr({ role: "progressbar", ariaLabel: t("截屏倒计时") })
+    .add(progressBar);
+requestAnimationFrame(() =>
+    requestAnimationFrame(() => progressBar.style({ transform: "scaleX(0)" })),
+);
+
 const cancel = button(txt(t("取消")))
     .class("delay-cancel")
     .attr({ type: "button" })
@@ -23,7 +34,7 @@ const cancel = button(txt(t("取消")))
 
 view()
     .class("delay-card")
-    .add([txt(t("截屏倒计时")).class("delay-label"), countEl, cancel])
+    .add([txt(t("截屏倒计时")).class("delay-label"), countEl, progress, cancel])
     .addInto();
 
 let left = total;
