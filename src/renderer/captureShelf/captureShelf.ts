@@ -160,7 +160,7 @@ function render() {
             event.preventDefault();
             window.openCapture.startDrag(
                 selected.has(item.id) && selected.size > 1
-                    ? Array.from(selected)
+                    ? items.filter((i) => selected.has(i.id)).map((i) => i.id)
                     : item.id,
             );
         });
