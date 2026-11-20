@@ -845,12 +845,19 @@ app.whenReady().then(async () => {
             const afterLeft=sel();
             press("ArrowRight");
             const afterRight=sel();
-            return {last,afterLeft,afterRight};
+            press("ArrowLeft");
+            cards[0].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,shiftKey:true}));
+            const ranged=[...document.querySelectorAll(".shelf-card")].filter(c=>c.getAttribute("aria-pressed")==="true").length;
+            return {last,afterLeft,afterRight,ranged};
         })()`);
         assert(
             arrowNav.afterLeft === arrowNav.last - 1 &&
                 arrowNav.afterRight === arrowNav.last,
             `Shelf arrow navigation did not move the selection: ${JSON.stringify(arrowNav)}.`,
+        );
+        assert(
+            arrowNav.ranged === arrowNav.last,
+            `Shift-click must anchor at the arrow-selected card: ${JSON.stringify(arrowNav)}.`,
         );
         await shelfRun(`(() => {
             document

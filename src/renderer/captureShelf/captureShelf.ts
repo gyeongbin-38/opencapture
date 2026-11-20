@@ -260,6 +260,7 @@ document.addEventListener("keydown", (event) => {
         if (next) {
             selected.clear();
             selected.add(next);
+            lastIndex = ids.indexOf(next);
             render();
             rail.el
                 .querySelector(`[data-item-id="${next}"]`)
