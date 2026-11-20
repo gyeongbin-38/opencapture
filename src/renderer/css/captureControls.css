@@ -121,6 +121,37 @@ body {
 #clip_wh[data-pinned] .capture-grip {
     opacity: 0.95;
 }
+/* capture chrome：玻璃面统一细边 + 与 quick_toolbar 一致的方角 */
+.bar {
+    border: 1px solid var(--capture-border);
+}
+#tool_bar,
+#draw_bar > div {
+    border-radius: var(--r-md);
+}
+#tool_bar > div,
+#draw_main > div,
+.draw_items > div {
+    border-radius: var(--r-sm);
+}
+#tool_bar > div.select,
+#draw_main > div.select,
+.draw_items > div.select {
+    background-color: #ffffff1c !important;
+    box-shadow: inset 0 0 0 1px #ffffff30;
+}
+#draw_side.draw_side_hide {
+    transform: translateX(-5px);
+}
+.capture-feedback-off #draw_side,
+.capture-motion-reduced #draw_side {
+    transition: none;
+}
+#tool_bar :is(button, input, select):focus-visible,
+#draw_bar :is(button, input, select):focus-visible {
+    outline: 2px solid var(--accent) !important;
+    outline-offset: 1px;
+}
 #capture_tools {
     position: fixed;
     z-index: 119;
@@ -148,14 +179,15 @@ body {
 }
 .capture-tool-search-row {
     grid-column: 1 / -1;
-    padding-bottom: 6px;
+    padding-bottom: var(--sp-2);
 }
 .capture-tool-recent {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
     gap: 3px;
-    padding-bottom: 6px;
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-1);
     border-bottom: 1px solid var(--capture-border);
 }
 .capture-tool-recent .capture-tool {
@@ -174,16 +206,20 @@ body {
 }
 .capture-tool-search:focus {
     border-color: #ffffff38;
+    background: rgba(255, 255, 255, 0.07);
 }
 .capture-size-setting {
     grid-column: 1 / -1;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-3);
+    gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-2);
     border-top: 1px solid var(--capture-border);
     font-size: var(--fs-xs);
     color: var(--muted);
+}
+.capture-size-setting > :nth-child(2) {
+    margin-left: auto;
 }
 .capture-size-setting input {
     width: 120px;
@@ -197,7 +233,12 @@ body {
     background: transparent;
     color: var(--muted);
     font-size: var(--fs-xs);
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .capture-toggle:hover {
     color: var(--text);
@@ -355,10 +396,14 @@ body {
 .capture-motion-reduced .capture-free-start {
     transition: none;
 }
+.capture-staged-box:not(:has(svg)) {
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 30%);
+}
 .capture-staged-badge {
     position: absolute;
-    top: -1px;
-    left: -1px;
+    top: 2px;
+    left: 2px;
+    z-index: 1;
     display: grid;
     place-items: center;
     box-sizing: border-box;
@@ -366,9 +411,11 @@ body {
     background: rgb(0 0 0 / 72%);
     border: 1px solid rgb(255 255 255 / 70%);
     color: #fff;
-    font-family: var(--monospace);
+    font-family: "Cascadia Mono", Consolas, monospace;
     font-weight: 600;
     line-height: 1;
+    box-shadow: 0 1px 5px rgb(0 0 0 / 55%);
+    pointer-events: none;
 }
 .capture-staged-box.is-active .capture-staged-badge {
     background: #fff;
@@ -615,17 +662,25 @@ body {
     display: none !important;
 }
 .wh-ratio-chip {
-    padding: 2px 6px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 6px;
     border-radius: var(--r-sm);
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
     color: var(--muted);
     background: transparent;
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
 }
 .wh-ratio-chip:hover {
     color: var(--text);
     background: var(--surface-hover);
+}
+.wh-ratio-chip:active {
+    color: var(--text);
+    background: #ffffff26;
 }
 #clip_wh input {
     height: 24px !important;
@@ -635,6 +690,9 @@ body {
     text-align: center;
     font-family: "Cascadia Mono", Consolas, monospace;
     color: var(--text);
+}
+#clip_wh input:hover {
+    background: #ffffff0d;
 }
 #clip_wh button {
     width: 24px;
@@ -648,6 +706,14 @@ body {
     background: transparent;
     background-color: transparent !important;
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+}
+#clip_wh button[aria-pressed="true"],
+#clip_wh button[aria-expanded="true"] {
+    color: var(--capture-text);
+}
+#clip_wh button[aria-expanded="true"] {
+    background: #ffffff1c;
 }
 #clip_wh .capture-icon,
 #clip_wh svg {
@@ -690,7 +756,8 @@ body {
     }
     .capture-start-hint,
     .capture-help,
-    .capture-free-start {
+    .capture-free-start,
+    #draw_side {
         animation: none;
         transition: none;
     }
@@ -699,7 +766,10 @@ body {
 @media (prefers-reduced-transparency: reduce) {
     #quick_toolbar,
     #capture_tools,
-    #clip_wh {
+    #clip_wh,
+    #tool_bar,
+    #draw_main,
+    #draw_side {
         background: var(--surface-soft);
         backdrop-filter: none;
     }
