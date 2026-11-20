@@ -276,9 +276,11 @@ document.addEventListener("keydown", (event) => {
             selected.add(next);
             lastIndex = ids.indexOf(next);
             render();
-            rail.el
-                .querySelector(`[data-item-id="${next}"]`)
-                ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+            const card = rail.el.querySelector<HTMLElement>(
+                `[data-item-id="${next}"]`,
+            );
+            card?.scrollIntoView({ block: "nearest", inline: "nearest" });
+            card?.focus({ preventScroll: true });
         }
         return;
     }
