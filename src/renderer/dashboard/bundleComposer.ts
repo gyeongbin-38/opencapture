@@ -1,4 +1,5 @@
 import type { OpenCaptureItem } from "../../../lib/openCaptureTypes";
+import { lt } from "../lib/labText";
 
 type Layout = "horizontal" | "vertical" | "grid";
 type Background = "transparent" | "black" | "white" | "gray";
@@ -12,7 +13,7 @@ async function decode(data: string) {
     await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
         image.onerror = () =>
-            reject(new Error("이미지를 불러오지 못했습니다."));
+            reject(new Error(lt("이미지를 불러오지 못했습니다.")));
         image.src = data;
     });
     return image;
@@ -29,15 +30,15 @@ export function createBundleComposer(options: {
     const dialog = document.createElement("dialog");
     dialog.className = "shortcut-dialog bundle-dialog";
     dialog.innerHTML = `
-        <header class="dialog-header"><h2>여러 장 묶기</h2><button type="button" class="close-button" aria-label="닫기">×</button></header>
+        <header class="dialog-header"><h2>${lt("여러 장 묶기")}</h2><button type="button" class="close-button" aria-label="${lt("닫기")}">×</button></header>
         <div class="bundle-toolbar">
-            <label>배치<select data-role="layout"><option value="grid">격자</option><option value="horizontal">가로</option><option value="vertical">세로</option></select></label>
-            <label>간격<input data-role="gap" type="range" min="0" max="64" value="16"></label>
-            <label>배경<select data-role="background"><option value="transparent">투명</option><option value="black">검정</option><option value="white">흰색</option><option value="gray">회색</option></select></label>
+            <label>${lt("배치")}<select data-role="layout"><option value="grid">${lt("격자")}</option><option value="horizontal">${lt("가로")}</option><option value="vertical">${lt("세로")}</option></select></label>
+            <label>${lt("간격")}<input data-role="gap" type="range" min="0" max="64" value="16"></label>
+            <label>${lt("배경")}<select data-role="background"><option value="transparent">${lt("투명")}</option><option value="black">${lt("검정")}</option><option value="white">${lt("흰색")}</option><option value="gray">${lt("회색")}</option></select></label>
         </div>
-        <div class="bundle-order" data-role="order" aria-label="이미지 순서"></div>
+        <div class="bundle-order" data-role="order" aria-label="${lt("이미지 순서")}"></div>
         <div class="bundle-preview"><canvas data-role="canvas"></canvas><small data-role="meta"></small></div>
-        <footer class="dialog-actions"><button type="button" class="text-button" data-role="cancel">취소</button><button type="button" class="outline-button" data-role="save">저장</button><button type="button" class="primary-button" data-role="copy">묶음 복사</button></footer>`;
+        <footer class="dialog-actions"><button type="button" class="text-button" data-role="cancel">${lt("취소")}</button><button type="button" class="outline-button" data-role="save">${lt("저장")}</button><button type="button" class="primary-button" data-role="copy">${lt("묶음 복사")}</button></footer>`;
     const layout = dialog.querySelector<HTMLSelectElement>(
         '[data-role="layout"]',
     )!;
@@ -96,12 +97,12 @@ export function createBundleComposer(options: {
     function renderCanvas(target: HTMLCanvasElement, preview: boolean) {
         const { width, height, columns } = compositionSize();
         if (width * height > MAX_PIXELS)
-            throw new Error("묶음 결과가 64MP를 넘습니다.");
+            throw new Error(lt("묶음 결과가 64MP를 넘습니다."));
         const scale = preview ? Math.min(1, 900 / width, 520 / height) : 1;
         target.width = Math.max(1, Math.round(width * scale));
         target.height = Math.max(1, Math.round(height * scale));
         const context = target.getContext("2d");
-        if (!context) throw new Error("캔버스를 만들지 못했습니다.");
+        if (!context) throw new Error(lt("캔버스를 만들지 못했습니다."));
         const colors: Record<Background, string | null> = {
             transparent: null,
             black: "#0b0b0c",
@@ -148,7 +149,10 @@ export function createBundleComposer(options: {
             if (selectedLayout === "vertical")
                 y += image.naturalHeight + spacing;
         });
-        meta.textContent = `${width.toLocaleString()} × ${height.toLocaleString()} · ${items.length}장`;
+        meta.textContent = lt(
+            `${width.toLocaleString()} × ${height.toLocaleString()} · ${items.length}장`,
+            `${width.toLocaleString()} × ${height.toLocaleString()} · ${items.length} images`,
+        );
     }
 
     function renderPreview() {
@@ -159,7 +163,7 @@ export function createBundleComposer(options: {
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "미리보기를 만들지 못했습니다.",
+                    : lt("미리보기를 만들지 못했습니다."),
                 true,
             );
         }
@@ -212,15 +216,15 @@ export function createBundleComposer(options: {
             else await options.save(dataURL, "Bundle");
             options.announce(
                 kind === "copy"
-                    ? "묶음을 복사했습니다."
-                    : "묶음을 저장했습니다.",
+                    ? lt("묶음을 복사했습니다.")
+                    : lt("묶음을 저장했습니다."),
             );
             options.closeDialog(dialog);
         } catch (error) {
             options.announce(
                 error instanceof Error
                     ? error.message
-                    : "묶음 작업에 실패했습니다.",
+                    : lt("묶음 작업에 실패했습니다."),
                 true,
             );
         } finally {
@@ -249,13 +253,13 @@ export function createBundleComposer(options: {
         dialog,
         async open(nextItems: OpenCaptureItem[]) {
             if (nextItems.length < 2 || nextItems.length > MAX_ITEMS) {
-                options.announce("2~12장의 이미지를 선택해 주세요.", true);
+                options.announce(lt("2~12장의 이미지를 선택해 주세요."), true);
                 return;
             }
             items = [...nextItems];
             images = [];
             order.replaceChildren();
-            meta.textContent = "이미지 불러오는 중…";
+            meta.textContent = lt("이미지 불러오는 중…");
             options.openDialog(dialog);
             try {
                 for (const item of items)
@@ -266,7 +270,7 @@ export function createBundleComposer(options: {
                 options.announce(
                     error instanceof Error
                         ? error.message
-                        : "이미지를 불러오지 못했습니다.",
+                        : lt("이미지를 불러오지 못했습니다."),
                     true,
                 );
                 options.closeDialog(dialog);

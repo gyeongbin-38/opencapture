@@ -455,7 +455,9 @@ const workflowOptions: {
         key: "autoOcr",
         title: t("텍스트 자동 인식"),
         description: t(
-            "캡처 속 글자를 기기 안에서 인식해 라이브러리 검색에 활용합니다.",
+            t(
+                "캡처 속 글자를 기기 안에서 인식해 라이브러리 검색에 활용합니다.",
+            ),
         ),
     },
     {
@@ -495,13 +497,13 @@ const libraryToolbar = view("x", "wrap")
     .addInto(libraryPage);
 const scopeSegment = view("x")
     .class("scope-segment")
-    .attr({ role: "tablist", ariaLabel: "보관 범위" })
+    .attr({ role: "tablist", ariaLabel: t("보관 범위") })
     .addInto(libraryToolbar);
 const scopeButtons = new Map<CaptureQueryScope, HTMLButtonElement>();
 for (const [scope, text] of [
-    ["temporary", "임시"],
-    ["library", "보관함"],
-    ["trash", "휴지통"],
+    ["temporary", t("임시")],
+    ["library", t("보관함")],
+    ["trash", t("휴지통")],
 ] as const) {
     const control = button(t(text))
         .class("scope-segment-button")
@@ -656,9 +658,9 @@ const smartSelect = select([
         void refreshLibraryQuery(true);
     })
     .addInto(filterBar);
-const savedSmartSelect = select([{ value: "", name: "저장된 보기" }])
+const savedSmartSelect = select([{ value: "", name: t("저장된 보기") }])
     .class("select-control", "smart-select", "saved-smart-select")
-    .attr({ ariaLabel: "저장된 스마트 컬렉션" })
+    .attr({ ariaLabel: t("저장된 스마트 컬렉션") })
     .on("change", (_event, element) => {
         activeSavedSmartId = element.el.value;
         void refreshLibraryQuery(true);
@@ -668,8 +670,8 @@ button("+")
     .class("chip-button", "smart-save-button")
     .attr({
         type: "button",
-        title: "현재 조건 저장",
-        ariaLabel: "현재 조건 저장",
+        title: t("현재 조건 저장"),
+        ariaLabel: t("현재 조건 저장"),
     })
     .on("click", () => void saveCurrentSmartFilter())
     .addInto(filterBar);
@@ -782,7 +784,12 @@ const handleDropFiles = (event: DragEvent) => {
                 .then((state) => {
                     appState = state;
                     renderState();
-                    showToast(`${paths.length}개 영상을 가져왔습니다.`);
+                    showToast(
+                        t("{count}개 영상을 가져왔습니다.").replace(
+                            "{count}",
+                            String(paths.length),
+                        ),
+                    );
                 })
                 .catch((error) => showToast(errorMessage(error), true));
     }
@@ -945,25 +952,25 @@ const copyBundleButton = button(t("묶음 복사"))
     })
     .on("click", () => void openBundlePreview())
     .addInto(selectionActions);
-const copySourceFilesButton = button("원본 파일 복사")
+const copySourceFilesButton = button(t("원본 파일 복사"))
     .class("outline-button", "compact", "bulk-action")
     .attr({
         type: "button",
-        title: "선택한 원본 파일을 Explorer에 붙여넣을 수 있게 복사",
+        title: t("선택한 원본 파일을 Explorer에 붙여넣을 수 있게 복사"),
     })
     .on("click", () => void copySelectedSourceFiles())
     .addInto(moreActionsPanel);
-const promoteSelectionButton = button("보관")
+const promoteSelectionButton = button(t("보관"))
     .class("outline-button", "compact", "bulk-action", "temporary-action")
     .attr({ type: "button" })
     .on("click", () => void mutateSelectedItems("promote"))
     .addInto(selectionActions);
-const trashSelectionButton = button("휴지통")
+const trashSelectionButton = button(t("휴지통"))
     .class("outline-button", "compact", "bulk-action", "trash-action")
     .attr({ type: "button" })
     .on("click", () => void mutateSelectedItems("trash"))
     .addInto(selectionActions);
-const restoreSelectionButton = button("복원")
+const restoreSelectionButton = button(t("복원"))
     .class("outline-button", "compact", "bulk-action", "restore-action")
     .attr({ type: "button" })
     .on("click", () => void mutateSelectedItems("restore"))
@@ -1004,7 +1011,12 @@ const addSelectionToBoardButton = button(t("보드에 추가"))
             await captureBoard.addItems(ids);
             selectedItemIds.clear();
             await showPage("board");
-            showToast(`${ids.length}개 캡처를 보드에 추가했습니다.`);
+            showToast(
+                t("{count}개 캡처를 보드에 추가했습니다.").replace(
+                    "{count}",
+                    String(ids.length),
+                ),
+            );
         } catch (error) {
             showToast(errorMessage(error), true);
         }
@@ -1507,7 +1519,9 @@ ele("label")
     .class("toggle-option")
     .attr({
         title: t(
-            "트리거 버튼을 누른 채 드래그하면 커서 주위에 동작 도넛이 뜹니다. 놓으면 실행, 중앙에서 놓으면 취소.",
+            t(
+                "트리거 버튼을 누른 채 드래그하면 커서 주위에 동작 도넛이 뜹니다. 놓으면 실행, 중앙에서 놓으면 취소.",
+            ),
         ),
     })
     .add([
@@ -1524,7 +1538,9 @@ const radialTriggerSelect = select([
     .class("select-control")
     .attr({
         title: t(
-            "뒤로 버튼(X1)은 웹페이지 자동 스크롤과 충돌하지 않아 가장 안정적입니다.",
+            t(
+                "뒤로 버튼(X1)은 웹페이지 자동 스크롤과 충돌하지 않아 가장 안정적입니다.",
+            ),
         ),
         ariaLabel: t("도넛 트리거 버튼"),
     })
@@ -1540,7 +1556,9 @@ radialSlotsRow.addInto(convenienceCard);
 const radialHookWarning = label(
     "small",
     t(
-        "마우스 후킹을 시작하지 못해 도넛이 동작하지 않습니다. 앱을 다시 시작해 보세요.",
+        t(
+            "마우스 후킹을 시작하지 못해 도넛이 동작하지 않습니다. 앱을 다시 시작해 보세요.",
+        ),
     ),
 ).addInto(convenienceCard);
 radialHookWarning.el.style.color = "var(--error-color, #e5484d)";
@@ -1652,14 +1670,14 @@ const bundleComposer = createBundleComposer({
     load: (id) => window.openCapture.getItemData(id),
     copy: async (dataURL) => {
         const ok = await runAction("copy-composed", { dataURL });
-        if (!ok) throw new Error("묶음을 복사하지 못했습니다.");
+        if (!ok) throw new Error(t("묶음을 복사하지 못했습니다."));
     },
     save: async (dataURL, bundleLabel) => {
         const ok = await runAction("save-composed", {
             dataURL,
             label: bundleLabel,
         });
-        if (!ok) throw new Error("묶음을 저장하지 못했습니다.");
+        if (!ok) throw new Error(t("묶음을 저장하지 못했습니다."));
     },
     openDialog: openModal,
     closeDialog: closeModal,
@@ -1685,11 +1703,11 @@ const referenceComparison = createReferenceComparison({
             dataURL,
             label: exportLabel,
         });
-        if (!ok) throw new Error("비교 결과를 저장하지 못했습니다.");
+        if (!ok) throw new Error(t("비교 결과를 저장하지 못했습니다."));
     },
     copyExport: async (dataURL) => {
         const ok = await runAction("copy-composed", { dataURL });
-        if (!ok) throw new Error("비교 결과를 복사하지 못했습니다.");
+        if (!ok) throw new Error(t("비교 결과를 복사하지 못했습니다."));
     },
     showToast: (message, error) => showToast(message, error),
     translate: t,
@@ -1831,21 +1849,21 @@ const captureCommands: DashboardCommand[] = captureActions.map((action) => ({
         action.name === "steps" ? toggleSteps() : runAction(action.name),
 }));
 const boardCommands: DashboardCommand[] = [
-    ["board:create", "새 보드", "create"],
-    ["board:layout-grid", "격자로 정렬", "layout-grid"],
-    ["board:layout-horizontal", "가로로 정렬", "layout-horizontal"],
-    ["board:layout-vertical", "세로로 정렬", "layout-vertical"],
-    ["board:group", "선택 항목 그룹", "group"],
-    ["board:focus", "선택 항목만 보기", "focus"],
-    ["board:tool-rect", "사각형 그리기", "tool:rect"],
-    ["board:tool-arrow", "화살표 그리기", "tool:arrow"],
-    ["board:tool-note", "보드 메모 추가", "tool:note"],
-    ["board:tool-callout", "설명 상자 추가", "tool:callout"],
-    ["board:preset-design", "디자인 피드백 프리셋", "preset:design"],
-    ["board:preset-bug", "버그 보고 프리셋", "preset:bug"],
-    ["board:preset-study", "공부 메모 프리셋", "preset:study"],
-    ["board:export-png", "보드를 PNG로 내보내기", "export-png"],
-    ["board:export-pdf", "보드를 PDF로 내보내기", "export-pdf"],
+    ["board:create", t("새 보드"), "create"],
+    ["board:layout-grid", t("격자로 정렬"), "layout-grid"],
+    ["board:layout-horizontal", t("가로로 정렬"), "layout-horizontal"],
+    ["board:layout-vertical", t("세로로 정렬"), "layout-vertical"],
+    ["board:group", t("선택 항목 그룹"), "group"],
+    ["board:focus", t("선택 항목만 보기"), "focus"],
+    ["board:tool-rect", t("사각형 그리기"), "tool:rect"],
+    ["board:tool-arrow", t("화살표 그리기"), "tool:arrow"],
+    ["board:tool-note", t("보드 메모 추가"), "tool:note"],
+    ["board:tool-callout", t("설명 상자 추가"), "tool:callout"],
+    ["board:preset-design", t("디자인 피드백 프리셋"), "preset:design"],
+    ["board:preset-bug", t("버그 보고 프리셋"), "preset:bug"],
+    ["board:preset-study", t("공부 메모 프리셋"), "preset:study"],
+    ["board:export-png", t("보드를 PNG로 내보내기"), "export-png"],
+    ["board:export-pdf", t("보드를 PDF로 내보내기"), "export-pdf"],
 ].map(([id, commandLabel, command]) => ({
     id,
     label: commandLabel,
@@ -1858,11 +1876,11 @@ const boardCommands: DashboardCommand[] = [
     },
 }));
 const navigationCommands: DashboardCommand[] = [
-    ["go:home", "홈 열기", "home"],
-    ["go:library", "라이브러리 열기", "library"],
-    ["go:board", "캡처 보드 열기", "board"],
-    ["go:translate", "번역 열기", "translate"],
-    ["go:settings", "설정 열기", "settings"],
+    ["go:home", t("홈 열기"), "home"],
+    ["go:library", t("라이브러리 열기"), "library"],
+    ["go:board", t("캡처 보드 열기"), "board"],
+    ["go:translate", t("번역 열기"), "translate"],
+    ["go:settings", t("설정 열기"), "settings"],
 ].map(([id, commandLabel, page]) => ({
     id,
     label: commandLabel,
@@ -1891,8 +1909,8 @@ const workspaceCommands: DashboardCommand[] = [
     },
     {
         id: "home:all-tools",
-        label: "모든 캡처 도구 보기",
-        detail: "자동 작업과 전체 캡처 모드",
+        label: t("모든 캡처 도구 보기"),
+        detail: t("자동 작업과 전체 캡처 모드"),
         keywords: ["캡처", "자동", "전체", "기능"],
         async run() {
             await showPage("home");
@@ -1902,8 +1920,8 @@ const workspaceCommands: DashboardCommand[] = [
     },
     {
         id: "library:add-board",
-        label: "선택 항목을 보드에 추가",
-        detail: "라이브러리 선택",
+        label: t("선택 항목을 보드에 추가"),
+        detail: t("라이브러리 선택"),
         keywords: ["보드", "선택", "추가"],
         async run() {
             const ids = [...selectedItemIds];
@@ -1915,8 +1933,8 @@ const workspaceCommands: DashboardCommand[] = [
     },
     {
         id: "settings:capture-tools",
-        label: "캡처 도구 구성",
-        detail: "툴바와 원형 메뉴 즐겨찾기",
+        label: t("캡처 도구 구성"),
+        detail: t("툴바와 원형 메뉴 즐겨찾기"),
         keywords: ["설정", "즐겨찾기", "툴바", "원형 메뉴"],
         async run() {
             await showPage("settings");
@@ -2055,7 +2073,10 @@ function openDashboardCommands() {
                 disabled: disabled.has(command.id),
                 detail:
                     command.id === "board:focus" && imageCount
-                        ? `${imageCount}개 이미지 선택됨`
+                        ? t("{count}개 이미지 선택됨").replace(
+                              "{count}",
+                              String(imageCount),
+                          )
                         : command.detail,
             })),
             ...workspaceCommands.map((command) => ({
@@ -2255,7 +2276,9 @@ function renderShortcutSheet() {
                         label(
                             "small",
                             t(
-                                "누른 채 드래그하여 동작 선택, 중앙에서 놓으면 취소",
+                                t(
+                                    "누른 채 드래그하여 동작 선택, 중앙에서 놓으면 취소",
+                                ),
                             ),
                         ),
                     ]),
@@ -2525,7 +2548,7 @@ for (const background of beautifyBackgrounds) {
         .attr({
             type: "button",
             title: background.name,
-            ariaLabel: `배경 ${background.name}`,
+            ariaLabel: t("배경 {name}").replace("{name}", background.name),
             ariaPressed: String(background.id === "auto"),
         })
         .style(background.css ? { background: background.css } : {})
@@ -2590,11 +2613,11 @@ view("x")
 const beautifyStyleRow = view("x")
     .class("beautify-style-row")
     .addInto(beautifyControls);
-const beautifyStyleSelect = select([{ value: "", name: "스타일 프리셋" }])
+const beautifyStyleSelect = select([{ value: "", name: t("스타일 프리셋") }])
     .class("select-control")
     .on("change", (_event, element) => applySavedStyle(element.el.value))
     .addInto(beautifyStyleRow);
-button("현재 스타일 저장")
+button(t("현재 스타일 저장"))
     .class("text-button", "compact")
     .attr({ type: "button" })
     .on("click", () => void saveCurrentBeautifyStyle())
@@ -2742,7 +2765,7 @@ upscaleDialog.add(
                     if (!target) return;
                     if (upscaleOversized()) {
                         upscaleError.el.textContent = t(
-                            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.",
+                            t("결과 크기가 너무 큽니다. 배율을 낮춰 주세요."),
                         );
                         return;
                     }
@@ -3297,7 +3320,9 @@ async function toggleSteps() {
     if ((appState.runtime.stepCapture ?? false) && !was)
         showToast(
             t(
-                "클릭할 때마다 화면이 저장됩니다. 카드를 다시 누르면 중지합니다.",
+                t(
+                    "클릭할 때마다 화면이 저장됩니다. 카드를 다시 누르면 중지합니다.",
+                ),
             ),
         );
 }
@@ -3530,7 +3555,7 @@ async function setComparisonPair(firstId: string, secondId: string) {
             if (compareItems)
                 renderCompareSelectors(compareItems[0].id, compareItems[1].id);
             compareLoadingStatus.el.textContent = t(
-                "이미지를 불러오지 못했습니다.",
+                t("이미지를 불러오지 못했습니다."),
             );
             compareLoadingStatus.el.hidden = false;
             showToast(errorMessage(error), true);
@@ -3684,7 +3709,12 @@ async function importFiles(files: File[]) {
         if (activePage === "board") await captureBoard.flush();
         appState = await window.openCapture.importFiles(files);
         renderState();
-        showToast(`${files.length}개 이미지를 가져왔습니다.`);
+        showToast(
+            t("{count}개 이미지를 가져왔습니다.").replace(
+                "{count}",
+                String(files.length),
+            ),
+        );
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -3724,7 +3754,9 @@ async function refreshState() {
             );
             if (failed.length)
                 showToast(
-                    `단축키 등록 실패: ${failed.map((s) => s.label).join(", ")}. 다른 앱이 점유 중입니다. 설정에서 다시 지정하세요.`,
+                    t(
+                        "단축키 등록 실패: {names}. 다른 앱이 점유 중입니다. 설정에서 다시 지정하세요.",
+                    ).replace("{names}", failed.map((s) => s.label).join(", ")),
                     true,
                 );
         }
@@ -3760,7 +3792,12 @@ async function copySelectedSourceFiles() {
     if (!ids.length) return;
     try {
         const result = await window.openCapture.copySourceFiles(ids);
-        showToast(`원본 파일 ${result.copied}개를 복사했습니다.`);
+        showToast(
+            t("원본 파일 {count}개를 복사했습니다.").replace(
+                "{count}",
+                String(result.copied),
+            ),
+        );
     } catch (error) {
         showToast(errorMessage(error), true);
     }
@@ -3796,10 +3833,10 @@ async function mutateItems(
         await refreshLibraryQuery(true);
         showToast(
             kind === "promote"
-                ? "보관함으로 옮겼습니다."
+                ? t("보관함으로 옮겼습니다.")
                 : kind === "trash"
-                  ? "휴지통으로 옮겼습니다."
-                  : "복원했습니다.",
+                  ? t("휴지통으로 옮겼습니다.")
+                  : t("복원했습니다."),
             false,
             kind === "promote"
                 ? []
@@ -3900,7 +3937,7 @@ function applySavedStyle(id: string) {
 function renderSavedWorkspaceTools() {
     savedSmartSelect.clear();
     savedSmartSelect.add(
-        ele("option").attr({ value: "", textContent: "저장된 보기" }),
+        ele("option").attr({ value: "", textContent: t("저장된 보기") }),
     );
     for (const filter of savedSmartFilters)
         savedSmartSelect.add(
@@ -3926,7 +3963,10 @@ function renderSavedWorkspaceTools() {
                         .class("saved-tool-remove")
                         .attr({
                             type: "button",
-                            ariaLabel: `${filter.name} 삭제`,
+                            ariaLabel: t("{name} 삭제").replace(
+                                "{name}",
+                                filter.name,
+                            ),
                         })
                         .on(
                             "click",
@@ -3935,11 +3975,11 @@ function renderSavedWorkspaceTools() {
                 ]),
         );
     if (!savedSmartFilters.length)
-        savedSmartRow.add(label("small", "저장된 스마트 컬렉션 없음"));
+        savedSmartRow.add(label("small", t("저장된 스마트 컬렉션 없음")));
 
     beautifyStyleSelect.clear();
     beautifyStyleSelect.add(
-        ele("option").attr({ value: "", textContent: "스타일 프리셋" }),
+        ele("option").attr({ value: "", textContent: t("스타일 프리셋") }),
     );
     savedStyleRow.clear();
     for (const style of savedStyles) {
@@ -3952,20 +3992,23 @@ function renderSavedWorkspaceTools() {
                 .add([
                     button(style.name)
                         .class("text-button", "compact")
-                        .attr({ type: "button", title: "꾸미기에서 적용" })
+                        .attr({ type: "button", title: t("꾸미기에서 적용") })
                         .on("click", () => applySavedStyle(style.id)),
                     button("×")
                         .class("saved-tool-remove")
                         .attr({
                             type: "button",
-                            ariaLabel: `${style.name} 삭제`,
+                            ariaLabel: t("{name} 삭제").replace(
+                                "{name}",
+                                style.name,
+                            ),
                         })
                         .on("click", () => void removeSavedStyle(style.id)),
                 ]),
         );
     }
     if (!savedStyles.length)
-        savedStyleRow.add(label("small", "저장된 스타일 없음"));
+        savedStyleRow.add(label("small", t("저장된 스타일 없음")));
 
     recentColorRow.clear();
     for (const sample of recentColors.slice(0, 16))
@@ -3975,16 +4018,21 @@ function renderSavedWorkspaceTools() {
                 .style({ background: sample.value })
                 .attr({
                     type: "button",
-                    title: `${sample.value} 복사`,
-                    ariaLabel: `${sample.value} 복사`,
+                    title: t("{value} 복사").replace("{value}", sample.value),
+                    ariaLabel: t("{value} 복사").replace(
+                        "{value}",
+                        sample.value,
+                    ),
                 })
                 .on("click", () => {
                     void navigator.clipboard.writeText(sample.value);
-                    showToast(`${sample.value} 복사`);
+                    showToast(
+                        t("{value} 복사").replace("{value}", sample.value),
+                    );
                 }),
         );
     if (!recentColors.length)
-        recentColorRow.add(label("small", "최근 추출 색상 없음"));
+        recentColorRow.add(label("small", t("최근 추출 색상 없음")));
 }
 
 async function removeSavedStyle(id: string) {
@@ -4013,7 +4061,9 @@ function renderDiagnostics() {
     diagnosticsList.clear();
     const records = appState.runtime.captureDiagnostics ?? [];
     if (!records.length) {
-        diagnosticsList.add(label("small", "아직 캡처 진단 기록이 없습니다."));
+        diagnosticsList.add(
+            label("small", t("아직 캡처 진단 기록이 없습니다.")),
+        );
         return;
     }
     const latestByRequest = new Map<string, (typeof records)[number]>();
@@ -4177,13 +4227,20 @@ function renderState() {
                         .class("pinset-run")
                         .attr({
                             type: "button",
-                            title: `${set.name} — ${set.itemIds.length}장을 화면에 고정`,
+                            title: t("{name} — {count}장을 화면에 고정")
+                                .replace("{name}", set.name)
+                                .replace("{count}", String(set.itemIds.length)),
                         })
                         .add([
                             icon("◇"),
                             label(
                                 "span",
-                                `${set.name} · ${set.itemIds.length}장`,
+                                t("{name} · {count}장")
+                                    .replace("{name}", set.name)
+                                    .replace(
+                                        "{count}",
+                                        String(set.itemIds.length),
+                                    ),
                             ),
                         ])
                         .on("click", () =>
@@ -4193,7 +4250,10 @@ function renderState() {
                         .class("pinset-remove")
                         .attr({
                             type: "button",
-                            title: `${set.name} 세트 삭제`,
+                            title: t("{name} 세트 삭제").replace(
+                                "{name}",
+                                set.name,
+                            ),
                         })
                         .on("click", () =>
                             runAction("remove-pin-set", { id: set.id }),
@@ -4379,7 +4439,9 @@ async function rebindShortcut(
         );
         if (clash) {
             showToast(
-                `${clash.label}에 이미 등록된 단축키입니다. 다른 키를 눌러 주세요.`,
+                t(
+                    "{name}에 이미 등록된 단축키입니다. 다른 키를 눌러 주세요.",
+                ).replace("{name}", clash.label),
                 true,
             );
             return;
@@ -4403,7 +4465,9 @@ async function rebindShortcut(
               : next?.active === key;
     if (!ok)
         showToast(
-            `${shortcut.label} 단축키를 등록하지 못했습니다. 다른 키를 사용해 주세요.`,
+            t(
+                "{name} 단축키를 등록하지 못했습니다. 다른 키를 사용해 주세요.",
+            ).replace("{name}", shortcut.label),
             true,
         );
 }
@@ -4415,9 +4479,9 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
             readOnly: true,
             value: formatShortcut(shortcut.custom ?? shortcut.requested ?? ""),
             placeholder: t("단축키 없음"),
-            ariaLabel: `${shortcut.label} 단축키`,
+            ariaLabel: t("{name} 단축키").replace("{name}", shortcut.label),
             title: t(
-                "클릭 후 새 단축키를 누르세요. Backspace는 끄기, Esc는 취소",
+                t("클릭 후 새 단축키를 누르세요. Backspace는 끄기, Esc는 취소"),
             ),
         });
     const reset = button()
@@ -4470,11 +4534,19 @@ function shortcutEditor(shortcut: OpenCaptureShortcut) {
     });
     const status =
         !shortcut.available && shortcut.requested
-            ? `충돌 · ${formatShortcut(shortcut.requested)}`
+            ? t("충돌 · {key}").replace(
+                  "{key}",
+                  formatShortcut(shortcut.requested),
+              )
             : shortcut.active === null
               ? t("꺼짐")
               : shortcut.custom != null
-                ? `기본: ${formatShortcut(shortcut.default || shortcut.requested || "—")}`
+                ? t("기본: {key}").replace(
+                      "{key}",
+                      formatShortcut(
+                          shortcut.default || shortcut.requested || "—",
+                      ),
+                  )
                 : formatShortcut(shortcut.active);
     return view("x")
         .class("runtime-shortcut-row")
@@ -4527,7 +4599,9 @@ function renderItems(
                           label("h3", t("조건에 맞는 캡처가 없어요")),
                           p(
                               t(
-                                  "검색어를 바꾸거나 즐겨찾기 필터를 해제해 보세요.",
+                                  t(
+                                      "검색어를 바꾸거나 즐겨찾기 필터를 해제해 보세요.",
+                                  ),
                               ),
                           ),
                       ])
@@ -4538,7 +4612,9 @@ function renderItems(
                           label("h3", t("아직 저장된 캡처가 없어요")),
                           p(
                               t(
-                                  "새로 캡처하거나 이미지를 가져오면 여기에 모입니다.",
+                                  t(
+                                      "새로 캡처하거나 이미지를 가져오면 여기에 모입니다.",
+                                  ),
                               ),
                           ),
                           button(t("첫 캡처 시작"))
@@ -4580,7 +4656,7 @@ function renderItems(
             thumbnail.add(
                 label(
                     "small",
-                    status === "temporary" ? "임시" : "휴지통",
+                    status === "temporary" ? t("임시") : t("휴지통"),
                 ).class("item-status-badge", status),
             );
         if (item.thumbnail) {
@@ -4648,8 +4724,8 @@ function renderItems(
         const selectionInput = input("checkbox")
             .class("item-select")
             .attr({
-                ariaLabel: `${item.name} 선택`,
-                title: `${item.name} 선택`,
+                ariaLabel: t("{name} 선택").replace("{name}", item.name),
+                title: t("{name} 선택").replace("{name}", item.name),
             });
         selectionInput.el.checked = selectedItemIds.has(item.id);
         selectionInput
@@ -4678,7 +4754,7 @@ function renderItems(
             .class("fav-button", item.favorite ? "active" : "")
             .attr({
                 type: "button",
-                ariaLabel: `${item.name} 즐겨찾기`,
+                ariaLabel: t("{name} 즐겨찾기").replace("{name}", item.name),
                 ariaPressed: String(Boolean(item.favorite)),
                 title: item.favorite ? t("즐겨찾기 해제") : t("즐겨찾기"),
             })
@@ -4838,7 +4914,10 @@ function renderItems(
                             .class("more-button")
                             .attr({
                                 type: "button",
-                                ariaLabel: `${item.name} 메뉴`,
+                                ariaLabel: t("{name} 메뉴").replace(
+                                    "{name}",
+                                    item.name,
+                                ),
                             })
                             .add(icon("•••"))
                             .on("click", (event, element) => {
@@ -5050,19 +5129,19 @@ function toggleItemMenu(anchor: HTMLElement, item: OpenCaptureItem) {
     if ((item.status ?? "library") === "temporary")
         entries.unshift([
             "▤",
-            "보관함으로 이동",
+            t("보관함으로 이동"),
             () => void mutateItems([item.id], "promote"),
         ]);
     if ((item.status ?? "library") === "trash")
         entries.unshift([
             "↺",
-            "복원",
+            t("복원"),
             () => void mutateItems([item.id], "restore"),
         ]);
     else
         entries.push([
             "×",
-            "휴지통으로 이동",
+            t("휴지통으로 이동"),
             () => void mutateItems([item.id], "trash"),
         ]);
     for (const [glyph, text, run] of entries) {
@@ -5230,7 +5309,7 @@ function renderConvertHistory() {
         chip.className = "convert-history-chip";
         chip.textContent = `${entry.format.toUpperCase()} ×${entry.count} · ${formatRelativeTime(entry.time)}`;
         chip.title = t(
-            "변환된 파일 위치 보기 · Shift+클릭은 라이브러리에서 찾기",
+            t("변환된 파일 위치 보기 · Shift+클릭은 라이브러리에서 찾기"),
         );
         chip.addEventListener("click", (event) => {
             if (event.shiftKey) locateConvertSource(entry);
@@ -5265,7 +5344,7 @@ async function refreshTranslationStatus() {
     } catch {
         modelStatusText.el.textContent = t("상태를 확인할 수 없음");
         modelDetails.el.textContent = t(
-            "번역 서비스를 시작한 뒤 다시 확인해 주세요.",
+            t("번역 서비스를 시작한 뒤 다시 확인해 주세요."),
         );
     }
 }
@@ -5291,12 +5370,16 @@ function renderTranslationStatus() {
           : local.installed
             ? t("로컬 모델 사용 가능")
             : t("로컬 모델 설치 필요");
-    const sizeText = local.size ? `약 ${local.size}` : t("필요한 모델 파일");
+    const sizeText = local.size
+        ? t("약 {size}").replace("{size}", String(local.size))
+        : t("필요한 모델 파일");
     modelDetails.el.textContent = !runtimeReady
         ? t("온라인 번역 서비스를 연결해 사용하세요.")
         : local.installed
           ? t("다운로드된 모델로 오프라인 번역을 사용할 수 있습니다.")
-          : `${sizeText}을 내려받습니다. 설치 후에는 오프라인으로 동작합니다.`;
+          : t(
+                "{size}을 내려받습니다. 설치 후에는 오프라인으로 동작합니다.",
+            ).replace("{size}", sizeText);
     installButton.el.hidden = !runtimeReady || local.installed;
     installButton.el.disabled = !runtimeReady || Boolean(local.installing);
     providerStatus.el.textContent = [
@@ -5559,7 +5642,7 @@ async function saveUpscaled() {
     if (!target) return;
     if (upscaleOversized()) {
         upscaleError.el.textContent = t(
-            "결과 크기가 너무 큽니다. 배율을 낮춰 주세요.",
+            t("결과 크기가 너무 큽니다. 배율을 낮춰 주세요."),
         );
         return;
     }
@@ -5721,9 +5804,9 @@ async function cutoutQuickLookItem(item: OpenCaptureItem) {
         await refreshLibraryQuery(true);
         openQuickLook(result.item);
         showToast("배경을 제거한 사본을 만들었습니다.", false, [
-            ["원본 보기", () => openQuickLook(item)],
+            [t("원본 보기"), () => openQuickLook(item)],
             [
-                "되돌리기",
+                t("되돌리기"),
                 () => {
                     void (async () => {
                         try {
@@ -5743,7 +5826,7 @@ async function cutoutQuickLookItem(item: OpenCaptureItem) {
     } catch (error) {
         if (request === quickLookCutoutRequest)
             showToast(errorMessage(error), true, [
-                ["다시 시도", () => void cutoutQuickLookItem(item)],
+                [t("다시 시도"), () => void cutoutQuickLookItem(item)],
             ]);
     } finally {
         if (request === quickLookCutoutRequest) quickLookHold.setBusy(false);
@@ -5751,7 +5834,7 @@ async function cutoutQuickLookItem(item: OpenCaptureItem) {
 }
 
 const quickLookHold: ImageHoldHandle = createImageHold(qlImage.el, {
-    progressLabel: "길게 눌러 배경 제거",
+    progressLabel: t("길게 눌러 배경 제거"),
     disabled: () => {
         const item = quickLookId ? findKnownItem(quickLookId) : undefined;
         return (
@@ -5886,7 +5969,9 @@ function renderFold() {
     const { start, end } = foldFractions();
     foldShade.el.style.top = `${start * 100}%`;
     foldShade.el.style.height = `${(end - start) * 100}%`;
-    foldInfo.el.textContent = `접는 구간 ${Math.round(start * 100)}% – ${Math.round(end * 100)}%`;
+    foldInfo.el.textContent = t("접는 구간 {start}% – {end}%")
+        .replace("{start}", String(Math.round(start * 100)))
+        .replace("{end}", String(Math.round(end * 100)));
 }
 foldStartInput.on("input", () => renderFold());
 foldEndInput.on("input", () => renderFold());
@@ -6000,7 +6085,9 @@ async function renderGifPreview() {
     let start = Number(gifStartInput.el.value) || 0;
     let end = Number(gifEndInput.el.value) || 0;
     if (start > end) [start, end] = [end, start];
-    gifInfo.el.textContent = `프레임 ${start + 1}–${end + 1} / ${target.count}`;
+    gifInfo.el.textContent = t("프레임 {range} / {count}")
+        .replace("{range}", `${start + 1}–${end + 1}`)
+        .replace("{count}", String(target.count));
     try {
         const { image } = await target.decoder.decode({ frameIndex: start });
         if (request !== gifPreviewRequest || gifTarget !== target) {
@@ -6164,7 +6251,7 @@ function renderQuickLook() {
     qlName.el.textContent = item.name;
     qlMeta.el.textContent = [
         formatDate(item.createdAt),
-        item.note ? `메모: ${item.note}` : "",
+        item.note ? t("메모: {note}").replace("{note}", item.note) : "",
     ]
         .filter(Boolean)
         .join(" · ");
@@ -6178,7 +6265,10 @@ function renderQuickLook() {
         qlTags.add(
             button()
                 .class("tag-chip")
-                .attr({ type: "button", title: `${tag} 태그 제거` })
+                .attr({
+                    type: "button",
+                    title: t("{tag} 태그 제거").replace("{tag}", tag),
+                })
                 .add([label("span", `#${tag}`), label("span", "×")])
                 .on("click", async () => {
                     await runItemEdit(
@@ -6208,7 +6298,10 @@ function renderQuickLook() {
         qlTagSuggest.add(
             button()
                 .class("chip-button", "tag-suggest-chip")
-                .attr({ type: "button", title: `태그 추가: ${tag}` })
+                .attr({
+                    type: "button",
+                    title: t("태그 추가: {tag}").replace("{tag}", tag),
+                })
                 .add(label("span", `#${tag}`))
                 .on("click", async () => {
                     const current = appState.items.find(
@@ -6229,7 +6322,10 @@ function renderQuickLook() {
         );
     if (item.ocrDone) pendingOcrIds.delete(item.id);
     if (item.ocrText) {
-        qlOcrStatus.el.textContent = `${item.ocrText.length.toLocaleString()}자 인식됨`;
+        qlOcrStatus.el.textContent = t("{count}자 인식됨").replace(
+            "{count}",
+            item.ocrText.length.toLocaleString(),
+        );
         qlOcrText.el.textContent = item.ocrText;
         qlOcrText.el.hidden = false;
     } else if (pendingOcrIds.has(item.id)) {
@@ -6240,7 +6336,9 @@ function renderQuickLook() {
         qlOcrText.el.hidden = true;
     } else {
         qlOcrStatus.el.textContent = t(
-            "아직 인식하지 않았습니다. 텍스트 인식을 실행하면 검색에도 포함됩니다.",
+            t(
+                "아직 인식하지 않았습니다. 텍스트 인식을 실행하면 검색에도 포함됩니다.",
+            ),
         );
         qlOcrText.el.hidden = true;
     }
@@ -6422,7 +6520,9 @@ window.openCapture.onSrProgress(({ phase, percent }) => {
     if (phase === "download")
         srToastText.el.textContent = t("AI 모델을 다운로드하고 있습니다…");
     else if (phase === "run")
-        srToastText.el.textContent = `AI 업스케일 처리 중 ${percent}%`;
+        srToastText.el.textContent = t(
+            "AI 업스케일 처리 중 {percent}%",
+        ).replace("{percent}", String(percent));
     else {
         srToast.el.classList.remove("visible");
         if (phase === "done")
