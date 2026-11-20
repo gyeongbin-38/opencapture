@@ -4,6 +4,7 @@ import { icon } from "../dashboard/icons";
 import { t } from "../dashboard/t";
 
 initDKH({ pureStyle: true });
+document.title = t("임시 캡처");
 let items: OpenCaptureItem[] = [];
 const selected = new Set<string>();
 let request = 0;
