@@ -103,6 +103,7 @@ const MAX_SIGNATURE = 80;
 const MAX_WIDTH = 16_384;
 const MAX_RENDERER_BYTES = 128 * 1024 * 1024;
 const MAX_RENDERER_PIXELS = 100_000_000;
+const CLIPBOARD_FORMATS = new Set<CaptureConvertFormat>(["png", "jpg"]);
 
 type StoredSettings = {
     format: CaptureConvertFormat;
@@ -1321,7 +1322,10 @@ export function openConvertDonut(options: {
             api.copyConvertedPath
         ) {
             const first = candidates.find(
-                (row) => row.status === "written" && row.output,
+                (row) =>
+                    row.status === "written" &&
+                    row.output &&
+                    CLIPBOARD_FORMATS.has(row.format),
             );
             if (first?.output)
                 try {
@@ -1331,6 +1335,8 @@ export function openConvertDonut(options: {
                 } catch (error) {
                     setError(t(errorMessage(error)));
                 }
+            else if (candidates.some((row) => row.status === "written"))
+                setError(t("이 형식은 클립보드로 복사할 수 없습니다."));
         }
         if (!closed && token === operationToken && frozen.register)
             await registerRows(candidates);
