@@ -77,9 +77,13 @@ action(
     "▣",
     "c",
     async (ids) => {
-        if (ids.length === 1)
-            return window.openCapture.shelfAction("copy", ids[0]);
-        return window.openCapture.copySourceFiles(ids);
+        const ok =
+            ids.length === 1
+                ? await window.openCapture.shelfAction("copy", ids[0])
+                : await window.openCapture.copySourceFiles(ids);
+        if (ok === false) return false;
+        status.el.textContent = t("이미지를 복사했습니다.");
+        return false;
     },
     true,
 );
@@ -91,7 +95,12 @@ action(
     "◇",
     "p",
     async (ids) => {
-        for (const id of ids) await window.openCapture.shelfAction("pin", id);
+        let ok = true;
+        for (const id of ids)
+            ok = (await window.openCapture.shelfAction("pin", id)) && ok;
+        if (!ok) return false;
+        status.el.textContent = t("화면에 고정됨");
+        return false;
     },
     true,
 );
@@ -113,8 +122,28 @@ action(
     },
     true,
 );
-action("보관", "⇩", "a", (ids) => window.openCapture.promoteItems(ids), true);
-action("휴지통", "⌫", "d", (ids) => window.openCapture.trashItems(ids), true);
+action(
+    "보관",
+    "⇩",
+    "a",
+    async (ids) => {
+        await window.openCapture.promoteItems(ids);
+        status.el.textContent = t("보관함으로 옮겼습니다.");
+        return false;
+    },
+    true,
+);
+action(
+    "휴지통",
+    "⌫",
+    "d",
+    async (ids) => {
+        await window.openCapture.trashItems(ids);
+        status.el.textContent = t("휴지통으로 이동됨");
+        return false;
+    },
+    true,
+);
 
 function renderActions() {
     for (const control of controls) {
