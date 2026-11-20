@@ -4258,7 +4258,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             );
             if (!ids.length) return;
             const fromDashboard = event.sender.id === dashboard?.webContents.id;
-            if (!fromDashboard) assertRole(event, ["shelf"]);
+            if (!fromDashboard) assertRole(event, ["shelf", "clip"]);
             const items = ids.map((i) =>
                 fromDashboard ? getItem(i) : shelfItem(i),
             );

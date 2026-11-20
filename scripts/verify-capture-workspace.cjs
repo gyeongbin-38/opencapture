@@ -672,6 +672,40 @@ app.whenReady().then(async () => {
         );
         await clip("window.captureDraftBridge.flush()");
         await shot(capture, "multi-region-editor");
+        let inlineDragPayload = null;
+        const originalInlineDrag =
+            capture.webContents.startDrag.bind(capture.webContents);
+        capture.webContents.startDrag = (item) => {
+            inlineDragPayload = item;
+        };
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length >= 2',
+                ),
+            "Inline shelf did not render both staged drafts.",
+        );
+        const inlineDraggable = await clip(`(() => {
+            const thumb=document.querySelector("#capture_inline_shelf .capture-shelf-thumb");
+            if (!thumb?.draggable) return false;
+            thumb.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true}));
+            return true;
+        })()`);
+        await until(
+            () => inlineDragPayload !== null,
+            "Inline shelf thumb drag did not reach the main process.",
+        );
+        assert(
+            inlineDraggable &&
+                Array.isArray(inlineDragPayload?.files) &&
+                inlineDragPayload.files.length === 1 &&
+                inlineDragPayload.files.every((file) => fs.existsSync(file)),
+            `Inline shelf drag payload was invalid: ${JSON.stringify(inlineDragPayload)}.`,
+        );
+        capture.webContents.startDrag = originalInlineDrag;
+        report.checks.push({
+            inlineShelfDrag: { files: inlineDragPayload.files.length },
+        });
         await clip(
             'document.querySelector("#quick_toolbar [data-capture-action=close]").click()',
         );

@@ -229,8 +229,13 @@ export function createCaptureWorkspace(options: {
                 .class("capture-shelf-thumb")
                 .attr({
                     type: "button",
-                    title: `${t("주석·편집")} · ${t("더블클릭하여 화면에 고정")}`,
+                    draggable: true,
+                    title: `${t("주석·편집")} · ${t("드래그로 내보내기")} · ${t("더블클릭하여 화면에 고정")}`,
                 });
+            thumbnail.on("dragstart", (event) => {
+                event.preventDefault();
+                ipcRenderer.send("oc:drag", id);
+            });
             let clickTimer: number | undefined;
             thumbnail.on("click", (event) => {
                 if (event.detail > 1) return;
