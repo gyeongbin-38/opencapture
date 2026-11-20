@@ -357,21 +357,51 @@ async function runClip() {
                 .replaceAll(path.sep, path.posix.sep),
         );
     }
-    if (startV.v === endV.v) {
-        await runFfmpeg(
-            "clip",
-            0,
-            toArg(startV.v, startV.time, "both", endV.time),
+    const copySegment = (v: number) =>
+        fs.copyFileSync(
+            path.join(output, `${v}.${type}`),
+            path.join(output1, `${v}.${type}`),
         );
+    if (startV.v === endV.v) {
+        if (endV.time <= startV.time) {
+            copySegment(startV.v);
+        } else {
+            await runFfmpeg(
+                "clip",
+                0,
+                toArg(startV.v, startV.time, "both", endV.time),
+            );
+        }
     } else {
-        await Promise.all([
-            runFfmpeg("clip", 0, toArg(startV.v, startV.time, "start", 0)),
-            runFfmpeg("clip", 1, toArg(endV.v, endV.time, "end", 0)),
-        ]);
+        const tasks: Promise<boolean>[] = [];
+        const startDur = nameT[startV.v].e - nameT[startV.v].s;
+        const endDur = nameT[endV.v].e - nameT[endV.v].s;
+        if (startV.time <= 0) {
+            copySegment(startV.v);
+        } else if (!Number.isFinite(startDur) || startV.time < startDur) {
+            tasks.push(
+                runFfmpeg("clip", 0, toArg(startV.v, startV.time, "start", 0)),
+            );
+        } else {
+            clipPath.shift();
+        }
+        if (!Number.isFinite(endDur) || endV.time >= endDur) {
+            copySegment(endV.v);
+        } else if (endV.time > 0) {
+            tasks.push(
+                runFfmpeg("clip", 1, toArg(endV.v, endV.time, "end", 0)),
+            );
+        } else {
+            clipPath.pop();
+        }
+        await Promise.all(tasks);
     }
 }
 
 async function joinAndSave(filepath: string) {
+    if (clipPath.length === 0) {
+        throw new Error(t("저장된 녹화 파일이 비어 있습니다."));
+    }
     if (clipPath.length === 1) {
         fs.cpSync(clipPath[0], filepath);
         ffprocess.join[0] = { args: [], finish: "ok", logs: [], testCom: "" };

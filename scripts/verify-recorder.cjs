@@ -422,7 +422,7 @@ app.whenReady().then(async () => {
                 exportedPath,
             );
             result.productReplay = productReplay;
-            if (result.ffmpegSpawns < 5)
+            if (result.ffmpegSpawns < 4)
                 throw new Error(
                     `automatic segment route not proven: ${JSON.stringify(result)}`,
                 );
