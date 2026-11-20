@@ -1425,6 +1425,13 @@ app.whenReady().then(async () => {
             "Right-hold release did not execute the highlighted annotation tool.",
         );
         await shot(capture, "reopened-editable-draft");
+        const afterReopenTrash = await run(`window.openCapture.queryItems({
+            scope:"trash",sort:"newest",offset:0,limit:200,queryId:"post-reopen-trash"
+        }).then(r=>r.items.map(i=>i.id))`);
+        assert(
+            !afterReopenTrash.includes(firstStage.id),
+            "Reopened promoted draft was re-trashed by a stale pending discard.",
+        );
         report.checks.push({
             editableRecovery: {
                 id: firstStage.id,

@@ -143,6 +143,24 @@ describe("editable capture save queue", () => {
         queue.dispose();
     });
 
+    it("reuses the same record key when a saved draft is reopened", async () => {
+        const queue = new CaptureDraftQueue({
+            snapshot: () => snapshot(),
+            stage: async (input) => result(input.id ?? "draft", 1),
+        });
+        queue.begin();
+        queue.initialized();
+        await queue.save(true);
+        const key = queue.current!.key;
+        expect(queue.current?.id).toBe("draft");
+        queue.begin();
+        queue.initialized();
+        const reopened = queue.begin({ id: "draft", revision: 1 });
+        expect(reopened).toBe(queue.current);
+        expect(reopened.key).toBe(key);
+        queue.dispose();
+    });
+
     it("keeps the failed snapshot available for retry and blocks a successful close", async () => {
         let failed = true;
         const queue = new CaptureDraftQueue({
