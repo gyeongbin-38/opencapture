@@ -375,6 +375,13 @@
     line-height: 1;
 }
 
+.capture-lab__countdown-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
 @media (max-width: 760px) {
     .capture-lab__heading {
         display: grid;

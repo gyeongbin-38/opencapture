@@ -1,5 +1,7 @@
 export const en: Record<string, string> = {
     "0개 선택": "0 selected",
+    "1초 늘리기": "Add 1s",
+    "1초 줄이기": "Subtract 1s",
     "3초 후 캡처": "Capture in 3s",
     "90° 회전": "Rotate 90°",
     "<strong>캡처 도구</strong><small>순서 · 동작 · 피드백</small>":
@@ -413,6 +415,7 @@ export const en: Record<string, string> = {
     "주석 이동": "Move annotation",
     "주석 정렬": "Align annotations",
     주석: "Annotation",
+    "지금 캡처": "Capture now",
     "집중 보기": "Focus view",
     "차이 민감도": "Diff sensitivity",
     차이: "Diff",

@@ -265,13 +265,26 @@ export function createCaptureLab(
     const countdown = element("div", "capture-lab__countdown");
     countdown.hidden = true;
     const countdownValue = element("strong", undefined, "3");
+    const delayMinus = element("button", "capture-lab__button", "−1s");
+    delayMinus.type = "button";
+    delayMinus.dataset.action = "delay-minus";
+    delayMinus.setAttribute("aria-label", lt("1초 줄이기"));
+    const delayPlus = element("button", "capture-lab__button", "+1s");
+    delayPlus.type = "button";
+    delayPlus.dataset.action = "delay-plus";
+    delayPlus.setAttribute("aria-label", lt("1초 늘리기"));
+    const delayNow = element("button", "capture-lab__button", lt("지금 캡처"));
+    delayNow.type = "button";
+    delayNow.dataset.action = "delay-now";
     const cancelTimer = element("button", "capture-lab__button", lt("취소"));
     cancelTimer.type = "button";
     cancelTimer.dataset.action = "cancel-timer";
+    const countdownButtons = element("div", "capture-lab__countdown-buttons");
+    countdownButtons.append(delayMinus, delayPlus, delayNow, cancelTimer);
     countdown.append(
         element("span", undefined, lt("공유 시작까지")),
         countdownValue,
-        cancelTimer,
+        countdownButtons,
     );
     stage.append(
         canvas,
@@ -303,6 +316,7 @@ export function createCaptureLab(
     let destroyed = false;
     let timer: number | undefined;
     let countdownTick: number | undefined;
+    let countdownDeadline = 0;
     let activeStream: MediaStream | undefined;
     let pickerActive = false;
     let visibleActions: Action[] = [];
@@ -615,17 +629,28 @@ export function createCaptureLab(
         }
         if (id === "timer") {
             cancelCountdown();
-            let remaining = 3;
-            countdownValue.textContent = String(remaining);
+            countdownDeadline = Date.now() + 3000;
+            countdownValue.textContent = "3";
             countdown.hidden = false;
             countdownTick = window.setInterval(() => {
-                remaining -= 1;
-                countdownValue.textContent = String(Math.max(0, remaining));
-            }, 1000);
-            timer = window.setTimeout(() => {
-                cancelCountdown();
-                void captureSharedScreen().catch(reportError);
-            }, 3000);
+                const remaining = Math.max(
+                    0,
+                    Math.ceil((countdownDeadline - Date.now()) / 1000),
+                );
+                countdownValue.textContent = String(remaining);
+                if (remaining === 0) {
+                    cancelCountdown();
+                    void captureSharedScreen().catch(reportError);
+                }
+            }, 250);
+            return;
+        }
+        if (id === "delay-minus" || id === "delay-plus") {
+            countdownDeadline += (id === "delay-plus" ? 1 : -1) * 1000;
+            return;
+        }
+        if (id === "delay-now") {
+            countdownDeadline = Date.now();
             return;
         }
         if (id === "cancel-timer") {
@@ -857,6 +882,28 @@ export function createCaptureLab(
     });
     listen(root, "keydown", (event) => {
         const key = event.key.toLowerCase();
+        if (event.key === "Escape") {
+            if (!radial.hidden) radial.hidden = true;
+            else if (!more.hidden) more.hidden = true;
+            else if (pickerActive) {
+                pickerActive = false;
+                root.classList.remove("is-picking-color");
+            } else if (!countdown.hidden) cancelCountdown(true);
+            else return;
+            event.preventDefault();
+            return;
+        }
+        if (
+            event.key === "Enter" &&
+            !countdown.hidden &&
+            !(event.target as HTMLElement).matches(
+                "button,input,select,textarea",
+            )
+        ) {
+            countdownDeadline = Date.now();
+            event.preventDefault();
+            return;
+        }
         const directions: Record<string, [number, number]> = {
             arrowleft: [-1, 0],
             a: [-1, 0],
