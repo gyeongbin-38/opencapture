@@ -1272,11 +1272,37 @@ app.whenReady().then(async () => {
             `(() => { [...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백'))?.click(); })()`,
         );
         await pause(150);
+        // The loupe toggle sits in the same popover and hides the follow bar.
+        const loupeRow = await clip(
+            `(() => { const b=[...document.querySelectorAll('.capture-toggle')].find(b=>b.dataset.title?.includes('마우스 따라다니는 바')); return b ? { text: b.textContent, active: b.classList.contains('active') } : null; })()`,
+        );
+        assert(
+            loupeRow?.active === true && loupeRow.text.includes("켜짐"),
+            `Loupe toggle missing: ${JSON.stringify(loupeRow)}`,
+        );
+        await clip(
+            `(() => { [...document.querySelectorAll('.capture-toggle')].find(b=>b.dataset.title?.includes('마우스 따라다니는 바'))?.click(); })()`,
+        );
+        await pause(150);
+        const loupeOff = await clip(
+            `(() => { const b=[...document.querySelectorAll('.capture-toggle')].find(b=>b.dataset.title?.includes('마우스 따라다니는 바')); return { active: b?.classList.contains('active'), display: document.getElementById('mouse_bar')?.style.display }; })()`,
+        );
+        assert(
+            loupeOff.active === false && loupeOff.display === "none",
+            `Loupe did not toggle off: ${JSON.stringify(loupeOff)}`,
+        );
+        await clip(
+            `(() => { [...document.querySelectorAll('.capture-toggle')].find(b=>b.dataset.title?.includes('마우스 따라다니는 바'))?.click(); })()`,
+        );
+        await pause(150);
         await clip(
             'document.querySelector("[data-capture-action=more]")?.click();',
         );
         await pause(150);
-        report.checks.push({ visualFeedbackToggle: true });
+        report.checks.push({
+            visualFeedbackToggle: true,
+            loupeToggle: true,
+        });
         capture.hide();
         await run('document.querySelectorAll(".nav-button")[1].click();');
         await until(

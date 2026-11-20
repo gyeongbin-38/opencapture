@@ -5270,6 +5270,27 @@ function rebuildCaptureTools() {
             .class("capture-size-setting")
             .add([txt(t("피드백")), soundToggle, visualToggle]),
     );
+    const loupeToggle = button()
+        .class("capture-toggle", store.get("鼠标跟随栏.显示") ? "active" : "")
+        .attr({
+            type: "button",
+            title: t("显示鼠标跟随栏"),
+            ariaPressed: String(Boolean(store.get("鼠标跟随栏.显示"))),
+        })
+        .add(txt(store.get("鼠标跟随栏.显示") ? t("켜짐") : t("꺼짐")))
+        .on("click", () => {
+            const next = !store.get("鼠标跟随栏.显示");
+            store.set("鼠标跟随栏.显示", next);
+            loupeToggle.el.classList.toggle("active", next);
+            loupeToggle.el.setAttribute("aria-pressed", String(next));
+            loupeToggle.el.textContent = next ? t("켜짐") : t("꺼짐");
+            mouseBarEl.style({ display: next ? "" : "none" });
+        });
+    toolPopover.add(
+        view("x")
+            .class("capture-size-setting")
+            .add([txt(t("鼠标跟随栏")), loupeToggle]),
+    );
     const whPosToggle = button()
         .class("capture-toggle", whAutoPos === "bottom" ? "active" : "")
         .attr({
