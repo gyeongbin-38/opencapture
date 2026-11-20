@@ -248,16 +248,25 @@ document.addEventListener("keydown", (event) => {
     }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (
-        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        (event.key === "ArrowLeft" ||
+            event.key === "ArrowRight" ||
+            event.key === "Home" ||
+            event.key === "End") &&
         items.length
     ) {
         const ids = items.map((item) => item.id);
         const current = ids.findIndex((id) => selected.has(id));
         const delta = event.key === "ArrowLeft" ? -1 : 1;
         const next =
-            current < 0
-                ? ids[event.key === "ArrowLeft" ? ids.length - 1 : 0]
-                : ids[Math.min(ids.length - 1, Math.max(0, current + delta))];
+            event.key === "Home"
+                ? ids[0]
+                : event.key === "End"
+                  ? ids[ids.length - 1]
+                  : current < 0
+                    ? ids[event.key === "ArrowLeft" ? ids.length - 1 : 0]
+                    : ids[
+                          Math.min(ids.length - 1, Math.max(0, current + delta))
+                      ];
         if (next) {
             selected.clear();
             selected.add(next);

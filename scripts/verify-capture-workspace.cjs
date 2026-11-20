@@ -882,12 +882,20 @@ app.whenReady().then(async () => {
             press("ArrowLeft");
             cards[0].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,shiftKey:true}));
             const ranged=[...document.querySelectorAll(".shelf-card")].filter(c=>c.getAttribute("aria-pressed")==="true").length;
-            return {last,afterLeft,afterRight,ranged};
+            press("End");
+            const afterEnd=sel();
+            press("Home");
+            const afterHome=sel();
+            return {last,afterLeft,afterRight,ranged,afterEnd,afterHome};
         })()`);
         assert(
             arrowNav.afterLeft === arrowNav.last - 1 &&
                 arrowNav.afterRight === arrowNav.last,
             `Shelf arrow navigation did not move the selection: ${JSON.stringify(arrowNav)}.`,
+        );
+        assert(
+            arrowNav.afterEnd === arrowNav.last && arrowNav.afterHome === 0,
+            `Shelf Home/End did not jump the selection: ${JSON.stringify(arrowNav)}.`,
         );
         assert(
             arrowNav.ranged === arrowNav.last,
