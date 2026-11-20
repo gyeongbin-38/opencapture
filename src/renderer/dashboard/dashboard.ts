@@ -3555,7 +3555,7 @@ async function setComparisonPair(firstId: string, secondId: string) {
             if (compareItems)
                 renderCompareSelectors(compareItems[0].id, compareItems[1].id);
             compareLoadingStatus.el.textContent = t(
-                t("이미지를 불러오지 못했습니다."),
+                "이미지를 불러오지 못했습니다.",
             );
             compareLoadingStatus.el.hidden = false;
             showToast(errorMessage(error), true);
@@ -6568,7 +6568,7 @@ window.openCapture.onCompareRequested((ids) => {
             .map((id) => result.items.find((item) => item.id === id))
             .filter((item): item is OpenCaptureItem => Boolean(item));
         if (requested.length < 2) {
-            showToast("비교할 임시 캡처를 찾지 못했습니다.", true);
+            showToast(t("비교할 임시 캡처를 찾지 못했습니다."), true);
             return;
         }
         selectedItemIds.clear();
