@@ -5970,6 +5970,7 @@ const defaultSetting: setting = {
         摄像头: {
             开启: false,
             镜像: false,
+            位置: null,
             设备: "",
             背景: {
                 模式: "none",

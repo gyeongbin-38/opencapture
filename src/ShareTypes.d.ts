@@ -326,6 +326,7 @@ export interface setting {
             开启: boolean;
             设备: string;
             镜像: boolean;
+            位置: { x: number; y: number; w: number } | null;
             背景: {
                 模式: "none" | "hide" | "blur" | "img" | "video";
                 模糊: number;

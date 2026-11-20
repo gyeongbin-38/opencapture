@@ -15,6 +15,7 @@ import { Class, cssVar, getImgUrl, initStyle } from "../root/root";
 
 import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import store from "../../../lib/store/renderStore";
+import { t } from "../../../lib/translate/translate";
 import { typedEntries } from "../../../lib/utils";
 import type { IconType } from "../../iconTypes";
 
@@ -39,7 +40,6 @@ function initRecord() {
         for (const [i, v] of typedEntries(UiohookKey)) {
             keycode2key[v] = i;
         }
-        console.log(keycode2key);
 
         const map: { [k: string]: string } = {
             Ctrl: "Control",
@@ -86,7 +86,6 @@ function initRecord() {
                     .class("main_key")
                     .data({ k: e.keycode.toString() }),
             );
-            console.log(key);
 
             if (key.top) kbdEl.add(txt(key.top).class("top_key"));
             else {
@@ -140,7 +139,6 @@ function initRecord() {
 
         let time_out: NodeJS.Timeout;
         uIOhook.on("wheel", (e) => {
-            console.log(e.direction, e.rotation);
             const x = {
                 3: { 1: "wheel_u", "-1": "wheel_d" },
                 4: { 1: "wheel_l", "-1": "wheel_r" },
@@ -172,12 +170,17 @@ function initRecord() {
 
 async function cameraStreamF(id: string | null) {
     if (id) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: { deviceId: id },
-        });
-        videoEl.srcObject = stream;
-        videoEl.play();
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: { deviceId: id },
+            });
+            videoEl.srcObject = stream;
+            videoEl.play();
+        } catch (e) {
+            cEl.style({ display: "none" });
+            return;
+        }
         if (store.get("录屏.摄像头.镜像"))
             videoEl.style.transform = "rotateY(180deg)";
 
@@ -321,8 +324,21 @@ const recorderMouseEl = view()
 const cEl = view()
     .addInto()
     .style({ position: "fixed", left: 0, top: 0, width: "100px" });
-
-// todo 记忆
+const savedCamPos = store.get("录屏.摄像头.位置");
+if (savedCamPos)
+    cEl.style({
+        left: `${Math.max(0, Math.min(savedCamPos.x, innerWidth - 40))}px`,
+        top: `${Math.max(0, Math.min(savedCamPos.y, innerHeight - 40))}px`,
+        width: `${savedCamPos.w}px`,
+    });
+const saveCamPos = () => {
+    const r = cEl.el.getBoundingClientRect();
+    store.set("录屏.摄像头.位置", {
+        x: r.left,
+        y: r.top,
+        w: r.width,
+    });
+};
 
 const videoEl = ele("video").addInto(cEl).el;
 const segEl = view()
@@ -345,15 +361,16 @@ cameraSelect.el.on("change", async () => {
 let cameraCanvas: HTMLCanvasElement = document.createElement("canvas");
 let segCanvas: HTMLCanvasElement = document.createElement("canvas");
 
-const stop = button(iconEl("stop_record").style({ filter: "none" })).on(
-    "click",
-    () => {
+const stop = button(iconEl("stop_record").style({ filter: "none" }))
+    .attr({ title: t("停止"), ariaLabel: t("停止") })
+    .on("click", () => {
         renderSend("recordState", ["stop"]);
-    },
-);
-const pause = button(iconEl("play_pause")).on("click", () => {
-    renderSend("recordState", ["pause"]);
-});
+    });
+const pause = button(iconEl("play_pause"))
+    .attr({ title: t("일시정지/재개"), ariaLabel: t("일시정지/재개") })
+    .on("click", () => {
+        renderSend("recordState", ["pause"]);
+    });
 const timeEl = txt().class(Class.textItem);
 const controlBar = view("x")
     .class(Class.smallSize, Class.screenBar)
@@ -383,11 +400,17 @@ trackPoint(cEl, {
     ing: (p) => {
         cEl.style({ left: `${p.x}px`, top: `${p.y}px` });
     },
+    end: (_e, more) => {
+        if (more.moved) saveCamPos();
+    },
 });
 
+let camPosTimer = 0;
 cEl.on("wheel", (e) => {
     const r = cEl.el.getBoundingClientRect();
     cEl.style({ width: `${r.width * (1 + e.deltaY / 600)}px` });
+    clearTimeout(camPosTimer);
+    camPosTimer = window.setTimeout(saveCamPos, 400);
 });
 
 setInterval(() => {
