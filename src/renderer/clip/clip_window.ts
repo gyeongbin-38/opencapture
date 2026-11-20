@@ -4510,6 +4510,8 @@ for (const [key, desc] of [
     ["Enter", t("확인 · 저장")],
     ["Esc", t("취소 · 닫기")],
     ["Ctrl+A", t("전체 화면")],
+    ["Ctrl+S", t("저장")],
+    ["Ctrl+C", t("복사")],
     ["Ctrl+Z · Ctrl+Y / Ctrl+Shift+Z", t("실행 취소 · 다시 실행")],
     ["Delete", t("도형 삭제")],
     ["?", t("이 도움말 표시")],
@@ -5510,6 +5512,7 @@ document.addEventListener(
 document.addEventListener(
     "keydown",
     (e) => {
+        if (e.key === "Escape" && hotkeys.getScope() === "c_bar") return;
         if (e.key === "Escape" && captureWorkspace?.hasPanel()) {
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -6907,6 +6910,15 @@ hotkeys("ctrl+a, command+a", () => {
     drawClipRect();
 });
 
+hotkeys("ctrl+s, command+s", () => {
+    if (finalRect[2] <= 0 || finalRect[3] <= 0) return;
+    toolsX.save.f();
+});
+hotkeys("ctrl+c, command+c", () => {
+    if (finalRect[2] <= 0 || finalRect[3] <= 0) return;
+    toolsX.copy.f();
+});
+
 // 生成取色器
 if (!取色器显示) mouseBarColor.style({ display: "none" });
 
@@ -7504,7 +7516,11 @@ document.addEventListener(
 document.addEventListener(
     "keydown",
     (e) => {
-        if (e.key === "Escape" && (down || selecting || moving || direction)) {
+        if (
+            e.key === "Escape" &&
+            hotkeys.getScope() !== "c_bar" &&
+            (down || selecting || moving || direction)
+        ) {
             e.preventDefault();
             e.stopImmediatePropagation();
             cancelSelectionInteraction();

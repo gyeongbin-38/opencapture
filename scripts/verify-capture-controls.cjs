@@ -745,10 +745,35 @@ app.whenReady().then(async () => {
                 helpText.text.includes("Alt+클릭") &&
                 helpText.text.includes("자동 선택") &&
                 helpText.text.includes("Ctrl+A") &&
+                helpText.text.includes("Ctrl+S") &&
                 helpText.rows >= 15,
             `Help panel missing marker gestures: ${JSON.stringify(helpText)}`,
         );
         report.checks.push({ helpPanel: helpText.rows });
+        // Ctrl+S must surface the save-format bar; Esc dismisses it.
+        await pressCombo("s", 83, { ctrl: true });
+        await until(
+            () =>
+                clip(
+                    `getComputedStyle(document.querySelector("#center_bar")).opacity === "1"`,
+                ),
+            "Ctrl+S did not open the save-format bar.",
+        );
+        await clip(
+            `window.__escProbe=0;document.addEventListener("keydown",e=>{if(e.key==="Escape")window.__escProbe++})`,
+        );
+        await pressKey("Escape", 27);
+        const escProbe = await clip(
+            `({seen:window.__escProbe,inline:document.querySelector("#center_bar").style.opacity})`,
+        );
+        await until(
+            () =>
+                clip(
+                    `getComputedStyle(document.querySelector("#center_bar")).opacity === "0"`,
+                ),
+            `Esc did not dismiss the save-format bar: ${JSON.stringify(escProbe)}`,
+        );
+        report.checks.push({ ctrlSSaveBar: true });
         // Hovering a shelf thumbnail highlights its matching region marker.
         await clip(
             `(() => { const t=document.querySelectorAll('.capture-shelf-thumb')[0]; t?.dispatchEvent(new PointerEvent('pointerenter')); })()`,
