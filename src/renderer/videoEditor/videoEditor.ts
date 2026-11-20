@@ -2300,22 +2300,47 @@ async function saveImages() {
 
     try {
         fs.mkdirSync(exportPath, { recursive: true });
-    } catch (error) {}
+    } catch (error) {
+        tipLog(t("파일을 저장하지 못했습니다."));
+        console.error("mkdir failed:", error);
+        return;
+    }
 
     await waitProcessing(); // todo 不可取消
 
+    const pendingWrites: Promise<void>[] = [];
+    let writeFailed = false;
     let i = 0;
     const decoder = new VideoDecoder({
         output: (frame: VideoFrame) => {
             const t = frameTrans2Canvas(frame);
-            t.convertToBlob({ type: "image/png" }).then(async (blob) => {
-                const buffer = Buffer.from(await blob.arrayBuffer());
-                fs.writeFile(
-                    `${exportPath}/${frame.timestamp}.png`,
-                    buffer,
-                    (_err) => {},
-                );
-            });
+            pendingWrites.push(
+                t
+                    .convertToBlob({ type: "image/png" })
+                    .then(async (blob) => {
+                        const buffer = Buffer.from(await blob.arrayBuffer());
+                        await new Promise<void>((resolve) => {
+                            fs.writeFile(
+                                `${exportPath}/${frame.timestamp}.png`,
+                                buffer,
+                                (err) => {
+                                    if (err) {
+                                        writeFailed = true;
+                                        console.error(
+                                            "Frame write failed:",
+                                            err,
+                                        );
+                                    }
+                                    resolve();
+                                },
+                            );
+                        });
+                    })
+                    .catch((e) => {
+                        writeFailed = true;
+                        console.error("Frame encode failed:", e);
+                    }),
+            );
             i++;
             imgProgress.sv(i / transformCs.length);
         },
@@ -2331,10 +2356,12 @@ async function saveImages() {
     }
 
     await decoder.flush();
+    await Promise.all(pendingWrites);
 
     imgProgress.remove();
 
-    renderSend("ok_save", [exportPath]);
+    if (writeFailed) tipLog(t("파일을 저장하지 못했습니다."));
+    else renderSend("ok_save", [exportPath]);
 
     decoder.close();
 }
