@@ -685,16 +685,18 @@ const setNewDing = (
     drawCanvas.addEventListener("pointerup", endPinStroke);
     drawCanvas.addEventListener("pointercancel", endPinStroke);
     drawCanvas.addEventListener("contextmenu", (e) => {
-        if (e.shiftKey) {
-            e.preventDefault();
-            e.stopPropagation();
-            visualRevision += 1;
-            strokes.length = 0;
-            redrawPinStrokes();
-        }
+        if (!drawMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        visualRevision += 1;
+        if (e.shiftKey) strokes.length = 0;
+        else strokes.pop();
+        redrawPinStrokes();
     });
     const drawButton = button(iconEl("draw"))
-        .attr({ title: "그리기 (우클릭 지우기)" })
+        .attr({
+            title: "그리기 (우클릭 한 획 취소 · Shift+우클릭 전체 지우기 · Ctrl+Z)",
+        })
         .on("click", () => {
             drawMode = !drawMode;
             drawCanvas.style.pointerEvents = drawMode ? "auto" : "none";
@@ -1322,7 +1324,7 @@ const setNewDing = (
         });
     const cutoutUndoButton = button(txt("실행 취소"))
         .class(Class.hide)
-        .attr({ title: "배경 제거 실행 취소" })
+        .attr({ title: "배경 제거 실행 취소  U · Ctrl+Z" })
         .on("click", undoCutout);
     const ocrTransStateBar = view("x")
         .class(Class.glassBar)
@@ -1395,6 +1397,16 @@ const setNewDing = (
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
             e.preventDefault();
             void savePin();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+            e.preventDefault();
+            if (drawMode && strokes.length) {
+                visualRevision += 1;
+                strokes.pop();
+                redrawPinStrokes();
+            } else {
+                undoCutout();
+            }
         }
         if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "d") {
             drawButton.el.click();
