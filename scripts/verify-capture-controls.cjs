@@ -684,6 +684,8 @@ app.whenReady().then(async () => {
             !helpText.hidden &&
                 helpText.text.includes("마커") &&
                 helpText.text.includes("Alt+클릭") &&
+                helpText.text.includes("자동 선택") &&
+                helpText.text.includes("Ctrl+A") &&
                 helpText.rows >= 15,
             `Help panel missing marker gestures: ${JSON.stringify(helpText)}`,
         );
