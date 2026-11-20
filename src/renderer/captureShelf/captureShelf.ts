@@ -213,6 +213,9 @@ document.addEventListener("keydown", (event) => {
             selected.clear();
             selected.add(next);
             render();
+            rail.el
+                .querySelector(`[data-item-id="${next}"]`)
+                ?.scrollIntoView({ block: "nearest", inline: "nearest" });
         }
         return;
     }
