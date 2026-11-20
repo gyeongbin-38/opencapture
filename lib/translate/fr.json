@@ -2466,5 +2466,20 @@
     "6cbbf0": "Draw (right-click: undo stroke · Shift+right-click: clear all · Ctrl+Z)",
     "d99a30": "Undo background removal  U · Ctrl+Z",
     "0b0d72": "Right-click: presets",
-    "da3ab4": "Double-click: 100%"
+    "da3ab4": "Double-click: 100%",
+    "9aa5a9": "File",
+    "808f16": "Draw",
+    "e8d1f6": "Move pin",
+    "49d012": "Window shape",
+    "20be7f": "Draw mode",
+    "4dc910": "Undo stroke",
+    "53f60a": "Clear all",
+    "43f25a": "Collapse/expand",
+    "236cbe": "Tools menu",
+    "82d02f": "Help",
+    "b8aa27": "Right-click",
+    "0fa1af": "Wheel",
+    "98dfa5": "Keyboard shortcuts",
+    "87023c": "Pin shortcuts",
+    "5139be": "Esc closes menu → tools → draw → pin"
 }

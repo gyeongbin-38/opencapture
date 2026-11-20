@@ -381,6 +381,31 @@ app.whenReady().then(async () => {
             return { inked, two, one };
         });
 
+        await check("? opens shortcut help sheet", async () => {
+            await key("draw", { key: "?" });
+            await until(
+                () => js(`Boolean(document.querySelector('.pin-help-dialog[open]'))`),
+                "Help dialog did not open",
+            );
+            const rows = await js(
+                `document.querySelectorAll('.pin-help-dialog .pin-help-row').length`,
+            );
+            assert.ok(rows >= 15, `Help rows: ${rows}`);
+            const groups = await js(
+                `document.querySelectorAll('.pin-help-dialog .pin-help-group').length`,
+            );
+            assert.ok(groups >= 4, `Help groups: ${groups}`);
+            await key("draw", { key: "?" });
+            assert.equal(
+                await js(
+                    `Boolean(document.querySelector('.pin-help-dialog[open]'))`,
+                ),
+                false,
+                "Second ? did not close help",
+            );
+            return { rows, groups };
+        });
+
         sendPin("esc", { x: 420 });
         await check("Esc ladder: radial, then close", async () => {
             await until(

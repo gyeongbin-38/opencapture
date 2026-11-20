@@ -237,6 +237,57 @@
     overflow-wrap: anywhere;
 }
 
+.pin-help-dialog {
+    width: min(420px, calc(100vw - 32px));
+    overflow: auto;
+}
+
+.pin-help-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 16px;
+    margin-top: 10px;
+}
+
+.pin-help-group {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.pin-help-group:first-child {
+    margin-top: 0;
+}
+
+.pin-help-row {
+    display: contents;
+}
+
+.pin-help-row > span {
+    align-self: center;
+    overflow-wrap: anywhere;
+}
+
+.pin-help-dialog kbd {
+    padding: 1px 6px;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: var(--r-xs);
+    background: var(--bg);
+    font: 600 11px / 1.6 ui-monospace, monospace;
+    white-space: nowrap;
+}
+
+.pin-help-note {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
 .pin-radial-menu {
     position: absolute;
     inset: 0;

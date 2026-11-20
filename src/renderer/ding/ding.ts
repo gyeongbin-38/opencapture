@@ -480,6 +480,17 @@ const setNewDing = (
         .add([iconEl("contrast")]);
     controlsPanel.add(pinGrayEl);
 
+    const pinHelpEl = view("x")
+        .class(concorlClass)
+        .style({ cursor: "pointer" })
+        .attr({
+            title: `${t("단축키 도움말")}  ?`,
+            ariaLabel: t("단축키 도움말"),
+        })
+        .add([iconEl("help")])
+        .on("click", () => openPinHelp(div.el));
+    controlsPanel.add(pinHelpEl);
+
     if (card) {
         const cardActions = view("x").class("pin-card-actions");
         const viewTextButton = button(txt(t("전체 텍스트 보기")))
@@ -1436,6 +1447,9 @@ const setNewDing = (
         if (!e.ctrlKey && !e.metaKey && (e.key === "[" || e.key === "]")) {
             e.preventDefault();
             stepStackFn?.(e.key === "[" ? -1 : 1);
+        }
+        if (!e.ctrlKey && !e.metaKey && e.key === "?") {
+            openPinHelp(div.el);
         }
         if (e.key.startsWith("Arrow")) {
             e.preventDefault();
@@ -2529,6 +2543,102 @@ function showCardText(card: CardPinMetadata, returnFocus: HTMLElement) {
     document.body.append(dialog);
     dialog.showModal();
     textArea.focus();
+}
+
+const pinHelpGroups: { name: string; rows: [string, string][] }[] = [
+    {
+        name: t("파일"),
+        rows: [
+            [t("복사"), "Ctrl+C"],
+            [t("저장"), "Ctrl+S"],
+            [t("편집"), "E"],
+            [t("닫기"), "Esc"],
+        ],
+    },
+    {
+        name: t("이동"),
+        rows: [
+            [t("핀 이동"), "← ↑ → ↓ (+Shift ×10)"],
+            [t("크기 조절"), t("휠")],
+        ],
+    },
+    {
+        name: t("이미지"),
+        rows: [
+            [t("배경 제거"), "X"],
+            [t("실행 취소"), "U · Ctrl+Z"],
+            [t("창 모양"), "0–9"],
+        ],
+    },
+    {
+        name: t("그리기"),
+        rows: [
+            [t("그리기 모드"), "D"],
+            [t("한 획 취소"), `${t("우클릭")} · Ctrl+Z`],
+            [t("전체 지우기"), `Shift+${t("우클릭")}`],
+        ],
+    },
+    {
+        name: t("보기"),
+        rows: [
+            [t("이전 이미지"), "["],
+            [t("다음 이미지"), "]"],
+            [t("이 핀만 보기"), "F"],
+            [t("접기/펼치기"), t("휠 버튼")],
+            [t("도구 메뉴"), t("우클릭")],
+            [t("도움말"), "?"],
+        ],
+    },
+];
+
+function openPinHelp(returnFocusEl: HTMLElement) {
+    const existing =
+        document.querySelector<HTMLDialogElement>(".pin-help-dialog");
+    if (existing) {
+        existing.close();
+        return;
+    }
+    const dialog = document.createElement("dialog");
+    dialog.className = "pin-card-dialog pin-help-dialog";
+    dialog.setAttribute("aria-label", t("핀 단축키"));
+    const heading = document.createElement("h2");
+    heading.textContent = t("핀 단축키");
+    const grid = document.createElement("div");
+    grid.className = "pin-help-grid";
+    for (const group of pinHelpGroups) {
+        const g = document.createElement("div");
+        g.className = "pin-help-group";
+        g.textContent = group.name;
+        grid.append(g);
+        for (const [name, keys] of group.rows) {
+            const row = document.createElement("div");
+            row.className = "pin-help-row";
+            const n = document.createElement("span");
+            n.textContent = name;
+            const k = document.createElement("kbd");
+            k.textContent = keys;
+            row.append(n, k);
+            grid.append(row);
+        }
+    }
+    const escNote = document.createElement("div");
+    escNote.className = "pin-help-note";
+    escNote.textContent = t("Esc는 메뉴 → 도구 → 그리기 → 핀 순서로 닫습니다");
+    const actions = document.createElement("div");
+    actions.className = "pin-card-dialog-actions";
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = t("닫기");
+    closeButton.addEventListener("click", () => dialog.close());
+    actions.append(closeButton);
+    dialog.append(heading, grid, escNote, actions);
+    dialog.addEventListener("close", () => {
+        dialog.remove();
+        returnFocusEl.focus();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    closeButton.focus();
 }
 
 function textCardImage(card: CardPinMetadata): CardImage | null {
