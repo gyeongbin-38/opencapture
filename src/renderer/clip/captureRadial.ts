@@ -119,7 +119,7 @@ export function createCaptureRadial<T extends RadialTool>(options: {
                 .class("radial-center")
                 .attr({
                     type: "button",
-                    title: t("닫기"),
+                    title: "닫기",
                     ariaLabel: t("닫기"),
                 })
                 .style({

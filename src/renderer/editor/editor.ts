@@ -137,7 +137,7 @@ let focusTabI = 0;
 
 function iconBEl(src: IconType, title: string) {
     return button(image(getImgUrl(`${src}.svg`), "icon").class("icon")).attr({
-        title: t(title),
+        title: title,
     });
 }
 
@@ -226,7 +226,7 @@ iconBEl("close", "关闭")
 const findInputPel = view().class(Class.group);
 const findInputEl = input()
     .attr({
-        title: t("查找"),
+        title: "查找",
         autocomplete: "off",
         autocapitalize: "off",
         spellcheck: false,
@@ -241,7 +241,7 @@ const findRegexEl = buttonSwitch(iconBEl("regex", "正则匹配"), () => {
 const findReplacePel = view().class(Class.group);
 const findReplaceEl = input()
     .attr({
-        title: t("替换"),
+        title: "替换",
         autocomplete: "off",
         autocapitalize: "off",
         spellcheck: false,
@@ -315,7 +315,7 @@ const ocrImageFileDrop = view()
     .on("click", () => {
         ocrImageFile.el.click();
     })
-    .attr({ title: t("点击浏览文件") });
+    .attr({ title: "点击浏览文件" });
 view()
     .add(image(getImgUrl("add.svg"), "upload").class("icon"))
     .addInto(ocrImageFileDrop);
@@ -450,7 +450,7 @@ const aiSpellCheckModel = select(
         runAiSpellcheck();
     });
 if (aiModelList.length === 0) {
-    aiSpellCheckModel.attr({ title: t("请到设置添加在线模型") });
+    aiSpellCheckModel.attr({ title: "请到设置添加在线模型" });
 }
 const spellcheckList = view("y")
     .style({ overflow: "scroll" })
@@ -1465,7 +1465,7 @@ class spellcheckGen {
         );
 
         const stopEl = view()
-            .attr({ title: t("点击取消") })
+            .attr({ title: "点击取消" })
             .addInto(spellcheckCancel.clear())
             .class(Class.click)
             .on("click", () => {
@@ -1603,7 +1603,7 @@ function renderSpellcheck(list: SpellItem[]) {
         });
         item.add(
             getClip(i.word)
-                .attr({ title: t("点击跳转") })
+                .attr({ title: "点击跳转" })
                 .on("click", () => {
                     editor.find.render([selection]);
                     jumpToFind(0);

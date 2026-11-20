@@ -3083,7 +3083,7 @@ const playTimeEl = nowTimeEl(() => {
 });
 
 const quickGifButton = button("GIF")
-    .attr({ type: "button", title: t("현재 설정으로 바로 GIF 내보내기") })
+    .attr({ type: "button", title: "현재 설정으로 바로 GIF 내보내기" })
     .on("click", async () => {
         quickGifButton.el.disabled = true;
         try {
@@ -3229,7 +3229,7 @@ const timeLineControlP = view()
         borderTop: "1px solid var(--border-color)",
     })
     .addInto()
-    .attr({ title: t("[Shift+滚轮] 移动\n[滚轮] 缩放") })
+    .attr({ title: "[Shift+滚轮] 移动\n[滚轮] 缩放" })
     .on("wheel", (e) => {
         e.preventDefault();
         const dx = e.shiftKey ? e.deltaY : e.deltaX;
@@ -3324,7 +3324,7 @@ const timeLineClip = () => {
                   );
             view()
                 .addInto(el)
-                .attr({ title: t("点击编辑") })
+                .attr({ title: "点击编辑" })
                 .style({
                     left: ipx(beforeId),
                     width: ipx(c.i - beforeId + 1),
@@ -3632,7 +3632,7 @@ timeLineClipEl.el
     .style({
         backgroundColor: "#e5484d1a",
     })
-    .attr({ title: t("双击新建镜头") });
+    .attr({ title: "双击新建镜头" });
 const timeLineSpeedEl = timeLineTrack({
     el: (el, data) => {
         el.style({
@@ -3684,7 +3684,7 @@ timeLineSpeedEl.el
     .style({
         backgroundColor: "#4c8bf51a",
     })
-    .attr({ title: t("拖动新建速度") });
+    .attr({ title: "拖动新建速度" });
 const timeLineEventEl = timeLineTrack({
     el: (el) => {
         el.style({
@@ -3726,7 +3726,7 @@ timeLineRemoveEl.el
     .style({
         backgroundColor: "#71717a1a",
     })
-    .attr({ title: t("拖动删除区间") });
+    .attr({ title: "拖动删除区间" });
 
 const timeLineFrame = view("x")
     .style({

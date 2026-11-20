@@ -2844,7 +2844,7 @@ const editedItem = addClass(
 
 function setEidtedItem(el: ElType<HTMLElement>, x: boolean) {
     if (x) {
-        el.class(editedItem).attr({ title: t("已修改，右键撤销") });
+        el.class(editedItem).attr({ title: "已修改，右键撤销" });
     } else {
         el.attr({ title: "" }).el.classList.remove(editedItem);
     }
@@ -5081,7 +5081,7 @@ function about() {
         });
     const nameEl = p(packageJson.name, true).style({ fontSize: "2rem" });
     const version = button(noI18n(packageJson.version))
-        .attr({ title: t("点击检查更新") })
+        .attr({ title: "点击检查更新" })
         .class(Class.mono, Class.click)
         .on("click", () => {
             fetch(githubUrl("repos/gyeongbin-38/opencapture/releases", "api"), {

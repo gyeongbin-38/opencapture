@@ -270,9 +270,7 @@ const setNewDing = (
         .style({ overflow: "hidden" })
         .class(Class.transition)
         .attr({
-            title: t(
-                "Alt\uB85C \uB4DC\uB798\uADF8\uD558\uBA74 \uD30C\uC77C\uB85C \uB0B4\uBCF4\uB0B4\uAE30 \u00B7 \uAE38\uAC8C \uB204\uB974\uAC70\uB098 Ctrl+Shift+\uD074\uB9AD\uC73C\uB85C \uBC30\uACBD \uC81C\uAC70",
-            ),
+            title: "Alt\uB85C \uB4DC\uB798\uADF8\uD558\uBA74 \uD30C\uC77C\uB85C \uB0B4\uBCF4\uB0B4\uAE30 \u00B7 \uAE38\uAC8C \uB204\uB974\uAC70\uB098 Ctrl+Shift+\uD074\uB9AD\uC73C\uB85C \uBC30\uACBD \uC81C\uAC70",
         });
     imageP.el.addEventListener("pointerdown", (e) => {
         img.el.draggable = e.altKey;
@@ -372,7 +370,7 @@ const setNewDing = (
         .sv("100");
     const opacityElP = view("x")
         .class(concorlClass)
-        .attr({ title: t("不透明度") })
+        .attr({ title: "不透明度" })
         .add([iconEl("opacity"), opacityEl]);
 
     trackPoint(opacityElP, {
@@ -415,7 +413,7 @@ const setNewDing = (
         });
     const sizeEl = view("x")
         .class(concorlClass)
-        .attr({ title: t("大小") })
+        .attr({ title: "大小" })
         .add([iconEl("size"), sizeRange, sizeInput]);
 
     trackPoint(sizeEl, {
@@ -474,7 +472,7 @@ const setNewDing = (
         .class(concorlClass)
         .style({ cursor: "pointer" })
         .attr({
-            title: t("그레이스케일"),
+            title: "그레이스케일",
             ariaPressed: "false",
         })
         .add([iconEl("contrast")]);
@@ -494,13 +492,13 @@ const setNewDing = (
     if (card) {
         const cardActions = view("x").class("pin-card-actions");
         const viewTextButton = button(txt(t("전체 텍스트 보기")))
-            .attr({ title: t("전체 텍스트 보기") })
+            .attr({ title: "전체 텍스트 보기" })
             .on("click", () => {
                 const current = dingData.get(wid)?.card;
                 if (current) showCardText(current, viewTextButton.el);
             });
         const copyTextButton = button(txt(t("텍스트 복사")))
-            .attr({ title: t("텍스트 복사") })
+            .attr({ title: "텍스트 복사" })
             .on("click", async () => {
                 const current = dingData.get(wid)?.card;
                 if (!current) return;
@@ -516,7 +514,7 @@ const setNewDing = (
         cardActions.add([viewTextButton, copyTextButton]);
         if (card.kind === "qrcode" && card.qrError) {
             const retryQrButton = button(txt(t("QR 다시 만들기")))
-                .attr({ title: t("QR 다시 만들기") })
+                .attr({ title: "QR 다시 만들기" })
                 .on("click", async () => {
                     const data = dingData.get(wid);
                     if (!data?.card || data.card.kind !== "qrcode") return;
@@ -583,7 +581,7 @@ const setNewDing = (
         const stackPlay = view("x")
             .class(concorlClass)
             .style({ cursor: "pointer" })
-            .attr({ title: t("슬라이드쇼"), ariaPressed: "false" })
+            .attr({ title: "슬라이드쇼", ariaPressed: "false" })
             .add([iconEl("next")])
             .on("click", (_e, el) => {
                 if (stackTimer) {
@@ -714,9 +712,7 @@ const setNewDing = (
     });
     const drawButton = button(iconEl("draw"))
         .attr({
-            title: t(
-                "그리기 (우클릭 한 획 취소 · Shift+우클릭 전체 지우기 · Ctrl+Z)",
-            ),
+            title: "그리기 (우클릭 한 획 취소 · Shift+우클릭 전체 지우기 · Ctrl+Z)",
         })
         .on("click", () => {
             drawMode = !drawMode;
@@ -977,7 +973,7 @@ const setNewDing = (
     };
     const linkButton = button(iconEl("link"))
         .attr({
-            title: t("다음에 포커스하는 앱에 연결 (그 앱에서만 핀 표시)"),
+            title: "다음에 포커스하는 앱에 연결 (그 앱에서만 핀 표시)",
             ariaPressed: "false",
         })
         .on("click", () => {
@@ -1034,7 +1030,7 @@ const setNewDing = (
     }
 
     const transB = button(iconEl("translate"))
-        .attr({ title: t("翻译") })
+        .attr({ title: "翻译" })
         .on("click", async () => {
             const d = dingData.get(wid);
             if (d) {
@@ -1054,7 +1050,7 @@ const setNewDing = (
     // 工具栏
     const focusButton = button(iconEl("select_all"))
         .attr({
-            title: t("이 핀만 보기"),
+            title: "이 핀만 보기",
             ariaLabel: t("이 핀만 보기"),
             ariaPressed: "false",
         })
@@ -1064,7 +1060,7 @@ const setNewDing = (
     focusButtons.set(wid, focusButton.el);
     const blinkButton = button(iconEl("hide"))
         .attr({
-            title: t("원본과 깜빡 비교"),
+            title: "원본과 깜빡 비교",
             ariaLabel: t("원본과 깜빡 비교"),
             ariaPressed: "false",
         })
@@ -1074,7 +1070,7 @@ const setNewDing = (
     blinkButtons.set(wid, blinkButton.el);
     const ignoreButton = button(iconEl("ignore"))
         .attr({
-            title: t("클릭 통과"),
+            title: "클릭 통과",
             ariaLabel: t("클릭 통과"),
             ariaPressed: "false",
         })
@@ -1106,45 +1102,45 @@ const setNewDing = (
         });
 
     const rotateButton = button(iconEl("reload"))
-        .attr({ title: t("90° 회전") })
+        .attr({ title: "90° 회전" })
         .on("click", () => {
             pinFx.rot = (pinFx.rot + 90) % 360;
             visualRevision += 1;
             applyPinFx();
         });
     const mirrorButton = button(iconEl("mirror"))
-        .attr({ title: t("좌우 반전") })
+        .attr({ title: "좌우 반전" })
         .on("click", () => {
             pinFx.flip = !pinFx.flip;
             visualRevision += 1;
             applyPinFx();
         });
     const saveButton = button(iconEl("save"))
-        .attr({ title: t("저장  Ctrl+S") })
+        .attr({ title: "저장  Ctrl+S" })
         .on("click", () => void savePin());
     const minimizeButton = button(iconEl("minimize"))
-        .attr({ title: t("숨기기") })
+        .attr({ title: "숨기기" })
         .on("click", () => minimize(div.el));
     const backButton = button(iconEl("back"))
-        .attr({ title: t("원본 위치로 돌아가기") })
+        .attr({ title: "원본 위치로 돌아가기" })
         .on("click", () => back(wid));
     const copyButton = button(iconEl("copy"))
-        .attr({ title: t("복사  Ctrl+C"), ariaLabel: t("이미지 복사") })
+        .attr({ title: "복사  Ctrl+C", ariaLabel: t("이미지 복사") })
         .on("click", () => void copyPin());
     const editButton = button(iconEl("free_draw"))
-        .attr({ title: t("편집  E"), ariaLabel: t("편집기에서 열기") })
+        .attr({ title: "편집  E", ariaLabel: t("편집기에서 열기") })
         .on("click", () => void editPin());
     const cutoutButton = button(iconEl("cut"))
-        .attr({ title: t("배경 제거  X"), ariaLabel: t("배경 제거") })
+        .attr({ title: "배경 제거  X", ariaLabel: t("배경 제거") })
         .on("click", () => void runCutout());
-    drawButton.attr({ title: t("그리기  D"), ariaLabel: t("핀 위에 그리기") });
-    focusButton.attr({ title: t("이 핀만 보기  F") });
+    drawButton.attr({ title: "그리기  D", ariaLabel: t("핀 위에 그리기") });
+    focusButton.attr({ title: "이 핀만 보기  F" });
     const closeButton = button(iconEl("close"))
-        .attr({ title: t("닫기  Esc"), ariaLabel: t("핀 닫기") })
+        .attr({ title: "닫기  Esc", ariaLabel: t("핀 닫기") })
         .on("click", () => close(wid));
     const moreButton = button(iconEl("setting"))
         .attr({
-            title: t("크기와 투명도"),
+            title: "크기와 투명도",
             ariaLabel: t("크기와 투명도"),
             ariaExpanded: "false",
         })
@@ -1171,7 +1167,7 @@ const setNewDing = (
         .attr({ role: "menu", ariaLabel: t("핀 도구"), ariaHidden: "true" });
     const radialCenter = button(iconEl("close"))
         .class("pin-radial-center")
-        .attr({ title: t("도구 닫기"), ariaLabel: t("도구 닫기") });
+        .attr({ title: "도구 닫기", ariaLabel: t("도구 닫기") });
     radialMenu.add(radialCenter);
     let radialOpen = false;
     const closeRadial = () => {
@@ -1338,14 +1334,14 @@ const setNewDing = (
     const ocrTransStateBarText = txt();
     const cutoutRetryButton = button(txt("재시도"))
         .class(Class.hide)
-        .attr({ title: t("배경 제거 다시 시도") })
+        .attr({ title: "배경 제거 다시 시도" })
         .on("click", () => {
             cutoutRetryButton.el.classList.add(Class.hide);
             cutoutStatusRetry?.();
         });
     const cutoutUndoButton = button(txt("실행 취소"))
         .class(Class.hide)
-        .attr({ title: t("배경 제거 실행 취소  U · Ctrl+Z") })
+        .attr({ title: "배경 제거 실행 취소  U · Ctrl+Z" })
         .on("click", undoCutout);
     const ocrTransStateBar = view("x")
         .class(Class.glassBar)
@@ -1366,7 +1362,7 @@ const setNewDing = (
             cutoutRetryButton,
             cutoutUndoButton,
             button(iconEl("close"))
-                .attr({ title: t("关闭") })
+                .attr({ title: "关闭" })
                 .on("click", () => {
                     ocrTransStateBar.class(Class.hide);
                 }),
@@ -2447,20 +2443,20 @@ function dockI() {
             });
         const iClose = view()
             .add(iconEl("close"))
-            .attr({ title: t("关闭") })
+            .attr({ title: "关闭" })
             .on("click", () => {
                 close(i);
             });
         const iIgnore = view()
             .add(iconEl("ignore"))
-            .attr({ title: t("鼠标穿透") })
+            .attr({ title: "鼠标穿透" })
             .on("click", () => {
                 iIgnore_v = !iIgnore_v;
                 ignore(i, iIgnore_v);
             });
         const iTran = view()
             .add(iconEl("replace"))
-            .attr({ title: t("窗口变换") })
+            .attr({ title: "窗口变换" })
             .on("click", () => {
                 iTran_v = iTran_v === -1 ? 0 : -1;
                 transform(i, iTran_v);

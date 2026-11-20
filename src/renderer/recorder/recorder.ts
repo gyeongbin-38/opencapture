@@ -787,7 +787,7 @@ function setRecorderState(state: RecorderState, detail = "") {
 const recDot = view().class("rec-dot");
 const startStop = button()
     .add(iconEl("start_record").style({ filter: "none" }))
-    .attr({ id: "start_stop", title: t("녹화 시작/중지") })
+    .attr({ id: "start_stop", title: "녹화 시작/중지" })
     .on("click", () => {
         if (sS) {
             if (!recorder || !stream) return;
@@ -856,7 +856,7 @@ const togglePause = () => {
     setRecorderState(recorder.state === "paused" ? "paused" : "recording");
 };
 const pauseBtn = iconBEl("play_pause")
-    .attr({ title: t("일시정지/재개") })
+    .attr({ title: "일시정지/재개" })
     .on("click", () => togglePause());
 
 document.addEventListener("keydown", (e) => {
@@ -874,7 +874,7 @@ document.addEventListener("keydown", (e) => {
     }
 });
 const cancelEl = iconBEl("close")
-    .attr({ title: t("녹화 취소") })
+    .attr({ title: "녹화 취소" })
     .on("click", () => {
         cancelled = true;
         setRecorderState("cancelled", t("녹화를 취소했습니다."));
@@ -897,7 +897,7 @@ const cancelEl = iconBEl("close")
     });
 
 const cameraEl = check("camera")
-    .attr({ id: "camera", title: t("카메라 표시") })
+    .attr({ id: "camera", title: "카메라 표시" })
     .on("click", () => {
         try {
             cameraStreamF(cameraEl.gv);
@@ -922,8 +922,8 @@ const types: mimeType[] = [
 ];
 格式El.setList(types.map((i) => ({ value: i, text: i })));
 格式El.el.el.value = type;
-格式El.el.attr({ title: t("출력 형식") });
-audioSelect.el.attr({ title: t("마이크 입력") });
+格式El.el.attr({ title: "출력 형식" });
+audioSelect.el.attr({ title: "마이크 입력" });
 
 const settingEl = view("x")
     .attr({ id: "rec_setting" })
@@ -1153,7 +1153,7 @@ audioSelect.el.on("change", async () => {
 if (rememberedMic) await setMicStream(rememberedMic.deviceId);
 
 if (canSysAudio) {
-    const sysAudioEl = check("mic").attr({ title: t("시스템 오디오 녹음") });
+    const sysAudioEl = check("mic").attr({ title: "시스템 오디오 녹음" });
     sysAudioEl.on("input", (_, el) => {
         recordSysAudio = el.gv;
         store.set("录屏.音频.设备列表", getAudioNames());

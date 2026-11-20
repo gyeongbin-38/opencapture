@@ -362,12 +362,12 @@ let cameraCanvas: HTMLCanvasElement = document.createElement("canvas");
 let segCanvas: HTMLCanvasElement = document.createElement("canvas");
 
 const stop = button(iconEl("stop_record").style({ filter: "none" }))
-    .attr({ title: t("停止"), ariaLabel: t("停止") })
+    .attr({ title: "停止", ariaLabel: t("停止") })
     .on("click", () => {
         renderSend("recordState", ["stop"]);
     });
 const pause = button(iconEl("play_pause"))
-    .attr({ title: t("일시정지/재개"), ariaLabel: t("일시정지/재개") })
+    .attr({ title: "일시정지/재개", ariaLabel: t("일시정지/재개") })
     .on("click", () => {
         renderSend("recordState", ["pause"]);
     });

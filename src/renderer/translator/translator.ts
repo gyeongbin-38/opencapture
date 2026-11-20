@@ -153,7 +153,7 @@ pack(document.body).style({
 
 const playIcon = iconEl("pause");
 const playEl = button(playIcon)
-    .attr({ title: t("暂停"), ariaLabel: t("暂停") })
+    .attr({ title: "暂停", ariaLabel: t("暂停") })
     .on("click", () => {
         pause = !pause;
         playIcon.el.src = pause
@@ -165,7 +165,7 @@ const playEl = button(playIcon)
     });
 
 const runEl = button(iconEl("ocr"))
-    .attr({ title: t("运行OCR"), ariaLabel: t("运行OCR") })
+    .attr({ title: "运行OCR", ariaLabel: t("运行OCR") })
     .on("click", async () => {
         mainEl.el.style.opacity = "0";
         await sl();
@@ -192,13 +192,13 @@ const toolsEl = view("x")
         playEl,
         runEl,
         button(iconEl("copy"))
-            .attr({ title: t("复制"), ariaLabel: t("复制") })
+            .attr({ title: "复制", ariaLabel: t("复制") })
             .on("click", () => {
                 const text = textEl.el.innerText;
                 writeText(text);
             }),
         button(iconEl("close"))
-            .attr({ title: t("关闭"), ariaLabel: t("关闭") })
+            .attr({ title: "关闭", ariaLabel: t("关闭") })
             .on("click", () => renderSend("windowClose", [])),
     ]);
 

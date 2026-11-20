@@ -3538,13 +3538,13 @@ function setDrawMode(m: typeof colorM) {
         colorFillEl.style({ height: "" });
         colorStrokeEl.style({ height: "0" });
         drawStrokeWidth.style({ height: "0" });
-        drawColorSwitchMark.style({ top: 0 }).attr({ title: t("当前为填充") });
+        drawColorSwitchMark.style({ top: 0 }).attr({ title: "当前为填充" });
     } else {
         colorFillEl.style({ height: "0" });
         colorStrokeEl.style({ height: "" });
         drawStrokeWidth.style({ height: "" });
         drawColorSwitchMark.style({ top: "calc(var(--bar-size) / 2)" }).attr({
-            title: t("当前为描边"),
+            title: "当前为描边",
         });
     }
 }
@@ -4092,10 +4092,10 @@ const hotkeyTipEl = view().attr({ id: "hotkeys_tip" }).class(Class.glassBar);
 
 const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
     close: {
-        el: iconEl("close").attr({ title: t("关闭") }),
+        el: iconEl("close").attr({ title: "关闭" }),
         f: () => closeWin(),
     },
-    screens: { el: view().attr({ title: t("屏幕管理") }), f: () => {} },
+    screens: { el: view().attr({ title: "屏幕管理" }), f: () => {} },
     ocr: {
         el: selectEl(
             iconEl("ocr"),
@@ -4109,7 +4109,7 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
     },
     ocrcopy: {
         el: iconEl("copy").attr({
-            title: t("复制文字"),
+            title: "复制文字",
             role: "button",
         }),
         f: () => runOcrCopy(),
@@ -4123,13 +4123,13 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         ]),
         f: () => runSearch(),
     },
-    QR: { el: iconEl("scan").attr({ title: t("二维码") }), f: () => runQr() },
+    QR: { el: iconEl("scan").attr({ title: "二维码" }), f: () => runQr() },
     open: {
-        el: iconEl("open").attr({ title: t("其他应用打开") }),
+        el: iconEl("open").attr({ title: "其他应用打开" }),
         f: () => openApp(),
     },
     ding: {
-        el: iconEl("ding").attr({ title: t("屏幕贴图") }),
+        el: iconEl("ding").attr({ title: "屏幕贴图" }),
         f: () => runDing(),
     },
     record: {
@@ -4159,7 +4159,7 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         f: () => translate(),
     },
     editor: {
-        el: iconEl("super_edit").attr({ title: t("高级图片编辑") }),
+        el: iconEl("super_edit").attr({ title: "高级图片编辑" }),
         f: () => {
             const c = getClipPhoto();
             renderSend("clip_editor", [c.toDataURL()]);
@@ -4173,8 +4173,8 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
         }),
         f: () => void autoRedact(),
     },
-    copy: { el: iconEl("copy").attr({ title: t("复制") }), f: () => runCopy() },
-    save: { el: iconEl("save").attr({ title: t("保存") }), f: () => runSave() },
+    copy: { el: iconEl("copy").attr({ title: "复制" }), f: () => runCopy() },
+    save: { el: iconEl("save").attr({ title: "保存" }), f: () => runSave() },
 };
 
 for (const [id, tool] of Object.entries(toolsX)) {
@@ -4259,22 +4259,22 @@ const drawColorEl = view();
 const drawMainElsx = {
     select: iconEl("rect_select").attr({
         id: "draw_select",
-        title: t("选择与控制"),
+        title: "选择与控制",
     }),
-    free: iconEl("free_draw").attr({ id: "draw_free", title: t("自由绘画") }),
+    free: iconEl("free_draw").attr({ id: "draw_free", title: "自由绘画" }),
     shapes: iconEl("shapes").attr({
         id: "draw_shapes",
-        title: t("形状和文字"),
+        title: "形状和文字",
     }),
-    filters: iconEl("filters").attr({ id: "draw_filters", title: t("滤镜") }),
+    filters: iconEl("filters").attr({ id: "draw_filters", title: "滤镜" }),
     color: view()
-        .attr({ id: "draw_color", title: t("颜色和大小") })
+        .attr({ id: "draw_color", title: "颜色和大小" })
         .add(drawColorEl),
     position: iconEl("position").attr({
         id: "draw_position",
-        title: t("层叠高度"),
+        title: "层叠高度",
     }),
-    操作: iconEl("setting").attr({ id: "draw_操作", title: t("操作") }),
+    操作: iconEl("setting").attr({ id: "draw_操作", title: "操作" }),
 } as const;
 
 const drawBarMainElList = Object.values(drawMainElsx);
@@ -4283,50 +4283,50 @@ for (const el of drawBarMainElList) {
 }
 
 const drawSideSelect = {
-    rect: iconEl("rect_select").attr({ title: t("矩形选择") }),
-    free: iconEl("free_select").attr({ title: t("自由选择") }),
-    draw: iconEl("draw_select").attr({ title: t("移动") }),
+    rect: iconEl("rect_select").attr({ title: "矩形选择" }),
+    free: iconEl("free_select").attr({ title: "自由选择" }),
+    draw: iconEl("draw_select").attr({ title: "移动" }),
 } as const;
 
 const drawSideFree = {
-    pencil: iconEl("draw").attr({ title: t("画笔") }),
-    eraser: iconEl("eraser").attr({ title: t("橡皮") }),
-    spray: iconEl("spray").attr({ title: t("喷刷") }),
-    highlighter: iconEl("highlighter").attr({ title: t("荧光笔") }),
+    pencil: iconEl("draw").attr({ title: "画笔" }),
+    eraser: iconEl("eraser").attr({ title: "橡皮" }),
+    spray: iconEl("spray").attr({ title: "喷刷" }),
+    highlighter: iconEl("highlighter").attr({ title: "荧光笔" }),
 } as const;
 
 const drawShadowBlur = view().attr({ id: "shadow_blur" });
 
 const drawSideShapes = {
-    line: iconEl("line").attr({ title: t("线条") }),
-    circle: iconEl("circle").attr({ title: t("圆") }),
-    rect: iconEl("rect").attr({ title: t("矩形") }),
-    polyline: iconEl("polyline").attr({ title: t("折线") }),
-    polygon: iconEl("polygon").attr({ title: t("多边形") }),
-    text: iconEl("text").attr({ title: t("文字") }),
-    number: iconEl("number").attr({ title: t("序号") }),
-    arrow: iconEl("arrow").attr({ title: t("箭头") }),
-    mask: iconEl("mask").attr({ title: t("遮罩") }),
+    line: iconEl("line").attr({ title: "线条" }),
+    circle: iconEl("circle").attr({ title: "圆" }),
+    rect: iconEl("rect").attr({ title: "矩形" }),
+    polyline: iconEl("polyline").attr({ title: "折线" }),
+    polygon: iconEl("polygon").attr({ title: "多边形" }),
+    text: iconEl("text").attr({ title: "文字" }),
+    number: iconEl("number").attr({ title: "序号" }),
+    arrow: iconEl("arrow").attr({ title: "箭头" }),
+    mask: iconEl("mask").attr({ title: "遮罩" }),
     stamp: iconEl("star").attr({ title: "스탬프" }),
 } as const;
 
 const filterRangeEl = view().class("draw_filters_range");
 
 const drawSideFilters = {
-    pixelate: iconEl("pixelate").attr({ title: t("马赛克") }),
-    blur: iconEl("blur").attr({ title: t("模糊") }),
-    brightness: iconEl("brightness").attr({ title: t("亮度") }),
-    contrast: iconEl("contrast").attr({ title: t("对比度") }),
-    saturation: iconEl("saturation").attr({ title: t("饱和度") }),
-    hue: iconEl("hue").attr({ title: t("色调") }),
-    gamma: view().attr({ title: t("伽马") }),
-    noise: view().attr({ title: t("噪点") }),
+    pixelate: iconEl("pixelate").attr({ title: "马赛克" }),
+    blur: iconEl("blur").attr({ title: "模糊" }),
+    brightness: iconEl("brightness").attr({ title: "亮度" }),
+    contrast: iconEl("contrast").attr({ title: "对比度" }),
+    saturation: iconEl("saturation").attr({ title: "饱和度" }),
+    hue: iconEl("hue").attr({ title: "色调" }),
+    gamma: view().attr({ title: "伽马" }),
+    noise: view().attr({ title: "噪点" }),
 } as const;
 
 const drawSideFiltersMoreGray = {
-    gray_average: view().attr({ title: t("平均灰度") }),
-    gray_lightness: view().attr({ title: t("亮度") }),
-    gray_luminosity: view().attr({ title: t("亮度") }),
+    gray_average: view().attr({ title: "平均灰度" }),
+    gray_lightness: view().attr({ title: "亮度" }),
+    gray_luminosity: view().attr({ title: "亮度" }),
 };
 
 const drawSideFiltersMore = {
@@ -4363,7 +4363,7 @@ const drawStrokeWidth = view().attr({ id: "draw_stroke_width" });
 const fontSizeRow = view("x").class("font-size-presets");
 for (const size of [12, 16, 24, 32, 48, 72]) {
     button(String(size))
-        .attr({ type: "button", title: t("글자 크기") })
+        .attr({ type: "button", title: "글자 크기" })
         .on("click", () => {
             const obj = fabricCanvas.getActiveObject() as
                 | (FabricObject & { fontSize?: number; radius?: number })
@@ -4388,29 +4388,29 @@ const drawColorSide = drawSideGen2("color_size").add([
 ]);
 
 const drawSidePosition = {
-    front: iconEl("position_front").attr({ title: t("移动到最顶端") }),
-    forwards: iconEl("position_forwards").attr({ title: t("向上移动一层") }),
-    backwards: iconEl("position_backwards").attr({ title: t("向下移动一层") }),
-    back: iconEl("position_back").attr({ title: t("移动到最底端") }),
+    front: iconEl("position_front").attr({ title: "移动到最顶端" }),
+    forwards: iconEl("position_forwards").attr({ title: "向上移动一层" }),
+    backwards: iconEl("position_backwards").attr({ title: "向下移动一层" }),
+    back: iconEl("position_back").attr({ title: "移动到最底端" }),
 } as const;
 
 const drawSide操作 = {
     撤回: iconEl("left")
-        .attr({ title: t("撤回") })
+        .attr({ title: "撤回" })
         .data({ key: showShortKey("Control+Z") }),
     重做: iconEl("right")
-        .attr({ title: t("重做") })
+        .attr({ title: "重做" })
         .data({ key: showShortKey("Control+Y") }),
     复制: iconEl("copy")
-        .attr({ title: t("复制") })
+        .attr({ title: "复制" })
         .data({ key: showShortKey("Control+C") }),
     删除: iconEl("clear")
-        .attr({ title: t("删除") })
+        .attr({ title: "删除" })
         .data({ key: showShortKey("Delete") }),
 } as const;
 
 function filterEl(name: string, title: string) {
-    return view().attr({ id: `draw_filters_${name}`, title: t(title) });
+    return view().attr({ id: `draw_filters_${name}`, title: title });
 }
 
 function drawSideGen(els: Record<string, ElType<HTMLElement>>, pid: string) {
@@ -4471,7 +4471,7 @@ let whBarPos = { x: 0, y: 0 };
 const whGrip = view()
     .class("capture-grip")
     .attr({
-        title: t("이동 · 더블클릭으로 위치 초기화"),
+        title: "이동 · 더블클릭으로 위치 초기화",
         ariaLabel: t("이동 · 더블클릭으로 위치 초기화"),
     })
     .on("dblclick", (e) => {
@@ -4498,7 +4498,7 @@ const whCoordinates = view("x")
     ]);
 whCoordinates.el.hidden = true;
 const coordinateToggle = button(captureIcon("position"))
-    .attr({ title: t("좌표"), type: "button", ariaExpanded: "false" })
+    .attr({ title: "좌표", type: "button", ariaExpanded: "false" })
     .on("click", () => {
         whCoordinates.el.hidden = !whCoordinates.el.hidden;
         coordinateToggle.el.setAttribute(
@@ -4508,7 +4508,7 @@ const coordinateToggle = button(captureIcon("position"))
         whBar(finalRect);
     });
 const whLock = button(captureIcon("lock"))
-    .attr({ title: t("비율 고정"), type: "button", ariaPressed: "false" })
+    .attr({ title: "비율 고정", type: "button", ariaPressed: "false" })
     .on("click", () => {
         ratioLock = !ratioLock;
         if (ratioLock && finalRect[2] > 0 && finalRect[3] > 0)
@@ -4518,7 +4518,7 @@ const whLock = button(captureIcon("lock"))
 let rulerImprint = localStorage.getItem("oc:ruler-imprint") === "1";
 const whRuler = button()
     .attr({
-        title: t("눈금 새기기"),
+        title: "눈금 새기기",
         type: "button",
         ariaPressed: String(rulerImprint),
     })
@@ -4541,7 +4541,7 @@ for (const [ratioLabel, rw, rh] of [
     whRatios.add(
         button(txt(ratioLabel))
             .class("wh-ratio-chip")
-            .attr({ type: "button", title: t("비율 맞추기") })
+            .attr({ type: "button", title: "비율 맞추기" })
             .on("click", (e) => {
                 e.stopPropagation();
                 applyAspect(rw / rh);
@@ -4551,7 +4551,7 @@ for (const [ratioLabel, rw, rh] of [
 whRatios.el.hidden = true;
 const ratioToggle = button(txt("a:b"))
     .class("wh-ruler-toggle")
-    .attr({ title: t("비율 프리셋"), type: "button", ariaExpanded: "false" })
+    .attr({ title: "비율 프리셋", type: "button", ariaExpanded: "false" })
     .on("click", () => {
         whRatios.el.hidden = !whRatios.el.hidden;
         ratioToggle.el.setAttribute(
@@ -4581,7 +4581,7 @@ whEl.add([
     ratioToggle,
     button(txt("?"))
         .class("wh-ruler-toggle")
-        .attr({ title: t("제스처 · 단축키 도움말"), type: "button" })
+        .attr({ title: "제스처 · 단축키 도움말", type: "button" })
         .on("click", (e) => {
             e.stopPropagation();
             captureHelp.el.hidden = !captureHelp.el.hidden;
@@ -5085,7 +5085,7 @@ function toolButton(
     const control = button(captureIcon(item.id))
         .attr({
             type: "button",
-            title: t(item.title),
+            title: item.title,
             ariaLabel: t(item.title),
         })
         .class("capture-tool");
@@ -5188,7 +5188,7 @@ function renderQuickToolbar(ids: readonly CaptureToolId[]) {
         view()
             .class("capture-grip")
             .attr({
-                title: t("이동 · 더블클릭으로 위치 초기화"),
+                title: "이동 · 더블클릭으로 위치 초기화",
                 ariaLabel: t("이동 · 더블클릭으로 위치 초기화"),
             })
             .on("dblclick", (e) => {
@@ -5314,7 +5314,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", saveCopyOn ? "active" : "")
         .attr({
             type: "button",
-            title: t("저장할 때 클립보드에도 복사"),
+            title: "저장할 때 클립보드에도 복사",
             ariaPressed: String(saveCopyOn),
         })
         .add(txt(t("저장+복사")))
@@ -5341,7 +5341,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", soundState() !== "off" ? "active" : "")
         .attr({
             type: "button",
-            title: t("완료 시 짧은 소리"),
+            title: "완료 시 짧은 소리",
             ariaPressed: String(soundState() !== "off"),
         })
         .add(txt(soundText()))
@@ -5368,7 +5368,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", visualState() ? "active" : "")
         .attr({
             type: "button",
-            title: t("완료 시 화면 깜빡임"),
+            title: "완료 시 화면 깜빡임",
             ariaPressed: String(visualState()),
         })
         .add(txt(visualText()))
@@ -5390,7 +5390,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", store.get("鼠标跟随栏.显示") ? "active" : "")
         .attr({
             type: "button",
-            title: t("显示鼠标跟随栏"),
+            title: "显示鼠标跟随栏",
             ariaPressed: String(Boolean(store.get("鼠标跟随栏.显示"))),
         })
         .add(txt(store.get("鼠标跟随栏.显示") ? t("켜짐") : t("꺼짐")))
@@ -5411,7 +5411,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", whAutoPos === "bottom" ? "active" : "")
         .attr({
             type: "button",
-            title: t("치수 바 자동 위치"),
+            title: "치수 바 자동 위치",
             ariaPressed: String(whAutoPos === "bottom"),
         })
         .add(txt(whAutoPos === "bottom" ? t("아래") : t("위")))
@@ -5441,7 +5441,7 @@ function rebuildCaptureTools() {
         .class("capture-toggle", captureDelay > 0 ? "active" : "")
         .attr({
             type: "button",
-            title: t("다음 캡처 전 대기 시간"),
+            title: "다음 캡처 전 대기 시간",
             ariaPressed: String(captureDelay > 0),
         })
         .add(txt(captureDelay > 0 ? `${captureDelay}s` : t("지연 없음")))
@@ -5696,7 +5696,7 @@ selectionHandles.el.hidden = true;
 const scrollCaptureHint = button(captureIcon("long"))
     .add(txt(t("스크롤 캡처")))
     .class("capture-scroll-hint")
-    .attr({ type: "button", title: t("스크롤 캡처") })
+    .attr({ type: "button", title: "스크롤 캡처" })
     .addInto(selectionHandles);
 scrollCaptureHint.el.hidden = true;
 scrollCaptureHint.on("click", (e) => {
@@ -6579,9 +6579,9 @@ document.addEventListener("keyup", (e) => {
 });
 
 for (const m of hotkeyTipX) {
-    hotkeyTipEl.add(p(t(m.name)));
+    hotkeyTipEl.add(p(m.name));
     for (const k of m.hotkey) {
-        const x = view().add(txt(t(k.name)));
+        const x = view().add(txt(k.name));
         for (let s of k.keys) {
             s = s
                 .split("+")
