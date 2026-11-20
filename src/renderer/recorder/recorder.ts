@@ -504,7 +504,7 @@ function updataPrEl(pr: typeof ffprocess) {
                             runFfmpeg(key, Number(i), pr[key][i].args);
                         }
                     }
-                    logText.el.value += "\n\n重试\n\n";
+                    logText.el.value += `\n\n${t("重试")}\n\n`;
                 };
                 logP.el.classList.remove("hide_log");
                 for (const i in pr[key]) {

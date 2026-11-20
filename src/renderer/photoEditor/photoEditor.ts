@@ -103,7 +103,7 @@ function getStyleData(id: string) {
 }
 
 function subTitle(text: string) {
-    return txt(text).class("sub-title");
+    return txt(t(text)).class("sub-title");
 }
 
 addStyle({
@@ -139,11 +139,11 @@ const els = {
     raduis: input("number"),
     outerRadius: label([check(""), t("外圆角")]),
     bgType: select<(typeof styleData)["bgType"]>([
-        { value: "color", name: "纯色" },
-        { value: "image", name: "图片" },
-        { value: "linear-gradient", name: "线性渐变" },
-        { value: "radial-gradient", name: "径向渐变" },
-        { value: "conic-gradient", name: "圆锥渐变" },
+        { value: "color", name: t("纯色") },
+        { value: "image", name: t("图片") },
+        { value: "linear-gradient", name: t("线性渐变") },
+        { value: "radial-gradient", name: t("径向渐变") },
+        { value: "conic-gradient", name: t("圆锥渐变") },
     ])
         .on("input", (_, el) => {
             setBgUI(el.gv);

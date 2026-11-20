@@ -169,9 +169,9 @@ function init(
                     ((m: string) =>
                         renderSendSync("feedbackBug", [
                             {
-                                title: "截屏库调用错误",
-                                main: "截屏库调用错误",
-                                steps: "截屏",
+                                title: _t("截屏库调用错误"),
+                                main: _t("截屏库调用错误"),
+                                steps: _t("截屏"),
                                 more: m,
                             },
                         ]));

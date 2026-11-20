@@ -101,6 +101,7 @@
     "779435": "Recognizes text in captures on-device for library search.",
     "785772": "Invalid list of converted files to register.",
     "794919": "Swap",
+    "795120": "Retry",
     "797827": "History",
     "811042": "Search & recognize",
     "811303": "Local translation",
@@ -2595,5 +2596,7 @@
     "371b68": "Remove tag {tag}",
     "7d1ee8": "Add tag: {tag}",
     "e787fc": "{count} characters recognized",
-    "cf3dad": "AI upscaling {percent}%"
+    "cf3dad": "AI upscaling {percent}%",
+    "d19704": "×5",
+    "c8ebee": "×10"
 }

@@ -99,6 +99,7 @@
     "779435": "Reconnaît le texte des captures sur l'appareil pour la recherche.",
     "785772": "La liste des fichiers convertis à enregistrer est invalide.",
     "794919": "Échanger",
+    "795120": "Réessayer",
     "797827": "Histoire",
     "811303": "Traduction locale",
     "820492": "Ouvre un grand aperçu juste après l'enregistrement.",
@@ -2514,5 +2515,7 @@
     "371b68": "Remove tag {tag}",
     "7d1ee8": "Add tag: {tag}",
     "e787fc": "{count} characters recognized",
-    "cf3dad": "AI upscaling {percent}%"
+    "cf3dad": "AI upscaling {percent}%",
+    "d19704": "×5",
+    "c8ebee": "×10"
 }

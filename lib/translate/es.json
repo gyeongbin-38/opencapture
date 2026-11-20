@@ -99,6 +99,7 @@
     "779435": "Reconoce el texto de las capturas en el dispositivo para buscar en la biblioteca.",
     "785772": "La lista de archivos convertidos que se van a registrar no es válida.",
     "794919": "Intercambiar",
+    "795120": "Reintentar",
     "797827": "Historia",
     "811303": "Traducción local",
     "820492": "Abre una vista previa grande justo después de guardar.",
@@ -2514,5 +2515,7 @@
     "371b68": "Remove tag {tag}",
     "7d1ee8": "Add tag: {tag}",
     "e787fc": "{count} characters recognized",
-    "cf3dad": "AI upscaling {percent}%"
+    "cf3dad": "AI upscaling {percent}%",
+    "d19704": "×5",
+    "c8ebee": "×10"
 }

@@ -137,7 +137,7 @@ let focusTabI = 0;
 
 function iconBEl(src: IconType, title: string) {
     return button(image(getImgUrl(`${src}.svg`), "icon").class("icon")).attr({
-        title: title,
+        title: t(title),
     });
 }
 
@@ -226,7 +226,7 @@ iconBEl("close", "关闭")
 const findInputPel = view().class(Class.group);
 const findInputEl = input()
     .attr({
-        title: "查找",
+        title: t("查找"),
         autocomplete: "off",
         autocapitalize: "off",
         spellcheck: false,
@@ -241,7 +241,7 @@ const findRegexEl = buttonSwitch(iconBEl("regex", "正则匹配"), () => {
 const findReplacePel = view().class(Class.group);
 const findReplaceEl = input()
     .attr({
-        title: "替换",
+        title: t("替换"),
         autocomplete: "off",
         autocapitalize: "off",
         spellcheck: false,
@@ -442,7 +442,7 @@ iconBEl("ai_check", "AI拼写检查")
 const aiModelList = store.get("AI.在线模型");
 const aiSpellCheckModel = select(
     aiModelList.length === 0
-        ? [{ name: "无AI模型", value: "" }]
+        ? [{ name: t("无AI模型"), value: "" }]
         : aiModelList.map((i) => ({ name: noI18n(i.name), value: i.name })),
 )
     .addInto(aiSpellCheckP)

@@ -99,6 +99,7 @@
     "779435": "Rekonas tekston en kaptoj sur la aparato por biblioteka serĉo.",
     "785772": "Nevalida listo de konvertitaj dosieroj por registri.",
     "794919": "Interŝanĝi",
+    "795120": "Reprovi",
     "797827": "historia rekordo",
     "811303": "Loka traduko",
     "820492": "Malfermas grandan antaŭrigardon tuj post konservi.",
@@ -2514,5 +2515,7 @@
     "371b68": "Remove tag {tag}",
     "7d1ee8": "Add tag: {tag}",
     "e787fc": "{count} characters recognized",
-    "cf3dad": "AI upscaling {percent}%"
+    "cf3dad": "AI upscaling {percent}%",
+    "d19704": "×5",
+    "c8ebee": "×10"
 }

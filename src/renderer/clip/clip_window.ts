@@ -3544,7 +3544,7 @@ function setDrawMode(m: typeof colorM) {
         colorStrokeEl.style({ height: "" });
         drawStrokeWidth.style({ height: "" });
         drawColorSwitchMark.style({ top: "calc(var(--bar-size) / 2)" }).attr({
-            title: "当前为描边",
+            title: t("当前为描边"),
         });
     }
 }
@@ -4109,7 +4109,7 @@ const toolsX: Record<功能, { el: ElType<HTMLElement>; f: () => void }> = {
     },
     ocrcopy: {
         el: iconEl("copy").attr({
-            title: "复制文字",
+            title: t("复制文字"),
             role: "button",
         }),
         f: () => runOcrCopy(),
@@ -4259,7 +4259,7 @@ const drawColorEl = view();
 const drawMainElsx = {
     select: iconEl("rect_select").attr({
         id: "draw_select",
-        title: "选择与控制",
+        title: t("选择与控制"),
     }),
     free: iconEl("free_draw").attr({ id: "draw_free", title: t("自由绘画") }),
     shapes: iconEl("shapes").attr({
@@ -4272,7 +4272,7 @@ const drawMainElsx = {
         .add(drawColorEl),
     position: iconEl("position").attr({
         id: "draw_position",
-        title: "层叠高度",
+        title: t("层叠高度"),
     }),
     操作: iconEl("setting").attr({ id: "draw_操作", title: t("操作") }),
 } as const;
@@ -4410,7 +4410,7 @@ const drawSide操作 = {
 } as const;
 
 function filterEl(name: string, title: string) {
-    return view().attr({ id: `draw_filters_${name}`, title });
+    return view().attr({ id: `draw_filters_${name}`, title: t(title) });
 }
 
 function drawSideGen(els: Record<string, ElType<HTMLElement>>, pid: string) {
@@ -5897,72 +5897,72 @@ const drawHotKey = store.get("截屏编辑快捷键");
 type hotkeyTip = { name: string; keys: string[] }[];
 const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
     {
-        name: "画布",
+        name: t("画布"),
         hotkey: [
-            { name: "移动", keys: [t("方向键"), "wheel"] },
-            { name: "缩放", keys: ["Control+wheel"] },
-            { name: "원래 크기로", keys: ["Control+0"] },
+            { name: t("移动"), keys: [t("方向键"), "wheel"] },
+            { name: t("缩放"), keys: ["Control+wheel"] },
+            { name: t("원래 크기로"), keys: ["Control+0"] },
         ],
     },
     {
-        name: "框选",
+        name: t("框选"),
         hotkey: [
-            { name: "全选", keys: ["Control+A"] },
-            { name: "移动和调节", keys: [t("按住+方向键")] },
-            { name: "×5", keys: ["+Control+"] },
-            { name: "×10", keys: ["+Shift+"] },
-            { name: "左上x", keys: [store.get("大小栏快捷键.左上x")] },
-            { name: "左上y", keys: [store.get("大小栏快捷键.左上y")] },
-            { name: "右下x", keys: [store.get("大小栏快捷键.右下x")] },
-            { name: "右下y", keys: [store.get("大小栏快捷键.右下y")] },
-            { name: "宽", keys: [store.get("大小栏快捷键.宽")] },
-            { name: "高", keys: [store.get("大小栏快捷键.高")] },
-            { name: "自动框选", keys: ["S"] },
-            { name: "마지막 선택 크기와 위치를 다시 사용", keys: ["R"] },
-            { name: "自由选择", keys: ["F"] },
-            { name: "창 선택", keys: ["W"] },
-            { name: "匹配自动框选", keys: [`Shift ${t("框选")}`] },
+            { name: t("全选"), keys: ["Control+A"] },
+            { name: t("移动和调节"), keys: [t("按住+方向键")] },
+            { name: t("×5"), keys: ["+Control+"] },
+            { name: t("×10"), keys: ["+Shift+"] },
+            { name: t("左上x"), keys: [store.get("大小栏快捷键.左上x")] },
+            { name: t("左上y"), keys: [store.get("大小栏快捷键.左上y")] },
+            { name: t("右下x"), keys: [store.get("大小栏快捷键.右下x")] },
+            { name: t("右下y"), keys: [store.get("大小栏快捷键.右下y")] },
+            { name: t("宽"), keys: [store.get("大小栏快捷键.宽")] },
+            { name: t("高"), keys: [store.get("大小栏快捷键.高")] },
+            { name: t("自动框选"), keys: ["S"] },
+            { name: t("마지막 선택 크기와 위치를 다시 사용"), keys: ["R"] },
+            { name: t("自由选择"), keys: ["F"] },
+            { name: t("창 선택"), keys: ["W"] },
+            { name: t("匹配自动框选"), keys: [`Shift ${t("框选")}`] },
         ],
     },
     {
-        name: "标注",
+        name: t("标注"),
         hotkey: [
-            { name: "全选", keys: ["Control+A"] },
-            { name: "复制", keys: ["Control+D"] },
-            { name: "붙여넣기", keys: ["Control+V"] },
-            { name: "删除", keys: ["Delete", "Backspace"] },
-            { name: "撤回", keys: ["Control+Z"] },
-            { name: "重做", keys: ["Control+Y", "Control+Shift+Z"] },
-            { name: "취소 · 선택 해제 · 닫기", keys: ["Escape"] },
+            { name: t("全选"), keys: ["Control+A"] },
+            { name: t("复制"), keys: ["Control+D"] },
+            { name: t("붙여넣기"), keys: ["Control+V"] },
+            { name: t("删除"), keys: ["Delete", "Backspace"] },
+            { name: t("撤回"), keys: ["Control+Z"] },
+            { name: t("重做"), keys: ["Control+Y", "Control+Shift+Z"] },
+            { name: t("취소 · 선택 해제 · 닫기"), keys: ["Escape"] },
         ],
     },
     {
-        name: "도구",
+        name: t("도구"),
         hotkey: [
-            { name: "저장", keys: ["Control+S"] },
-            { name: "복사", keys: ["Control+C"] },
+            { name: t("저장"), keys: ["Control+S"] },
+            { name: t("복사"), keys: ["Control+C"] },
         ],
     },
     {
-        name: "数值",
+        name: t("数值"),
         hotkey: [
-            { name: "大", keys: ["Up"] },
-            { name: "小", keys: ["Down"] },
-            { name: "取消更改", keys: ["RightKey"] },
+            { name: t("大"), keys: ["Up"] },
+            { name: t("小"), keys: ["Down"] },
+            { name: t("取消更改"), keys: ["RightKey"] },
         ],
     },
     {
-        name: "取色器",
+        name: t("取色器"),
         hotkey: [
-            { name: "展示所有颜色格式", keys: ["RightKey"] },
-            { name: "复制颜色", keys: [store.get("其他快捷键.复制颜色")] },
+            { name: t("展示所有颜色格式"), keys: ["RightKey"] },
+            { name: t("复制颜色"), keys: [store.get("其他快捷键.复制颜色")] },
         ],
     },
     {
-        name: "快捷键",
+        name: t("快捷键"),
         hotkey: [
-            { name: "展示", keys: ["Alt"] },
-            { name: "단축키", keys: ["?"] },
+            { name: t("展示"), keys: ["Alt"] },
+            { name: t("단축키"), keys: ["?"] },
         ],
     },
 ];
