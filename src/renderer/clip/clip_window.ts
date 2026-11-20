@@ -13,7 +13,6 @@ import {
     fitCaptureToolbar,
     followBarPlacement,
     pointsBounds,
-    radialLayout,
     rectsOverlap,
     toolbarDock,
 } from "../../../lib/captureControls";
@@ -101,6 +100,7 @@ import type { IconType } from "../../iconTypes";
 import xhistory from "../lib/history";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
+import { createCaptureRadial } from "./captureRadial";
 import { type StagedRegion, createCaptureStaging } from "./captureStaging";
 import { createCaptureWorkspace } from "./captureWorkspace";
 import {
@@ -140,14 +140,6 @@ let handleDrag: {
     rect: rect;
     origin: editor_position;
 } | null = null;
-let gestureOrigin: {
-    x: number;
-    y: number;
-    moved: boolean;
-    target: CaptureTool | null;
-    pointerId: number;
-} | null = null;
-let suppressContextUntil = 0;
 
 const captureIconPaths: Record<string, string> = {
     stage: '<rect x="3" y="3" width="14" height="14" rx="3"/><path d="M6 10h8m-4-4v8"/>',
@@ -1763,7 +1755,7 @@ function clipStart(e: MouseEvent, inRect: boolean) {
     // 隐藏
     drawBar.style.opacity = toolBar.style.opacity = "0";
     toolPopover.el.hidden = true;
-    closeRadial();
+    radial.close();
 }
 
 function cancelSelectionInteraction() {
@@ -1988,7 +1980,7 @@ function cleanClip() {
     whEl.style({ visibility: "hidden" });
     mouseBarEl.el.classList.add("mouse_bar_hide");
     selectionHandles.el.hidden = true;
-    closeRadial();
+    radial.close();
     toolPopover.el.hidden = true;
     edgeKey = "";
     for (const el of clipCkx) setElBox(el.el, 0, 0, 0, 0);
@@ -3196,7 +3188,7 @@ function showBars(b: boolean) {
         }
     }
     if (!b) {
-        closeRadial();
+        radial.close();
         toolPopover.el.hidden = true;
     }
 }
@@ -4951,13 +4943,23 @@ toolPopover.el.addEventListener("keydown", (e) => {
     const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1;
     tools[(i + step + tools.length) % tools.length].focus();
 });
-const radialMenu = view()
-    .attr({ id: "radial_menu", role: "menu", ariaLabel: t("캡처 도구") })
-    .addInto();
+const radial = createCaptureRadial<{ id: CaptureTool; title: string }>({
+    t,
+    icon: captureIcon,
+    makeButton: toolButton,
+    primaryItems: () => captureTools,
+    secondaryItems: () =>
+        secondaryTools.filter(
+            (item) => item.id !== "screens" || allScreens?.length > 1,
+        ),
+    buttonSize: () => bSize + 4,
+    primaryId: capturePrimaryToolId,
+    onOpen: () => {
+        toolPopover.el.hidden = true;
+    },
+    onTool: (id, point) => runCaptureTool(id as CaptureTool, point),
+});
 let drawBarOpen = false;
-let radialOpen = false;
-let radialOrigin = { x: 0, y: 0 };
-let radialPage = 0;
 let renderRecentTools: (() => void) | undefined;
 
 function toolButton(
@@ -4992,12 +4994,7 @@ function toolButton(
         e.stopPropagation();
         const bounds = control.el.getBoundingClientRect();
         if (item.id === "more") {
-            if (radialOpen)
-                openRadial(
-                    radialOrigin.x,
-                    radialOrigin.y,
-                    (radialPage + 1) % radialPageCount(),
-                );
+            if (radial.isOpen()) radial.nextPage();
             else {
                 toolPopover.el.hidden = !toolPopover.el.hidden;
                 moreButton.el.setAttribute(
@@ -5012,7 +5009,7 @@ function toolButton(
             }
             return;
         }
-        closeRadial();
+        radial.close();
         toolPopover.el.hidden = true;
         runCaptureTool(item.id, {
             x: bounds.x + bounds.width / 2,
@@ -5389,15 +5386,7 @@ function updateDrawBarVis() {
     trackLocation();
 }
 
-function closeRadial() {
-    if (gestureOrigin) suppressContextUntil = Date.now() + 350;
-    gestureOrigin = null;
-    radialOpen = false;
-    radialMenu.style({ display: "none" });
-    radialMenu.el.replaceChildren();
-}
-
-function runCaptureTool(id: CaptureTool, point = radialOrigin) {
+function runCaptureTool(id: CaptureTool, point = radial.origin()) {
     if (
         !["close", "screens", "color", "more"].includes(id) &&
         !requireCaptureSelection()
@@ -5471,93 +5460,15 @@ function runCaptureTool(id: CaptureTool, point = radialOrigin) {
         return;
     }
     if (id === "more") {
-        openRadial(point.x, point.y, (radialPage + 1) % radialPageCount());
+        radial.open(point.x, point.y, (radial.page() + 1) % radial.pageCount());
         return;
     }
     toolsX[id].f();
 }
 
-function radialPageCount() {
-    const count = secondaryTools.filter(
-        (item) => item.id !== "screens" || allScreens?.length > 1,
-    ).length;
-    return 1 + Math.ceil(count / 7);
-}
-
-function openRadial(cx: number, cy: number, page = 0) {
-    toolPopover.el.hidden = true;
-    radialOrigin = { x: cx, y: cy };
-    radialPage = page;
-    const available = secondaryTools.filter(
-        (item) => item.id !== "screens" || allScreens?.length > 1,
-    );
-    const items =
-        page === 0
-            ? captureTools
-            : [
-                  ...available.slice((page - 1) * 7, page * 7),
-                  {
-                      id: "more" as const,
-                      title:
-                          page + 1 < radialPageCount()
-                              ? "다음 도구"
-                              : "처음으로",
-                  },
-              ];
-    const layout = radialLayout(
-        radialOrigin,
-        { width: innerWidth, height: innerHeight },
-        items.length,
-        bSize + 4,
-    );
-    radialOrigin = { ...layout.center };
-    radialMenu.el.replaceChildren();
-    const halo = view()
-        .class("radial-halo")
-        .style({
-            left: `${layout.center.x}px`,
-            top: `${layout.center.y}px`,
-            width: `${layout.radius * 2}px`,
-            height: `${layout.radius * 2}px`,
-        });
-    radialMenu.add(halo);
-    const center = button(captureIcon("close"))
-        .class("radial-center")
-        .attr({ type: "button", title: t("닫기"), ariaLabel: t("닫기") })
-        .style({ left: `${layout.center.x}px`, top: `${layout.center.y}px` })
-        .on("click", closeRadial);
-    radialMenu.add(center);
-    for (const [index, item] of items.entries()) {
-        const point = layout.points[index];
-        const control = toolButton(item)
-            .class("radial_item")
-            .attr({ role: "menuitem" })
-            .style({ left: `${point.x}px`, top: `${point.y}px` });
-        control.el.classList.toggle(
-            "is-primary",
-            item.id === capturePrimaryToolId(),
-        );
-        control.el.style.setProperty(
-            "--radial-from-x",
-            `${layout.center.x - point.x}px`,
-        );
-        control.el.style.setProperty(
-            "--radial-from-y",
-            `${layout.center.y - point.y}px`,
-        );
-        control.el.style.animationDelay = `${index * 12}ms`;
-        radialMenu.add(control);
-    }
-    radialMenu.style({ display: "block" });
-    radialOpen = true;
-    radialMenu.el
-        .querySelector<HTMLButtonElement>('[role="menuitem"]')
-        ?.focus({ preventScroll: true });
-}
-
 document.addEventListener("contextmenu", (e) => {
     const target = e.target as HTMLElement;
-    if (gestureOrigin || Date.now() < suppressContextUntil) {
+    if (radial.gestureActive() || radial.contextSuppressed()) {
         e.preventDefault();
         return;
     }
@@ -5580,14 +5491,14 @@ document.addEventListener("contextmenu", (e) => {
     nowMouseE = e;
     rightKey = false;
     changeRightBar(false);
-    openRadial(e.clientX, e.clientY);
+    radial.open(e.clientX, e.clientY);
 });
 
 document.addEventListener(
     "pointerdown",
     (e) => {
         const target = e.target as Node;
-        if (e.button === 0 && !radialMenu.el.contains(target)) closeRadial();
+        if (e.button === 0 && !radial.contains(target)) radial.close();
         if (!toolPopover.el.contains(target) && !toolBar.contains(target)) {
             toolPopover.el.hidden = true;
             moreButton.el.setAttribute("aria-expanded", "false");
@@ -5607,25 +5518,23 @@ document.addEventListener(
         }
         if (
             e.key === "Escape" &&
-            (radialOpen || !toolPopover.el.hidden || drawBarOpen)
+            (radial.isOpen() || !toolPopover.el.hidden || drawBarOpen)
         ) {
             e.stopImmediatePropagation();
             e.preventDefault();
-            closeRadial();
+            radial.close();
             toolPopover.el.hidden = true;
             drawBarOpen = false;
             setEditType("select", "rect");
             updateDrawBarVis();
             toolBar.querySelector<HTMLButtonElement>("button")?.focus();
         } else if (
-            radialOpen &&
+            radial.isOpen() &&
             ["ArrowRight", "ArrowLeft", "Tab"].includes(e.key)
         ) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            const controls = Array.from(
-                radialMenu.el.querySelectorAll<HTMLButtonElement>("button"),
-            );
+            const controls = radial.controls();
             const index = controls.indexOf(
                 document.activeElement as HTMLButtonElement,
             );
@@ -5690,7 +5599,7 @@ for (const [position, resizeDirection] of handleDirections) {
         if (e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
-        closeRadial();
+        radial.close();
         liveTranslationController.cancel();
         handleDrag = {
             handle: handle.el,
@@ -5780,7 +5689,7 @@ window.addEventListener("resize", () => {
     whBar(finalRect);
     syncSelectionHandles();
     followBar();
-    if (radialOpen) openRadial(radialOrigin.x, radialOrigin.y, radialPage);
+    radial.relayout();
 });
 
 let nowScreenId = 0;
@@ -7074,7 +6983,9 @@ document.onmousemove = (e) => {
                 nowType === "select" && captureSelectionMode === "region";
             mouseBarEl.el.classList.toggle(
                 "mouse_bar_hide",
-                overPanel || radialOpen || (!selecting && !moving && !picking),
+                overPanel ||
+                    radial.isOpen() ||
+                    (!selecting && !moving && !picking),
             );
 
             // 画板栏移动
@@ -7561,27 +7472,6 @@ fabricCanvas.on("object:added", () => captureWorkspace?.changed());
 fabricCanvas.on("object:removed", () => captureWorkspace?.changed());
 fabricCanvas.on("text:changed", () => captureWorkspace?.changed());
 
-function radialGestureTarget(x: number, y: number): CaptureTool | null {
-    let nearest: HTMLButtonElement | null = null;
-    let distance = 48;
-    for (const control of radialMenu.el.querySelectorAll<HTMLButtonElement>(
-        ".radial_item",
-    )) {
-        control.classList.remove("is-gesture-target");
-        if (control.disabled) continue;
-        const d = Math.hypot(
-            x - Number.parseFloat(control.style.left),
-            y - Number.parseFloat(control.style.top),
-        );
-        if (d < distance) {
-            nearest = control;
-            distance = d;
-        }
-    }
-    nearest?.classList.add("is-gesture-target");
-    return (nearest?.dataset.captureAction as CaptureTool) ?? null;
-}
-
 document.addEventListener(
     "pointerdown",
     (event) => {
@@ -7595,73 +7485,18 @@ document.addEventListener(
             return;
         event.preventDefault();
         nowMouseE = event;
-        suppressContextUntil = 0;
+        radial.clearContextSuppress();
         captureWorkspace?.dismiss();
         rightKey = false;
         changeRightBar(false);
-        gestureOrigin = {
-            x: event.clientX,
-            y: event.clientY,
-            moved: false,
-            target: null,
-            pointerId: event.pointerId,
-        };
-        openRadial(event.clientX, event.clientY);
-    },
-    true,
-);
-document.addEventListener(
-    "pointermove",
-    (event) => {
-        if (!gestureOrigin || gestureOrigin.pointerId !== event.pointerId)
-            return;
-        if (!(event.buttons & 2)) {
-            closeRadial();
-            return;
-        }
-        gestureOrigin.moved ||=
-            Math.hypot(
-                event.clientX - gestureOrigin.x,
-                event.clientY - gestureOrigin.y,
-            ) > 20;
-        gestureOrigin.target = radialGestureTarget(
-            event.clientX,
-            event.clientY,
-        );
-    },
-    true,
-);
-document.addEventListener(
-    "pointerup",
-    (event) => {
-        if (
-            event.button !== 2 ||
-            !gestureOrigin ||
-            gestureOrigin.pointerId !== event.pointerId
-        )
-            return;
-        const gesture = gestureOrigin;
-        gesture.moved ||=
-            Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) >
-            20;
-        gesture.target = radialGestureTarget(event.clientX, event.clientY);
-        gestureOrigin = null;
-        suppressContextUntil = Date.now() + 350;
-        if (gesture.moved) {
-            if (gesture.target) {
-                const target = gesture.target;
-                if (target !== "more") closeRadial();
-                runCaptureTool(target, radialOrigin);
-            } else closeRadial();
-        }
+        radial.startGesture(event);
     },
     true,
 );
 
 document.addEventListener(
     "pointercancel",
-    (event) => {
-        if (gestureOrigin?.pointerId === event.pointerId) closeRadial();
+    () => {
         cancelSelectionInteraction();
     },
     true,
@@ -7679,12 +7514,12 @@ document.addEventListener(
 );
 
 window.addEventListener("blur", () => {
-    closeRadial();
+    radial.close();
     cancelSelectionInteraction();
 });
 document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-        closeRadial();
+        radial.close();
         cancelSelectionInteraction();
     }
 });
