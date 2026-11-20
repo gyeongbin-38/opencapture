@@ -795,6 +795,34 @@ app.whenReady().then(async () => {
             },
         });
 
+        let shelfDragPayload = null;
+        const originalShelfDrag = shelf.webContents.startDrag.bind(
+            shelf.webContents,
+        );
+        shelf.webContents.startDrag = (item) => {
+            shelfDragPayload = item;
+        };
+        await shelfRun(`(() => {
+            const cards=[...document.querySelectorAll(".shelf-card")];
+            cards[0].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));
+            cards[1].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,ctrlKey:true}));
+            cards[1].dispatchEvent(new DragEvent("dragstart",{bubbles:true}));
+        })()`);
+        await until(
+            () => shelfDragPayload !== null,
+            "Shelf multi-select drag did not reach startDrag.",
+        );
+        assert(
+            Array.isArray(shelfDragPayload?.files) &&
+                shelfDragPayload.files.length === 2 &&
+                shelfDragPayload.files.every((file) => fs.existsSync(file)),
+            `Shelf multi-drag did not carry both files: ${JSON.stringify(shelfDragPayload)}.`,
+        );
+        shelf.webContents.startDrag = originalShelfDrag;
+        report.checks.push({
+            shelfMultiDrag: { files: shelfDragPayload.files.length },
+        });
+
         const arrowNav = await shelfRun(`(() => {
             const cards=document.querySelectorAll(".shelf-card");
             cards[cards.length-1].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));

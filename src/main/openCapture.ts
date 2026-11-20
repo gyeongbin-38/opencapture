@@ -4250,17 +4250,19 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         shell.showItemInFolder(resolved);
         return true;
     });
-    ipcMain.on("oc:drag", (event, id) => {
+    ipcMain.on("oc:drag", (event, id: unknown) => {
         try {
             assertSender(event);
-            let item: Item;
-            if (event.sender.id === dashboard?.webContents.id)
-                item = getItem(id);
-            else {
-                assertRole(event, ["shelf"]);
-                item = shelfItem(id);
-            }
-            const source = nativeImage.createFromPath(item.path);
+            const ids = (Array.isArray(id) ? id : [id]).filter(
+                (i): i is string => typeof i === "string",
+            );
+            if (!ids.length) return;
+            const fromDashboard = event.sender.id === dashboard?.webContents.id;
+            if (!fromDashboard) assertRole(event, ["shelf"]);
+            const items = ids.map((i) =>
+                fromDashboard ? getItem(i) : shelfItem(i),
+            );
+            const source = nativeImage.createFromPath(items[0].path);
             const size = source.getSize();
             const scale = Math.min(1, 128 / Math.max(size.width, size.height));
             const icon =
@@ -4270,7 +4272,11 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                           height: Math.round(size.height * scale),
                       })
                     : source;
-            event.sender.startDrag({ file: item.path, icon });
+            event.sender.startDrag({
+                file: items[0].path,
+                files: items.map((item) => item.path),
+                icon,
+            });
         } catch {
             // Drag requests from untrusted frames or missing files are ignored.
         }

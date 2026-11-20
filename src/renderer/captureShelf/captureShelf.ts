@@ -158,7 +158,11 @@ function render() {
         });
         card.on("dragstart", (event) => {
             event.preventDefault();
-            window.openCapture.startDrag(item.id);
+            window.openCapture.startDrag(
+                selected.has(item.id) && selected.size > 1
+                    ? Array.from(selected)
+                    : item.id,
+            );
         });
         rail.add(card);
     }

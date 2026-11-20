@@ -528,7 +528,7 @@ export interface OpenCaptureApi {
     pathForFile(file: File): string;
     readFilePath(path: string): Promise<Uint8Array>;
     dragFilePath(path: string): void;
-    startDrag(id: string): void;
+    startDrag(id: string | string[]): void;
     getLanguageSettings(): Promise<DashboardLanguageSettings>;
     setLanguage(language: string): Promise<DashboardLanguageSettings>;
     t(text: string): string;
