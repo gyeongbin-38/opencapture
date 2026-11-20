@@ -2607,5 +2607,8 @@
     "70a6d6": "Not a converted file to copy.",
     "6457e3": "This format cannot be copied to the clipboard.",
     "b5cedc": "The destination folder is not valid.",
-    "6d832c": "AVIF conversion failed."
+    "6d832c": "AVIF conversion failed.",
+    "94e78a": "The file could not be saved.",
+    "524cb4": "Could not copy to the clipboard.",
+    "5426c1": "The selected codec is not supported."
 }

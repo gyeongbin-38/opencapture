@@ -96,6 +96,7 @@ type Message = {
     clip_search: (img: string, type: string) => void;
     clip_qr: (img: string) => void;
     clip_hide: () => void;
+    clip_restore: () => void;
     clip_save: (ext: string) => string;
     clip_ding: (
         img: string,

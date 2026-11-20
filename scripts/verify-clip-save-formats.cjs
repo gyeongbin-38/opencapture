@@ -231,6 +231,102 @@ app.whenReady().then(async () => {
             );
         }
         report.checks.push({ clipSaveFormats: results });
+
+        pendingSavePath = path.join(outDir, "no-such-dir", "qa-fail.png");
+        await run(
+            `window.openCapture.action("open-item", ${JSON.stringify(itemId)})`,
+        );
+        const failCapture = await until(
+            () =>
+                BrowserWindow.getAllWindows().find(
+                    (window) =>
+                        window.webContents
+                            .getURL()
+                            .includes("capture.html") &&
+                        !window.webContents.isLoading() &&
+                        window.isVisible(),
+                ),
+            "Capture editor did not open for save failure case",
+        );
+        const failClip = (code) =>
+            failCapture.webContents.executeJavaScript(code, true);
+        await until(
+            () =>
+                failClip(
+                    'Boolean(window.captureDraftBridge && document.querySelector("#quick_toolbar") && document.body.style.opacity !== "0")',
+                ),
+            "Workspace did not initialize for save failure case",
+        );
+        const failPhoto = await failClip(
+            'JSON.parse(JSON.stringify(document.querySelector("#main_photo").getBoundingClientRect()))',
+        );
+        failCapture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(failPhoto.x + failPhoto.width * 0.15),
+            y: Math.round(failPhoto.y + failPhoto.height * 0.15),
+        });
+        failCapture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            x: Math.round(failPhoto.x + failPhoto.width * 0.15),
+            y: Math.round(failPhoto.y + failPhoto.height * 0.15),
+        });
+        failCapture.webContents.sendInputEvent({
+            type: "mouseMove",
+            x: Math.round(failPhoto.x + failPhoto.width * 0.8),
+            y: Math.round(failPhoto.y + failPhoto.height * 0.8),
+        });
+        failCapture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            x: Math.round(failPhoto.x + failPhoto.width * 0.8),
+            y: Math.round(failPhoto.y + failPhoto.height * 0.8),
+        });
+        await until(
+            () =>
+                failClip(
+                    'document.querySelector("#selection_handles")?.hidden === false',
+                ),
+            "Selection was not created for save failure case",
+        );
+        await failClip(`(() => {
+            const save=document.querySelector('#quick_toolbar [data-capture-action="save"]');
+            if (save) { save.click(); return true; }
+            document.querySelector('#quick_toolbar [data-capture-action="more"]')?.click();
+            const tool=[...document.querySelectorAll('#capture_tools [data-capture-action="save"]')][0];
+            if (!tool) return false;
+            tool.click();
+            return true;
+        })()`);
+        await until(
+            () =>
+                failClip(
+                    `Boolean([...document.querySelectorAll('#suffix [data-value]')].find((n)=>n.dataset.value==='png'))`,
+                ),
+            "Save bar did not expose png",
+        );
+        await failClip(
+            `document.querySelector('#suffix [data-value="png"]').click()`,
+        );
+        await pause(1500);
+        assert(
+            !fs.existsSync(pendingSavePath),
+            "Save failure case unexpectedly wrote a file",
+        );
+        assert(
+            !failCapture.isDestroyed() && failCapture.isVisible(),
+            `Capture lost after failed save (destroyed=${failCapture.isDestroyed()}, visible=${failCapture.isDestroyed() ? "n/a" : failCapture.isVisible()})`,
+        );
+        report.checks.push({ saveFailureKeepsEditor: true });
+        await failClip(
+            "document.querySelector('#quick_toolbar [data-capture-action=close]')?.click()",
+        );
+        await until(
+            () => failCapture.isDestroyed() || !failCapture.isVisible(),
+            "Capture did not close after save failure case",
+        );
         dialog.showSaveDialog = originalSaveDialog;
 
         report.ok = true;

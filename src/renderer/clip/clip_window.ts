@@ -1445,26 +1445,48 @@ async function save(message: string) {
     } else if (_type === "pdf") {
         const nc = getClipPhoto();
         const f = await getBlob(nc, "image/jpeg", 0.92);
-        if (!f) return;
+        if (!f) {
+            notifySaveFailed();
+            return;
+        }
         dataBuffer = imageToPdf(
             Buffer.from(await f.arrayBuffer()),
             nc.width,
             nc.height,
         );
     } else if (_type === "ico") {
-        dataBuffer = Buffer.from(await encodeIco(getClipPhoto()));
+        try {
+            dataBuffer = Buffer.from(await encodeIco(getClipPhoto()));
+        } catch {
+            notifySaveFailed();
+            return;
+        }
     } else if (_type === "gif") {
-        dataBuffer = Buffer.from(encodeGif(getClipPhoto()));
+        try {
+            dataBuffer = Buffer.from(encodeGif(getClipPhoto()));
+        } catch {
+            notifySaveFailed();
+            return;
+        }
     } else if (_type === "avif") {
         const nc = getClipPhoto();
         const f = await getBlob(nc, "image/png");
-        if (!f) return;
-        const result = (await ipcRenderer.invoke("oc:convert:encode", {
-            format: "avif",
-            data: Buffer.from(await f.arrayBuffer()),
-            options: {},
-        })) as { data: Uint8Array };
-        dataBuffer = Buffer.from(result.data);
+        if (!f) {
+            notifySaveFailed();
+            return;
+        }
+        try {
+            const result = (await ipcRenderer.invoke("oc:convert:encode", {
+                format: "avif",
+                data: Buffer.from(await f.arrayBuffer()),
+                options: {},
+            })) as { data: Uint8Array };
+            dataBuffer = Buffer.from(result.data);
+        } catch (error) {
+            const m = error instanceof Error ? error.message : String(error);
+            notifySaveFailed(t(m.split(": Error:").pop() ?? m));
+            return;
+        }
     } else {
         let f: Blob | null = null;
         const nc = getClipPhoto();
@@ -1476,12 +1498,16 @@ async function save(message: string) {
             f = await getBlob(nc, "image/webp");
         }
         if (!f) {
-            // todo error
+            notifySaveFailed();
             return;
         }
         dataBuffer = Buffer.from(await f.arrayBuffer());
         if (store.get("保存.保存并复制")) {
-            await writeImage(f); // todo tip
+            try {
+                await writeImage(f);
+            } catch {
+                notifySaveFailed(t("클립보드로 복사하지 못했습니다."));
+            }
         }
     }
 
@@ -1491,9 +1517,21 @@ async function save(message: string) {
             renderSend("ok_save", [message]);
             toolsX.close.f();
         } else {
-            // todo error
+            notifySaveFailed(err.message);
         }
     });
+}
+
+function notifySaveFailed(detail?: string) {
+    renderSend("noti", [
+        {
+            title: t("保存文件失败"),
+            body: detail
+                ? `${t("파일을 저장하지 못했습니다.")} · ${detail}`
+                : t("파일을 저장하지 못했습니다."),
+        },
+    ]);
+    renderSend("clip_restore", []);
 }
 
 /** 이미지 한 장을 담은 최소 PDF (JPEG DCTDecode) */

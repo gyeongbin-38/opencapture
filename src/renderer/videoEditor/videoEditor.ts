@@ -1416,7 +1416,8 @@ async function runTransform(
         });
         const c = codecMap.get(joinOp.codec);
         if (!c) {
-            // todo 提示不支持
+            console.error(`超级录屏：不支持的编码 ${joinOp.codec}`);
+            transformTimeEl.sv(t("선택한 코덱을 지원하지 않습니다."));
             return;
         }
         encoder.configure({
@@ -2277,15 +2278,19 @@ async function createAudioSource(format: OutputFormat) {
     });
 }
 
-/** 本次导出本应包含音频却没有时提示 */
-function tipNoAudio() {
-    console.warn("超级录屏：本次导出未包含音频");
-    const el = txt(t("导出未包含音频")).style({
+function tipLog(message: string) {
+    const el = txt(message).style({
         color: cssColor.f,
         padding: "0 4px",
     });
     transformLogEl.add(el);
     setTimeout(() => el.remove(), 8000);
+}
+
+/** 本次导出本应包含音频却没有时提示 */
+function tipNoAudio() {
+    console.warn("超级录屏：本次导出未包含音频");
+    tipLog(t("导出未包含音频"));
 }
 
 async function saveImages() {
@@ -2584,7 +2589,7 @@ async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
         fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
         renderSend("ok_save", [exportPath, true]);
     } else {
-        // todo
+        tipLog(t("동영상 인코딩에 실패했습니다."));
     }
 }
 
@@ -2636,7 +2641,7 @@ async function saveMp4(op: { codec: "avc" | "vp9" | "av1" }) {
         fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
         renderSend("ok_save", [exportPath, true]);
     } else {
-        // todo
+        tipLog(t("동영상 인코딩에 실패했습니다."));
     }
 }
 
@@ -2734,15 +2739,19 @@ await (async () => {
 const [codec, isDeAcc, isEnAcc] = (() => {
     // todo use codecMap key instead
     const l = Array.from(codecMap.values());
+    if (!l.length) {
+        console.error("超级录屏：没有可用的视频编解码器");
+        return ["vp8", false, false];
+    }
     if (store.get("录屏.超级录屏.编码选择") === "性能优先") {
-        l.toSorted(
+        const sorted = l.toSorted(
             (a, b) =>
                 Number(b.isDeAcc) +
                 Number(b.isEnAcc) -
                 Number(a.isDeAcc) -
                 Number(a.isEnAcc),
         );
-        return [l[0].codec, l[0].isDeAcc, l[0].isEnAcc];
+        return [sorted[0].codec, sorted[0].isDeAcc, sorted[0].isEnAcc];
     }
     for (const c of codecMap.values()) {
         if (c.isDeAcc || c.isEnAcc) return [c.codec, c.isDeAcc, c.isEnAcc];

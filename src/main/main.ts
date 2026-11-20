@@ -2852,6 +2852,11 @@ mainOn("clip_qr", ([img]) => {
 mainOn("clip_hide", async () => {
     await hideClip();
 });
+mainOn("clip_restore", () => {
+    if (!clipWindow || clipWindow.isDestroyed()) return;
+    clipWindow.show();
+    clipWindow.setSimpleFullScreen(true);
+});
 mainOn("clip_save", async ([type], event) => {
     const requestSequence = captureAcquireSequence;
     const captureContents = event.sender;
