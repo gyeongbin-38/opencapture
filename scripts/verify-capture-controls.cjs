@@ -353,8 +353,24 @@ app.whenReady().then(async () => {
             '[...document.querySelectorAll(".capture-dimensions input")].map(i=>i.dataset.title||"")',
         );
         assert(
-            dimTips.length === 2 && dimTips.every((d) => d.includes("수식")),
+            dimTips.length === 2 &&
+                dimTips.every(
+                    (d) => d.includes("수식") && d.includes("±1"),
+                ),
             `Dimension inputs missing the expression tooltip: ${JSON.stringify(dimTips)}`,
+        );
+        const stepped = await clip(`(() => {
+            const w=document.querySelectorAll(".capture-dimensions input")[0];
+            w.focus();
+            w.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",ctrlKey:true,bubbles:true,cancelable:true}));
+            return Number(w.value);
+        })()`);
+        assert(
+            stepped === 475,
+            `Ctrl+ArrowDown did not step the width input by 5: ${stepped}`,
+        );
+        await clip(
+            'const w=document.querySelectorAll(".capture-dimensions input")[0]; w.value="480"; w.dispatchEvent(new Event("change",{bubbles:true}));',
         );
         await clip(
             'const ratioLock=document.querySelector(\'#clip_wh button[aria-label="비율 고정"]\'); ratioLock.click(); if(ratioLock.getAttribute("aria-pressed")!=="true") throw new Error("Ratio lock did not activate"); const heightInput=document.querySelectorAll(".capture-dimensions input")[1]; heightInput.value="250"; heightInput.dispatchEvent(new Event("change",{bubbles:true}));',
