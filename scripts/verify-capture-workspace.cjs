@@ -823,6 +823,18 @@ app.whenReady().then(async () => {
             shelfMultiDrag: { files: shelfDragPayload.files.length },
         });
 
+        const rangeSel = await shelfRun(`(() => {
+            const cards=[...document.querySelectorAll(".shelf-card")];
+            cards[0].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));
+            cards[1].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,shiftKey:true}));
+            return [...document.querySelectorAll(".shelf-card")].map(c=>c.getAttribute("aria-pressed"));
+        })()`);
+        assert(
+            rangeSel.length === 2 && rangeSel.every((v) => v === "true"),
+            `Shift-click did not range-select the shelf: ${JSON.stringify(rangeSel)}.`,
+        );
+        report.checks.push({ shelfRangeSelect: rangeSel });
+
         const arrowNav = await shelfRun(`(() => {
             const cards=document.querySelectorAll(".shelf-card");
             cards[cards.length-1].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));

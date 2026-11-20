@@ -124,6 +124,7 @@ function renderActions() {
             (control.key === "v" && selected.size < 2);
     }
 }
+let lastIndex = -1;
 function render() {
     title.el.textContent = `${t("임시 캡처")} ${items.length}`;
     rail.clear();
@@ -142,12 +143,24 @@ function render() {
             });
         card.el.dataset.itemId = item.id;
         card.on("click", (event) => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey) {
+            const index = items.indexOf(item);
+            if (index < 0) return;
+            if (event.shiftKey && lastIndex >= 0) {
+                const anchor = Math.min(lastIndex, items.length - 1);
+                const [from, to] = [
+                    Math.min(anchor, index),
+                    Math.max(anchor, index),
+                ];
+                selected.clear();
+                for (let i = from; i <= to; i++) selected.add(items[i].id);
+            } else if (event.ctrlKey || event.metaKey) {
                 if (selected.has(item.id)) selected.delete(item.id);
                 else selected.add(item.id);
+                lastIndex = index;
             } else {
                 selected.clear();
                 selected.add(item.id);
+                lastIndex = index;
             }
             render();
         });
