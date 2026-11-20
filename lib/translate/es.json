@@ -2462,5 +2462,9 @@
     "305ad1": "Show mouse-follow bar",
     "09d302": "Current fill",
     "276f90": "Annotate/edit · drag to export · double-click to pin · discard (MMB·Del)",
-    "84dbc0": "Move all to trash"
+    "84dbc0": "Move all to trash",
+    "6cbbf0": "Draw (right-click: undo stroke · Shift+right-click: clear all · Ctrl+Z)",
+    "d99a30": "Undo background removal  U · Ctrl+Z",
+    "0b0d72": "Right-click: presets",
+    "da3ab4": "Double-click: 100%"
 }

@@ -361,7 +361,7 @@ const setNewDing = (
     );
     const controlsPanel = view("x")
         .class("pin-controls-panel")
-        .attr({ role: "group", ariaLabel: "핀 크기와 투명도" });
+        .attr({ role: "group", ariaLabel: t("핀 크기와 투명도") });
 
     // 透明
     const opacityEl = txt()
@@ -406,7 +406,7 @@ const setNewDing = (
             min: "10",
             max: "300",
             step: "5",
-            ariaLabel: "핀 크기",
+            ariaLabel: t("핀 크기"),
         })
         .sv("100")
         .on("input", () => {
@@ -468,7 +468,7 @@ const setNewDing = (
         sizeRange.sv("100");
         sizeChange();
     };
-    sizeEl.el.title = `${sizeEl.el.title} (우클릭: ${sizePresets.join("/")}, 더블클릭: 100%)`;
+    sizeEl.el.title = `${sizeEl.el.title} (${t("우클릭: 프리셋")} ${sizePresets.join("/")}, ${t("더블클릭: 100%")})`;
 
     const pinGrayEl = view("x")
         .class(concorlClass)
@@ -703,7 +703,9 @@ const setNewDing = (
     });
     const drawButton = button(iconEl("draw"))
         .attr({
-            title: "그리기 (우클릭 한 획 취소 · Shift+우클릭 전체 지우기 · Ctrl+Z)",
+            title: t(
+                "그리기 (우클릭 한 획 취소 · Shift+우클릭 전체 지우기 · Ctrl+Z)",
+            ),
         })
         .on("click", () => {
             drawMode = !drawMode;
@@ -866,7 +868,7 @@ const setNewDing = (
         cutoutBusy = true;
         holdHandle?.setBusy(true);
         ocrTransStateBar.el.classList.remove(Class.hide);
-        ocrTransStateBar.sv("배경을 제거하는 중…");
+        ocrTransStateBar.sv(t("배경을 제거하는 중…"));
         cutoutStatusRetry = null;
         try {
             const dataURL = getUrl(wid);
@@ -882,7 +884,7 @@ const setNewDing = (
                 return;
             if (sourceRevision !== visualRevision) {
                 ocrTransStateBar.sv(
-                    "이미지가 변경되어 배경 제거 결과를 적용하지 않았습니다",
+                    t("이미지가 변경되어 배경 제거 결과를 적용하지 않았습니다"),
                 );
                 return;
             }
@@ -899,11 +901,11 @@ const setNewDing = (
             visualRevision += 1;
             applyPinFx();
             redrawPinStrokes();
-            ocrTransStateBar.sv("배경을 제거했습니다 · U로 실행 취소");
+            ocrTransStateBar.sv(t("배경을 제거했습니다 · U로 실행 취소"));
             cutoutUndoButton.el.classList.remove(Class.hide);
         } catch {
             if (disposed || generation !== cutoutGeneration) return;
-            ocrTransStateBar.sv("배경 제거에 실패했습니다");
+            ocrTransStateBar.sv(t("배경 제거에 실패했습니다"));
             cutoutStatusRetry = () => void runCutout();
             cutoutRetryButton.el.classList.remove(Class.hide);
         } finally {
@@ -925,12 +927,12 @@ const setNewDing = (
         cutoutUndoButton.el.classList.add(Class.hide);
         cutoutRetryButton.el.classList.add(Class.hide);
         ocrTransStateBar.el.classList.remove(Class.hide);
-        ocrTransStateBar.sv("배경 제거를 실행 취소했습니다");
+        ocrTransStateBar.sv(t("배경 제거를 실행 취소했습니다"));
     };
     const copyPin = async () => {
         await writeImage(await renderPinBlob());
         ocrTransStateBar.el.classList.remove(Class.hide);
-        ocrTransStateBar.sv("이미지를 복사했습니다");
+        ocrTransStateBar.sv(t("이미지를 복사했습니다"));
     };
     const savePin = async () => {
         renderSend("windowTopest", [false]);
@@ -964,7 +966,7 @@ const setNewDing = (
     };
     const linkButton = button(iconEl("link"))
         .attr({
-            title: "다음에 포커스하는 앱에 연결 (그 앱에서만 핀 표시)",
+            title: t("다음에 포커스하는 앱에 연결 (그 앱에서만 핀 표시)"),
             ariaPressed: "false",
         })
         .on("click", () => {
@@ -1007,16 +1009,16 @@ const setNewDing = (
 
     async function translate() {
         ocrTransStateBar.el.classList.remove(Class.hide);
-        ocrTransStateBar.sv("正在OCR识别...");
+        ocrTransStateBar.sv(t("正在OCR识别..."));
         const p = await preTranAndOcr(url);
-        ocrTransStateBar.sv("正在翻译...");
+        ocrTransStateBar.sv(t("正在翻译..."));
         try {
             await transAndDraw(div, p);
             ocrTransStateBar.class(Class.hide);
         } catch (error) {
             if (error instanceof UnConfigTranslateError) {
-                ocrTransStateBar.sv("未配置翻译引擎");
-            } else ocrTransStateBar.sv("翻译失败");
+                ocrTransStateBar.sv(t("未配置翻译引擎"));
+            } else ocrTransStateBar.sv(t("翻译失败"));
         }
     }
 
@@ -1041,8 +1043,8 @@ const setNewDing = (
     // 工具栏
     const focusButton = button(iconEl("select_all"))
         .attr({
-            title: "이 핀만 보기",
-            ariaLabel: "이 핀만 보기",
+            title: t("이 핀만 보기"),
+            ariaLabel: t("이 핀만 보기"),
             ariaPressed: "false",
         })
         .on("click", () => {
@@ -1051,8 +1053,8 @@ const setNewDing = (
     focusButtons.set(wid, focusButton.el);
     const blinkButton = button(iconEl("hide"))
         .attr({
-            title: "원본과 깜빡 비교",
-            ariaLabel: "원본과 깜빡 비교",
+            title: t("원본과 깜빡 비교"),
+            ariaLabel: t("원본과 깜빡 비교"),
             ariaPressed: "false",
         })
         .on("click", () => {
@@ -1061,8 +1063,8 @@ const setNewDing = (
     blinkButtons.set(wid, blinkButton.el);
     const ignoreButton = button(iconEl("ignore"))
         .attr({
-            title: "클릭 통과",
-            ariaLabel: "클릭 통과",
+            title: t("클릭 통과"),
+            ariaLabel: t("클릭 통과"),
             ariaPressed: "false",
         })
         .on("click", () => {
@@ -1077,7 +1079,7 @@ const setNewDing = (
         .attr({ title: "텍스트 복사", ariaLabel: "텍스트 복사" })
         .on("click", async () => {
             ocrTransStateBar.el.classList.remove(Class.hide);
-            ocrTransStateBar.sv("텍스트 인식 중…");
+            ocrTransStateBar.sv(t("텍스트 인식 중…"));
             try {
                 await initOCR();
                 const p = await ocr(getUrl(wid));
@@ -1088,51 +1090,51 @@ const setNewDing = (
                 await writeText(text || " ");
                 ocrTransStateBar.sv("텍스트를 복사했습니다");
             } catch {
-                ocrTransStateBar.sv("텍스트 인식에 실패했습니다");
+                ocrTransStateBar.sv(t("텍스트 인식에 실패했습니다"));
             }
         });
 
     const rotateButton = button(iconEl("reload"))
-        .attr({ title: "90° 회전" })
+        .attr({ title: t("90° 회전") })
         .on("click", () => {
             pinFx.rot = (pinFx.rot + 90) % 360;
             visualRevision += 1;
             applyPinFx();
         });
     const mirrorButton = button(iconEl("mirror"))
-        .attr({ title: "좌우 반전" })
+        .attr({ title: t("좌우 반전") })
         .on("click", () => {
             pinFx.flip = !pinFx.flip;
             visualRevision += 1;
             applyPinFx();
         });
     const saveButton = button(iconEl("save"))
-        .attr({ title: "저장  Ctrl+S" })
+        .attr({ title: t("저장  Ctrl+S") })
         .on("click", () => void savePin());
     const minimizeButton = button(iconEl("minimize"))
-        .attr({ title: "숨기기" })
+        .attr({ title: t("숨기기") })
         .on("click", () => minimize(div.el));
     const backButton = button(iconEl("back"))
-        .attr({ title: "원본 위치로 돌아가기" })
+        .attr({ title: t("원본 위치로 돌아가기") })
         .on("click", () => back(wid));
     const copyButton = button(iconEl("copy"))
-        .attr({ title: "복사  Ctrl+C", ariaLabel: "이미지 복사" })
+        .attr({ title: t("복사  Ctrl+C"), ariaLabel: t("이미지 복사") })
         .on("click", () => void copyPin());
     const editButton = button(iconEl("free_draw"))
-        .attr({ title: "편집  E", ariaLabel: "편집기에서 열기" })
+        .attr({ title: t("편집  E"), ariaLabel: t("편집기에서 열기") })
         .on("click", () => void editPin());
     const cutoutButton = button(iconEl("cut"))
-        .attr({ title: "배경 제거  X", ariaLabel: "배경 제거" })
+        .attr({ title: t("배경 제거  X"), ariaLabel: t("배경 제거") })
         .on("click", () => void runCutout());
-    drawButton.attr({ title: "그리기  D", ariaLabel: "핀 위에 그리기" });
-    focusButton.attr({ title: "이 핀만 보기  F" });
+    drawButton.attr({ title: t("그리기  D"), ariaLabel: t("핀 위에 그리기") });
+    focusButton.attr({ title: t("이 핀만 보기  F") });
     const closeButton = button(iconEl("close"))
-        .attr({ title: "닫기  Esc", ariaLabel: "핀 닫기" })
+        .attr({ title: t("닫기  Esc"), ariaLabel: t("핀 닫기") })
         .on("click", () => close(wid));
     const moreButton = button(iconEl("setting"))
         .attr({
-            title: "크기와 투명도",
-            ariaLabel: "크기와 투명도",
+            title: t("크기와 투명도"),
+            ariaLabel: t("크기와 투명도"),
             ariaExpanded: "false",
         })
         .on("click", () => {
@@ -1155,10 +1157,10 @@ const setNewDing = (
 
     const radialMenu = view()
         .class("pin-radial-menu")
-        .attr({ role: "menu", ariaLabel: "핀 도구", ariaHidden: "true" });
+        .attr({ role: "menu", ariaLabel: t("핀 도구"), ariaHidden: "true" });
     const radialCenter = button(iconEl("close"))
         .class("pin-radial-center")
-        .attr({ title: "도구 닫기", ariaLabel: "도구 닫기" });
+        .attr({ title: t("도구 닫기"), ariaLabel: t("도구 닫기") });
     radialMenu.add(radialCenter);
     let radialOpen = false;
     const closeRadial = () => {
@@ -1174,30 +1176,30 @@ const setNewDing = (
         active?: () => boolean;
     }[] = [
         {
-            label: "배경 제거",
+            label: t("배경 제거"),
             icon: "cut" as IconType,
             run: () => cutoutButton.el.click(),
             active: () => cutoutBusy,
         },
         {
-            label: "배경 제거 실행 취소",
+            label: t("배경 제거 실행 취소"),
             icon: "back" as IconType,
             run: undoCutout,
             active: () => cutoutUndo !== null,
         },
         {
-            label: "번역",
+            label: t("번역"),
             icon: "translate" as IconType,
             run: () => transB.el.click(),
         },
         {
-            label: "깜빡 비교",
+            label: t("깜빡 비교"),
             icon: "hide",
             run: () => blinkButton.el.click(),
             active: () => blinkState.isActive(wid),
         },
         {
-            label: "클릭 통과",
+            label: t("클릭 통과"),
             icon: "ignore",
             run: () => ignoreButton.el.click(),
             active: () => ignoredPins.has(wid),
@@ -1208,19 +1210,19 @@ const setNewDing = (
             run: () => ocrTextButton.el.click(),
         },
         {
-            label: "90° 회전",
+            label: t("90° 회전"),
             icon: "reload" as IconType,
             run: () => rotateButton.el.click(),
         },
         {
-            label: "좌우 반전",
+            label: t("좌우 반전"),
             icon: "mirror" as IconType,
             run: () => mirrorButton.el.click(),
         },
         ...(!process.mas
             ? [
                   {
-                      label: "앱에 연결",
+                      label: t("앱에 연결"),
                       icon: "link" as IconType,
                       run: () => linkButton.el.click(),
                       active: () => linkTimer !== null,
@@ -1228,17 +1230,17 @@ const setNewDing = (
               ]
             : []),
         {
-            label: "저장",
+            label: t("저장"),
             icon: "save" as IconType,
             run: () => saveButton.el.click(),
         },
         {
-            label: "숨기기",
+            label: t("숨기기"),
             icon: "minimize" as IconType,
             run: () => minimizeButton.el.click(),
         },
         {
-            label: "원위치",
+            label: t("원위치"),
             icon: "back" as IconType,
             run: () => backButton.el.click(),
         },
@@ -1325,14 +1327,14 @@ const setNewDing = (
     const ocrTransStateBarText = txt();
     const cutoutRetryButton = button(txt("재시도"))
         .class(Class.hide)
-        .attr({ title: "배경 제거 다시 시도" })
+        .attr({ title: t("배경 제거 다시 시도") })
         .on("click", () => {
             cutoutRetryButton.el.classList.add(Class.hide);
             cutoutStatusRetry?.();
         });
     const cutoutUndoButton = button(txt("실행 취소"))
         .class(Class.hide)
-        .attr({ title: "배경 제거 실행 취소  U · Ctrl+Z" })
+        .attr({ title: t("배경 제거 실행 취소  U · Ctrl+Z") })
         .on("click", undoCutout);
     const ocrTransStateBar = view("x")
         .class(Class.glassBar)
@@ -1515,7 +1517,7 @@ const setNewDing = (
     holdHandle = createImageHold(img.el, {
         durationMs: 650,
         moveTolerance: 8,
-        progressLabel: "길게 눌러 배경 제거",
+        progressLabel: t("길게 눌러 배경 제거"),
         disabled: () => drawMode || cutoutBusy,
         onHold: () => runCutout(),
         onDragStart: ({ event }) => {
@@ -1541,7 +1543,9 @@ const setNewDing = (
         localStorage.setItem("oc:hint:pin-gesture", "1");
         ocrTransStateBar.el.classList.remove(Class.hide);
         ocrTransStateBar.sv(
-            "이미지를 길게 누르거나 Ctrl+Shift+클릭하면 배경을 즉시 제거합니다",
+            t(
+                "이미지를 길게 누르거나 Ctrl+Shift+클릭하면 배경을 즉시 제거합니다",
+            ),
         );
     }
     disposers.add(() => {
