@@ -121,6 +121,7 @@ export default defineConfig(({ mode }) => ({
             sourcemap: true,
         },
         optimizeDeps: {
+            exclude: ["node-screenshots", "onnxruntime-node"],
             include: [
                 "@erase2d/fabric",
                 "@pdf-lib/upng",
