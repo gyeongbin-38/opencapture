@@ -29,6 +29,8 @@ txt(
         `V ${t("비교")}`,
         `X ${t("변환")}`,
         `A ${t("보관")}`,
+        `D ${t("휴지통")}`,
+        `←→ ${t("선택 이동")}`,
         t("드래그로 보내기"),
     ].join(" · "),
 )
@@ -112,6 +114,7 @@ action(
     true,
 );
 action("보관", "⇩", "a", (ids) => window.openCapture.promoteItems(ids), true);
+action("휴지통", "⌫", "d", (ids) => window.openCapture.trashItems(ids), true);
 
 function renderActions() {
     for (const control of controls) {
@@ -195,9 +198,26 @@ document.addEventListener("keydown", (event) => {
         return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    const control = controls.find(
-        (control) => control.key === event.key.toLowerCase(),
-    );
+    if (
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        items.length
+    ) {
+        const ids = items.map((item) => item.id);
+        const current = ids.findIndex((id) => selected.has(id));
+        const delta = event.key === "ArrowLeft" ? -1 : 1;
+        const next =
+            current < 0
+                ? ids[event.key === "ArrowLeft" ? ids.length - 1 : 0]
+                : ids[Math.min(ids.length - 1, Math.max(0, current + delta))];
+        if (next) {
+            selected.clear();
+            selected.add(next);
+            render();
+        }
+        return;
+    }
+    const key = event.key === "Delete" ? "d" : event.key.toLowerCase();
+    const control = controls.find((control) => control.key === key);
     if (control && !control.el.disabled) control.el.click();
 });
 void window.openCapture

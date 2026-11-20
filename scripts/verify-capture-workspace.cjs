@@ -795,6 +795,44 @@ app.whenReady().then(async () => {
             },
         });
 
+        const arrowNav = await shelfRun(`(() => {
+            const cards=document.querySelectorAll(".shelf-card");
+            cards[cards.length-1].dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));
+            const press=(key)=>document.dispatchEvent(new KeyboardEvent("keydown",{key,bubbles:true}));
+            const sel=()=>[...document.querySelectorAll(".shelf-card")].findIndex(c=>c.getAttribute("aria-pressed")==="true");
+            const last=cards.length-1;
+            press("ArrowLeft");
+            const afterLeft=sel();
+            press("ArrowRight");
+            const afterRight=sel();
+            return {last,afterLeft,afterRight};
+        })()`);
+        assert(
+            arrowNav.afterLeft === arrowNav.last - 1 &&
+                arrowNav.afterRight === arrowNav.last,
+            `Shelf arrow navigation did not move the selection: ${JSON.stringify(arrowNav)}.`,
+        );
+        await shelfRun(`(() => {
+            document
+                .querySelector('.shelf-card[data-item-id=${JSON.stringify(secondStage.id)}]')
+                .dispatchEvent(new MouseEvent("click",{bubbles:true,button:0}));
+            document.querySelector('[data-shelf-action="d"]').click();
+        })()`);
+        await until(
+            async () =>
+                (await shelfRun(
+                    'document.querySelectorAll(".shelf-card").length',
+                )) === arrowNav.last,
+            "Shelf trash action did not remove the selected draft.",
+        );
+        report.checks.push({
+            shelfTrash: {
+                arrowNav,
+                trashed: secondStage.id,
+                remaining: arrowNav.last,
+            },
+        });
+
         await shelfRun(`(() => {
             const card=document.querySelector('.shelf-card[data-item-id=${JSON.stringify(firstStage.id)}]');
             card.dispatchEvent(new MouseEvent("dblclick", {bubbles:true,button:0}));
