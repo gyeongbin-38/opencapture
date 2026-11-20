@@ -5109,7 +5109,7 @@ function about() {
                         });
                         const b = r.body.split("\n---").at(0) as string;
                         const p = document.createElement("p");
-                        p.innerHTML = b.replace(/\r\n/g, "<br>");
+                        p.innerText = b;
                         function md(b: string) {
                             fetch(githubUrl("markdown", "api"), {
                                 body: JSON.stringify({ text: b, mode: "gfm" }),
