@@ -1,0 +1,32 @@
+name: 기능 제안 Feature Request
+description: "원하는 기능을 설명해 주세요."
+title: "建议在……添加……功能/改进"
+labels: 新需求
+
+body:
+    - type: markdown
+      attributes:
+          value: |
+              하나의 issue에는 하나의 아이디어만 적어 주세요 — 여러 개면 나눠 주세요.
+              제출 전에 [GitHub issues](https://github.com/gyeongbin-38/opencapture/issues?q=is%3Aissue)에서 중복을 검색해 주세요.
+              설정이나 [문서](https://github.com/gyeongbin-38/opencapture/blob/master/docs/use/start.md)에 이미 있는지도 확인해 주세요.
+    - type: textarea
+      id: main
+      attributes:
+          label: 설명 Description
+          description: "자유롭게 제안을 적어 주세요 — 이미지나 다른 소프트웨어 예시도 도움이 됩니다"
+      validations:
+          required: true
+    - type: input
+      id: os
+      attributes:
+          label: 운영체제 OS
+          description: "필요하면 아키텍처(x64/arm64)도 함께 적어 주세요"
+      validations:
+          required: false
+    - type: input
+      id: v
+      attributes:
+          label: 현재 소프트웨어 버전 Current Version
+      validations:
+          required: false

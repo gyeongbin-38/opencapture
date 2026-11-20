@@ -1,0 +1,60 @@
+name: 버그 리포트 Bug Report
+description: "문제를 보고해 개선에 도움을 주세요 Create a report to help us improve."
+title: "……存在……错误"
+labels: bug
+
+body:
+    - type: markdown
+      attributes:
+          value: |
+              제출 전에 [GitHub issues](https://github.com/gyeongbin-38/opencapture/issues?q=is%3Aissue)에서 중복을 검색해 주세요.
+              여러 문제는 각각 별도 issue로 나눠 주세요.
+              트레이의 피드백 메뉴를 이용하면 버전·OS 정보가 자동으로 첨부됩니다.
+              if you are NOT Korean speaker, using English is welcome.
+    - type: textarea
+      id: main
+      attributes:
+          label: 문제 설명 Description of the problem
+          description: "어떤 문제가 발생했는지 설명해 주세요"
+      validations:
+          required: true
+    - type: textarea
+      id: steps
+      attributes:
+          label: 재현 단계 Steps to reproduce
+          description: "문제를 다시 발생시키는 방법을 적어 주세요"
+      validations:
+          required: true
+    - type: textarea
+      id: expected
+      attributes:
+          label: 기대 결과 Expected behavior
+          description: "원래 기대한 동작을 적어 주세요"
+      validations:
+          required: false
+    - type: textarea
+      id: more
+      attributes:
+          label: 추가 정보 Additional context
+          description: "스크린샷, 오류 메시지(Ctrl+Shift+I → console 탭) 등"
+      validations:
+          required: false
+    - type: input
+      id: os
+      attributes:
+          label: 운영체제 OS
+          description: "필요하면 아키텍처(x64/arm64)도 함께 적어 주세요 — 앱 내 피드백은 자동 첨부됩니다"
+      validations:
+          required: false
+    - type: input
+      id: v
+      attributes:
+          label: 소프트웨어 버전 Software version
+      validations:
+          required: true
+    - type: input
+      attributes:
+          label: 화면 구성 Screen parameters
+          description: "해상도·배율 — 멀티모니터면 각 화면의 파라미터와 배치를 적어 주세요"
+      validations:
+          required: false
