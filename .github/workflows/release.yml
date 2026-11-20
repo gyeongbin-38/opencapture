@@ -36,6 +36,9 @@ jobs:
               run: pnpm run build
 
             - name: Package windows (nsis + zip)
+              env:
+                  CSC_LINK: ${{ secrets.CSC_LINK }}
+                  CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
               run: npx electron-builder -p never -c electron-builder.config.js
 
             - name: Upload build artifacts
