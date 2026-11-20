@@ -2354,6 +2354,8 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         if (!existing) library.items.unshift(item);
         try {
             library.catalogRevision = (library.catalogRevision ?? 0) + 1;
+            // 재스테이징은 카탈로그 전체 쓰기를 생략: 매니페스트가 진실의
+            // 원천이며 부팅 시 정합 루프가 카탈로그 필드를 다시 맞춘다
             if (!existing) persist();
         } catch (error) {
             library.catalogRevision = previousCatalogRevision;
