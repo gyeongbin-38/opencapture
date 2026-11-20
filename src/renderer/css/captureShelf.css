@@ -98,6 +98,12 @@ button:focus-visible {
     object-fit: contain;
     pointer-events: none;
 }
+.shelf-empty {
+    margin: auto;
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
 .shelf-actions {
     display: flex;
     gap: 3px;

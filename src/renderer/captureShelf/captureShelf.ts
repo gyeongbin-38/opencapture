@@ -127,6 +127,8 @@ function renderActions() {
 function render() {
     title.el.textContent = `${t("임시 캡처")} ${items.length}`;
     rail.clear();
+    if (!items.length)
+        rail.add(txt(t("임시 캡처가 없습니다")).class("shelf-empty"));
     for (const item of items) {
         const card = button(
             ele("img").attr({ src: item.thumbnail ?? "", alt: item.name }),

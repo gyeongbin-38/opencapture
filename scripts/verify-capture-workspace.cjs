@@ -861,6 +861,35 @@ app.whenReady().then(async () => {
             },
         });
 
+        await shelfRun(
+            'document.querySelector(\'[data-shelf-action="d"]\').click()',
+        );
+        await until(
+            async () =>
+                (await shelfRun(
+                    'document.querySelectorAll(".shelf-card").length',
+                )) === 0,
+            "Shelf did not empty after trashing the last draft.",
+        );
+        const shelfEmpty = await shelfRun(
+            'document.querySelector(".shelf-empty")?.textContent ?? ""',
+        );
+        assert(
+            shelfEmpty.length > 0,
+            "Shelf empty state did not render a message.",
+        );
+        await run(
+            `window.openCapture.restoreItems(${JSON.stringify([firstStage.id])})`,
+        );
+        await until(
+            async () =>
+                (await shelfRun(
+                    'document.querySelectorAll(".shelf-card").length',
+                )) === 1,
+            "Restored draft did not return to the shelf.",
+        );
+        report.checks.push({ shelfEmpty });
+
         await shelfRun(`(() => {
             const card=document.querySelector('.shelf-card[data-item-id=${JSON.stringify(firstStage.id)}]');
             card.dispatchEvent(new MouseEvent("dblclick", {bubbles:true,button:0}));
