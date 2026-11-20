@@ -1450,11 +1450,9 @@ app.whenReady().then(async () => {
     activeLanguage =
         matchFitLan(store.get("语言.语言") || "", getLans()) ?? "ko";
 
-    try {
-        await claimHotkeyOwnership();
-    } catch (error) {
+    const hotkeyClaim = claimHotkeyOwnership().catch((error) => {
         console.error("Hotkey ownership claim failed:", error);
-    }
+    });
 
     const translation = createTranslationService({
         root: runPath,
@@ -2096,6 +2094,7 @@ app.whenReady().then(async () => {
             icon: join(runPath, "assets/logo/64x64.png"),
         }).show();
 
+    await hotkeyClaim;
     const 快捷键 = store.get("快捷键");
     for (const [k, m] of typedEntries(快捷键)) {
         if (!m.key) continue;
