@@ -136,7 +136,7 @@ function getImgUrl(name: RawIconType) {
 }
 
 function setTitle(t: string) {
-    document.title = `eSearch ${t}`;
+    document.title = `OpenCapture ${t}`;
     // todo 国际化
 }
 

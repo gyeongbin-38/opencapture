@@ -1439,7 +1439,7 @@ process.on("unhandledRejection", (e) => {
 
 app.whenReady().then(async () => {
     console.log(
-        `eSearch ${app.getVersion()} 启动\n项目地址：https://github.com/xushengfeng/eSearch`,
+        `OpenCapture ${app.getVersion()} 启动\n项目地址：https://github.com/gyeongbin-38/opencapture`,
     );
 
     if (!process.mas) crashReporter.start({ uploadToServer: false });
@@ -2048,7 +2048,7 @@ app.whenReady().then(async () => {
                 click: (_i, win) => {
                     shell.openExternal(
                         feedbackUrl({
-                            title: `[${win?.getTitle()?.replace("eSearch - ", "") ?? "……界面"}] 存在……问题`,
+                            title: `[${win?.getTitle()?.replace(/^(?:eSearch|OpenCapture) - /, "") ?? "……界面"}] 存在……问题`,
                         }),
                     );
                 },
@@ -2290,7 +2290,7 @@ function feedbackUrl(op?: {
     more?: string;
 }) {
     const url = new URL(
-        "https://github.com/xushengfeng/eSearch/issues/new?assignees=&labels=bug&projects=&template=bug_report.yaml",
+        "https://github.com/gyeongbin-38/opencapture/issues/new?assignees=&labels=bug&projects=&template=bug_report.yaml",
     );
     url.searchParams.append("title", op?.title || "...存在...的错误");
     url.searchParams.append("main", op?.main || "");
@@ -2310,7 +2310,7 @@ function feedbackUrl2(op?: {
     main?: string;
 }) {
     const url = new URL(
-        "https://github.com/xushengfeng/eSearch/issues/new?template=feature_request.yaml&labels=新需求",
+        "https://github.com/gyeongbin-38/opencapture/issues/new?template=feature_request.yaml&labels=新需求",
     );
     if (op?.title) url.searchParams.append("title", op.title);
     url.searchParams.append("main", op?.main || "");
@@ -5204,7 +5204,7 @@ async function createSettingWindow() {
 
 async function createHelpWindow() {
     shell.openExternal(
-        `https://github.com/xushengfeng/eSearch/blob/${app.getVersion()}/docs/use/readme.md`,
+        "https://github.com/gyeongbin-38/opencapture/blob/master/docs/use/readme.md",
     );
 }
 
@@ -6196,7 +6196,7 @@ function checkUpdate(s手动检查?: boolean) {
 function showVersion(arg?: { v: string; url: string } | "err") {
     let title = "";
     let b = "";
-    let url = "https://github.com/xushengfeng/eSearch/releases";
+    let url = "https://github.com/gyeongbin-38/opencapture/releases";
     if (arg) {
         if (arg === "err") {
             title = t("无法检查更新");

@@ -1,5 +1,6 @@
 {
     "name": "opencapture",
+    "productName": "OpenCapture",
     "version": "15.7.0",
     "description": "Free, local-first screenshot and translation workspace",
     "main": "./out/main/main.js",

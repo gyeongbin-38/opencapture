@@ -2035,7 +2035,7 @@ async function edit(arg: EditToolsType) {
             const blob = new Blob([t.join("\n")], { type: "text/csv" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = "eSearch.csv";
+            a.download = "OpenCapture.csv";
             a.click();
             break;
         }
@@ -2487,7 +2487,7 @@ function google(
     form.append(
         "encoded_image",
         new Blob([u8arr], { type: "image/png" }),
-        "eSearch.png",
+        "OpenCapture.png",
     );
     form.append("image_content", "");
     const url = `https://lens.google.com/v3/upload?hl=zh-CN&re=df&st=${Date.now()}&vpw=1041&vph=779`;

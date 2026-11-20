@@ -4092,7 +4092,7 @@ function translatorD(
 
 function transSaveHelp() {
     return a(
-        `https://github.com/xushengfeng/eSearch/blob/${packageJson.version}/docs/use/translate.md#生词本`,
+        "https://github.com/gyeongbin-38/opencapture/blob/master/docs/use/translate.md#生词本",
     ).add("教程帮助");
 }
 
@@ -5084,7 +5084,7 @@ function about() {
         .attr({ title: t("点击检查更新") })
         .class(Class.mono, Class.click)
         .on("click", () => {
-            fetch(githubUrl("repos/xushengfeng/eSearch/releases", "api"), {
+            fetch(githubUrl("repos/gyeongbin-38/opencapture/releases", "api"), {
                 method: "GET",
                 redirect: "follow",
             })
@@ -5160,7 +5160,13 @@ function about() {
                         if (i === 0) {
                             tags.add(txt("最新版本"));
                         }
-                        const baseName = `eSearch-${r.name}-${process.platform}-${process.arch}`;
+                        const platformName =
+                            process.platform === "win32"
+                                ? "win"
+                                : process.platform === "darwin"
+                                  ? "mac"
+                                  : "linux";
+                        const baseName = `OpenCapture-${r.name}-${platformName}-${process.arch}`;
                         const assets = r.assets.filter((i) =>
                             i.name.startsWith(baseName),
                         );
@@ -5218,7 +5224,7 @@ function about() {
         ]),
         view().add(
             a(
-                "https://github.com/xushengfeng/eSearch/tree/master/lib/translate",
+                "https://github.com/gyeongbin-38/opencapture/tree/master/lib/translate",
             ).add("改进翻译"),
         ),
         view().add([

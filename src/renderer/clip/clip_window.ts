@@ -1522,13 +1522,13 @@ function getClipPhotoSVG() {
     if (typeof fabricCanvas === "undefined") {
         svg.innerHTML = `<!--?xml version="1.0" encoding="UTF-8" standalone="no" ?-->
             <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="${mainCanvas.width}" height="${mainCanvas.height}" viewBox="0 0 1920 1080" xml:space="preserve">
-            <desc>Created with eSearch</desc>
+            <desc>Created with OpenCapture</desc>
             </svg>`;
     } else {
         svg.innerHTML = fabricCanvas.toSVG();
         // @ts-ignore
         svg.querySelector("desc").innerHTML =
-            "Created with eSearch & Fabric.js";
+            "Created with OpenCapture & Fabric.js";
     }
     const svgEl = svg.querySelector("svg") as SVGElement;
     svgEl.setAttribute("viewBox", finalRect.join(" "));
