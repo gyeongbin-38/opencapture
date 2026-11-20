@@ -512,6 +512,26 @@ body input {
     background-color: transparent;
 }
 
+#long_stat {
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    padding: 2px 8px;
+    font-family: var(--monospace);
+    font-size: 12px;
+    line-height: 1.4;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+#long_stat:empty {
+    display: none;
+}
+
 /* 编辑栏 */
 .range-b {
     font-size: calc(var(--bar-size) / 3.75);

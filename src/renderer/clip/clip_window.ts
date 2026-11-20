@@ -815,6 +815,7 @@ function initRecord() {
 let longBusy = false;
 let longCapped = false;
 let longSession = 0;
+let longFrames = 0;
 let longInFlight: Promise<void> | null = null;
 let longStopping: Promise<void> | null = null;
 let longStopSession = 0;
@@ -915,6 +916,7 @@ function initLong(rect: number[]) {
     longInited = true;
     longCapped = false;
     longBusy = false;
+    longFrames = 0;
     longInFlight = null;
     longStopping = null;
     longStopSession = 0;
@@ -1148,6 +1150,9 @@ function longPutImg(
     const ny = y - longX.imgXY.y;
     newCtx.drawImage(img, nx, ny);
     longX.img = newCanvas;
+
+    longFrames++;
+    longTip.els.stat.el.textContent = `${longFrames} ${t("帧")} · ${newCanvas.width.toLocaleString()}×${newCanvas.height.toLocaleString()}px`;
 
     longPreview.clear();
     newCanvas.style.maxWidth = "100%";
@@ -4595,6 +4600,7 @@ const longTip = frame("long_tip", {
     rect: {
         _: view().attr({ id: "long_rect" }),
         finish: view().attr({ id: "long_finish" }),
+        stat: view().attr({ id: "long_stat" }),
     },
 });
 
@@ -6609,6 +6615,9 @@ const 识图引擎 = toolsX.search.el;
 trackLocation();
 
 const finishLongB = longTip.els.finish.el;
+finishLongB.title = t("结束广截屏");
+finishLongB.setAttribute("role", "button");
+finishLongB.setAttribute("aria-label", t("结束广截屏"));
 
 const lr = longTip.els.rect;
 
