@@ -71,7 +71,6 @@ function iconEl(src: IconType) {
 
 renderOn("dingShare", ([data]) => {
     const message = data as typeof data | PinShareMessage;
-    console.log(message);
     switch (message.type) {
         case "close":
             close2(message.id);
@@ -1798,10 +1797,8 @@ async function transAndDraw(
         .addInto(el.query(".img")).el;
     const ctx = canvas.getContext("2d")!;
     ctx.drawImage(image, 0, 0);
-    console.log(p);
     if (!translateE) throw new UnConfigTranslateError();
     const tr = await translateE(p.map((i) => i.parse.text));
-    console.log(tr);
 
     for (const [i, t] of tr.entries()) {
         const x = p[i];

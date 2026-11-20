@@ -621,7 +621,6 @@ function toHotkeyScope(scope: hotkeyScope) {
 function backHotkeyScope() {
     if (hotkeyScopes.length > 1) hotkeyScopes.pop();
     hotkeys.setScope(hotkeyScopes.at(-1) ?? "normal");
-    console.log(hotkeys.getScope(), hotkeyScopes);
 }
 
 function capturePrimaryToolId() {
@@ -3463,8 +3462,6 @@ function draw(
 }
 // 多边形
 function drawPoly(shape: EditType["shape"]) {
-    console.log(1111);
-
     const pro = getShapePro(shape);
     const [fillColor, strokeColor, strokeWidth] = [pro.fc, pro.sc, pro.sw];
     if (polyOP.length !== 1) {
@@ -3751,7 +3748,6 @@ function getFObjectV() {
             pro.sw = p?.sw;
         }
     }
-    console.log(pro);
     strokeWidthEl.sv(pro.sw ?? strokeWidth);
     colorFillEl.sv(pro.fc ?? fillColor);
     colorStrokeEl.sv(pro.sc ?? strokeColor);
@@ -3775,7 +3771,6 @@ function setFObjectV(
     sw: number | null,
 ) {
     if (fabricCanvas.getActiveObject()) {
-        console.log(0);
         /* 选中Object */
         const n = fabricCanvas.getActiveObjects();
         for (const i of n) {
@@ -3801,7 +3796,6 @@ function setFObjectV(
         }
         fabricCanvas.renderAll();
     } else if (fabricCanvas.isDrawingMode) {
-        console.log(1);
         /* 画笔 */
         if (stroke) {
             if (fabricCanvas.freeDrawingBrush)
@@ -3825,7 +3819,6 @@ function setFObjectV(
             store.set(`图像编辑.形状属性.${mode}.sw`, sw || strokeWidth);
         }
     } else {
-        console.log(2);
         /* 非画笔非选中 */
         const pro = shapePro[editType.shape] ?? {};
         if (fill) pro.fc = fill;
@@ -3898,8 +3891,6 @@ function getFilters() {
                     .on("input", () => {
                         // @ts-ignore
                         const filter = fl.fun(range.gv);
-                        console.log(range.gv);
-
                         applyFilter(i, filter);
                     })
                     .sv(Object.values(f[i])[0]);
@@ -6274,7 +6265,6 @@ renderOn(
             const mainId = mainid;
             const i = getNowScreen(mainId);
             windows = wx.window;
-            console.log(allScreens, windows);
             if (!(await setScreen(i))) return;
             if (initSequence !== captureInitSequence) return;
             const nowScreen =
@@ -6972,7 +6962,6 @@ hotkeys("s", () => {
         return;
     }
     if (autoPhotoSelectRect) {
-        console.log("edge");
         edge();
         rectSelect = false;
         finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
