@@ -68,7 +68,13 @@ button:focus-visible {
     width: 22px;
     height: 20px;
     padding: 0;
+    border-radius: var(--r-sm);
     font-size: 17px;
+    line-height: 1;
+    transition: background 0.12s ease;
+}
+.shelf-close:hover {
+    background: var(--accent-soft);
 }
 .shelf-rail {
     display: flex;
@@ -87,6 +93,10 @@ button:focus-visible {
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
     background: var(--surface-hover);
+    transition: border-color 0.12s ease;
+}
+.shelf-card:hover {
+    border-color: var(--line-bright);
 }
 .shelf-card[aria-pressed="true"] {
     border-color: var(--accent);
@@ -118,6 +128,7 @@ button:focus-visible {
     padding: 0;
     border-radius: var(--r-sm);
     color: var(--accent);
+    transition: background 0.12s ease, color 0.12s ease;
 }
 .shelf-action .icon {
     display: grid;
@@ -130,6 +141,10 @@ button:focus-visible {
 .shelf-action:hover:not(:disabled) {
     color: #fff;
     background: var(--surface-soft);
+}
+.shelf-action:active:not(:disabled) {
+    color: #fff;
+    background: var(--surface-hover);
 }
 .shelf-action:disabled {
     opacity: 0.35;

@@ -51,14 +51,16 @@
     font-size: var(--fs-xs);
     color: #a1a1aa;
     white-space: nowrap;
+    animation: capture-shelf-hint-in 160ms ease-out;
 }
 .capture-shelf-hint kbd {
-    padding: 0 5px;
+    padding: 1px 5px;
     border: 1px solid #ffffff24;
     border-radius: 4px;
     background: #222227;
     font-family: inherit;
     font-size: 10px;
+    line-height: 1.4;
     color: #d4d4d8;
 }
 .capture-shelf-card {
@@ -114,6 +116,14 @@
     overflow: hidden;
     background: #222227 !important;
     outline: none !important;
+    transition: filter 0.12s ease;
+}
+.capture-shelf-thumb:hover {
+    filter: brightness(1.15);
+}
+.capture-shelf-thumb:focus-visible {
+    outline: 2px solid #d4d4d8 !important;
+    outline-offset: 1px;
 }
 .capture-shelf-thumb img {
     width: 100%;
@@ -220,6 +230,20 @@
 }
 .capture-feedback-off .radial_item:hover {
     box-shadow: 0 4px 12px #0005;
+}
+@keyframes capture-shelf-hint-in {
+    from {
+        opacity: 0;
+    }
+}
+.capture-feedback-off .capture-shelf-hint,
+.capture-motion-reduced .capture-shelf-hint {
+    animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .capture-shelf-hint {
+        animation: none;
+    }
 }
 
 body.editor_bg {

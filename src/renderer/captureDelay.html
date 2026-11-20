@@ -69,14 +69,27 @@
             padding: 3px 14px;
             border: 1px solid #ffffff40;
             border-radius: 999px;
+            outline: none;
             background: transparent;
             color: #fff;
             font-size: 12px;
             cursor: pointer;
+            transition: background-color 120ms ease;
         }
 
         .delay-cancel:hover {
             background: #ffffff1f;
+        }
+
+        .delay-cancel:focus-visible {
+            outline: 2px solid #ffffffb3;
+            outline-offset: 2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .delay-progress-bar {
+                transition: none;
+            }
         }
     </style>
 </head>
