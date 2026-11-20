@@ -1753,7 +1753,7 @@ function back2(id: string) {
         left: `${pS[0]}px`,
         top: `${pS[1]}px`,
         width: `${pS[2]}px`,
-        height: `${pS[3]}px`,
+        height: `${collapsedPins.has(id) ? 8 : pS[3]}px`,
     });
     el.query(".img")?.style({
         left: "0",
@@ -2231,11 +2231,12 @@ function resize(
             height: "",
         } as const;
         el.query(".img")?.style(style);
+        if (collapsedPins.has(id)) collapsedPins.set(id, pS[3]);
         el.style({
             left: `${pS[0]}px`,
             top: `${pS[1]}px`,
             width: `${pS[2]}px`,
-            height: `${pS[3]}px`,
+            height: `${collapsedPins.has(id) ? 8 : pS[3]}px`,
         });
     }
 

@@ -237,7 +237,11 @@ app.whenReady().then(async () => {
             assert.equal(r1.src, PNG_B);
             assert.equal(r1.label, "1/2", "Stack not restored");
             assert.ok(r2, "Second restored pin not found");
-            assert.equal(r2.h, 8, `Collapsed height not applied: ${JSON.stringify(restored)}`);
+            assert.equal(
+                r2.sh,
+                "8px",
+                `Collapsed height not applied: ${JSON.stringify(restored)}`,
+            );
             assert.equal(r2.collapsed, true, "Collapsed class missing");
             return { count: restored.length, first: r1.id };
         });
@@ -255,6 +259,36 @@ app.whenReady().then(async () => {
             assert.deepEqual(saved.stack, [PNG_B, PNG_A]);
             assert.equal(saved.opacity, 0.7);
             return { saved: sessionSaved.length };
+        });
+
+        await check("collapsed pin keeps 8px through wheel resize", async () => {
+            const pid = await js(
+                `document.querySelector('[id^="restored-"].pin-collapsed')?.id`,
+            );
+            assert.ok(pid, "No collapsed pin to test");
+            await js(
+                `document.getElementById('${pid}').dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true}))`,
+            );
+            const h1 = await js(
+                `document.getElementById('${pid}')?.style.height`,
+            );
+            assert.equal(h1, "8px", `Collapse lost to resize: ${h1}`);
+            await js(
+                `document.getElementById('${pid}').dispatchEvent(new MouseEvent('auxclick',{button:1,bubbles:true,cancelable:true}))`,
+            );
+            const st = await js(
+                `(()=>{const e=document.getElementById('${pid}');return {h:e?.style.height,c:e?.className}})()`,
+            );
+            assert.ok(
+                !st.c.includes("pin-collapsed"),
+                `Collapse class not removed: ${JSON.stringify(st)}`,
+            );
+            const expanded = Number.parseFloat(st.h);
+            assert.ok(
+                expanded > 30 && expanded < 100,
+                `Uncollapse did not restore zoomed height: ${JSON.stringify(st)}`,
+            );
+            return { id: pid, collapsed: h1, restored: st.h };
         });
 
         sendPin("stack", { stack: [PNG_A, PNG_B, PNG_C] });
