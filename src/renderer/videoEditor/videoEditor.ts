@@ -2869,7 +2869,9 @@ async function renderAudioList() {
     const sysKey = audioCapture.sysKey;
     const sysEl = label([check(""), t("系统音频")])
         .attr({
-            title: canSys ? "系统内录" : "开启才可以在界面进一步选择是否内录",
+            title: canSys
+                ? t("系统内录")
+                : t("开启才可以在界面进一步选择是否内录"),
         })
         .sv(audioCapture.isActive(sysKey))
         .on("input", async (_, el) => {
@@ -2907,7 +2909,7 @@ async function renderAudioList() {
 }
 
 let audioListShow = false;
-const audioBtn = iconBEl("mic", "选择输入音频").on("click", () => {
+const audioBtn = iconBEl("mic", t("选择输入音频")).on("click", () => {
     audioListShow = !audioListShow;
     audioListEl.style({ display: audioListShow ? "flex" : "none" });
     if (audioListShow) renderAudioList();
@@ -2992,28 +2994,75 @@ const playEl = check("", [
     }
 });
 
-const lastFrame = iconBEl("last", "上一帧").on("click", (e) => {
+const lastFrame = iconBEl(
+    "last",
+    `${t("上一帧")} [←]\n[Shift] ×100\n[Ctrl] ×10`,
+).on("click", (e) => {
     const x = e.shiftKey ? 100 : e.ctrlKey ? 10 : 1;
     const id = Math.max(willPlayI - x, 0) as TransId;
     jump2idUi(trans2src(id));
 });
-const nextFrame = iconBEl("next", "下一帧").on("click", (e) => {
+const nextFrame = iconBEl(
+    "next",
+    `${t("下一帧")} [→]\n[Shift] ×100\n[Ctrl] ×10`,
+).on("click", (e) => {
     const x = e.shiftKey ? 100 : e.ctrlKey ? 10 : 1;
     const id = Math.min(willPlayI + x, transformCs.length - 1) as TransId;
     jump2idUi(trans2src(id));
 });
-const lastKey = iconBEl("last_last", "上一秒").on("click", (e) => {
+const lastKey = iconBEl(
+    "last_last",
+    `${t("上一秒")}\n[Shift] ×60\n[Ctrl] ×10`,
+).on("click", (e) => {
     const x = e.shiftKey ? 60 : e.ctrlKey ? 10 : 1;
     const id = Math.max(willPlayI - srcRate * x, 0) as TransId;
     jump2idUi(trans2src(id));
 });
-const nextKey = iconBEl("next_next", "下一秒").on("click", (e) => {
+const nextKey = iconBEl(
+    "next_next",
+    `${t("下一秒")}\n[Shift] ×60\n[Ctrl] ×10`,
+).on("click", (e) => {
     const x = e.shiftKey ? 60 : e.ctrlKey ? 10 : 1;
     const id = Math.min(
         willPlayI + srcRate * x,
         transformCs.length - 1,
     ) as TransId;
     jump2idUi(trans2src(id));
+});
+
+playEl.attr({ role: "button", tabIndex: 0, ariaLabel: t("播放/暂停") });
+document.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement;
+    if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable ||
+        target.closest("button")
+    )
+        return;
+    if (e.key === "Escape" && audioListShow) {
+        e.preventDefault();
+        audioListShow = false;
+        audioListEl.style({ display: "none" });
+        return;
+    }
+    if (e.key === " ") {
+        e.preventDefault();
+        playEl.el.click();
+        return;
+    }
+    const x = e.shiftKey ? 100 : e.ctrlKey || e.metaKey ? 10 : 1;
+    let id: TransId | undefined;
+    if (e.key === "ArrowLeft") id = Math.max(willPlayI - x, 0) as TransId;
+    else if (e.key === "ArrowRight")
+        id = Math.min(willPlayI + x, transformCs.length - 1) as TransId;
+    else if (e.key === "Home") id = 0 as TransId;
+    else if (e.key === "End")
+        id = Math.max(transformCs.length - 1, 0) as TransId;
+    else return;
+    e.preventDefault();
+    jump2idUi(trans2src(id) ?? defaultSrcId);
 });
 
 const nowTimeEl = (total?: () => number) => {
