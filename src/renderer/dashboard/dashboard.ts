@@ -97,12 +97,6 @@ let sortMode: "new" | "old" | "name" | "size" = "new";
 let thumbSize = localStorage.getItem("oc:thumb-size") || "m";
 let quickLookId: string | null = null;
 const quickLookImages = new Map<string, string>();
-let compareItems: [OpenCaptureItem, OpenCaptureItem] | null = null;
-const comparePool: OpenCaptureItem[] = [];
-let compareLoadRequest = 0;
-let compareMode: "side" | "overlay" | "wipe" = "side";
-let compareZoom = 1;
-let compareMix = 50;
 let copyBundleBusy = false;
 const pendingOcrIds = new Set<string>();
 let renameTargetId: string | null = null;
@@ -3074,135 +3068,6 @@ quickLookDialog.el.addEventListener("cancel", (event) => {
     closeModal(quickLookDialog.el);
 });
 
-const compareDialog = ele("dialog")
-    .class("compare-dialog")
-    .attr({ ariaBusy: "false" })
-    .addInto(modalBackdrop);
-const compareHeader = view("x")
-    .class("dialog-header", "compare-header")
-    .addInto(compareDialog);
-compareHeader.add([
-    label("h2", t("레퍼런스 비교")),
-    button()
-        .class("close-button")
-        .attr({ type: "button", ariaLabel: t("닫기") })
-        .add(icon("×"))
-        .on("click", () => closeModal(compareDialog.el)),
-]);
-const compareToolbar = view("x", "wrap")
-    .class("compare-toolbar")
-    .addInto(compareDialog);
-const comparePairControls = view("x")
-    .class("compare-pair-controls")
-    .addInto(compareToolbar);
-const compareSelectA = ele("select")
-    .class("compare-pair-select")
-    .attr({ ariaLabel: t("첫 번째 레퍼런스") })
-    .addInto(comparePairControls);
-const compareSelectB = ele("select")
-    .class("compare-pair-select")
-    .attr({ ariaLabel: t("두 번째 레퍼런스") })
-    .addInto(comparePairControls);
-compareSelectA.on("change", () => void applyComparisonSelection());
-compareSelectB.on("change", () => void applyComparisonSelection());
-const compareModeButtons = new Map<
-    "side" | "overlay" | "wipe",
-    HTMLButtonElement
->();
-for (const [mode, text] of [
-    ["side", t("나란히")],
-    ["overlay", t("겹치기")],
-    ["wipe", t("밀어서 비교")],
-] as const) {
-    const control = button(text)
-        .class("compare-mode-button")
-        .attr({ type: "button" })
-        .on("click", () => setCompareMode(mode))
-        .addInto(compareToolbar);
-    compareModeButtons.set(mode, control.el);
-}
-const compareMixControl = view("x")
-    .class("compare-mix-control")
-    .addInto(compareToolbar);
-const compareMixLabel = label("small", t("경계 50%"));
-const compareMixInput = input("range").attr({
-    min: "0",
-    max: "100",
-    step: "1",
-    value: "50",
-    ariaLabel: t("비교 경계"),
-});
-compareMixInput.on("input", () => {
-    compareMix = Number(compareMixInput.el.value);
-    renderComparison();
-});
-compareMixControl.add([compareMixLabel, compareMixInput]);
-const compareZoomControls = view("x")
-    .class("compare-zoom-controls")
-    .addInto(compareToolbar);
-const compareZoomLabel = label("small", "100%");
-compareZoomControls.add([
-    button("−")
-        .class("compare-icon-button")
-        .attr({ type: "button", ariaLabel: t("축소") })
-        .on("click", () => setCompareZoom(compareZoom - 0.25)),
-    compareZoomLabel,
-    button("+")
-        .class("compare-icon-button")
-        .attr({ type: "button", ariaLabel: t("확대") })
-        .on("click", () => setCompareZoom(compareZoom + 0.25)),
-    button(t("교체"))
-        .class("compare-swap-button")
-        .attr({ type: "button" })
-        .on("click", () => {
-            if (!compareItems) return;
-            void setComparisonPair(compareItems[1].id, compareItems[0].id);
-        }),
-]);
-const compareStage = view().class("compare-stage").addInto(compareDialog);
-const compareLoadingStatus = label("small", t("이미지 불러오는 중…"))
-    .class("compare-loading-status")
-    .attr({ role: "status", ariaLive: "polite" })
-    .addInto(compareStage);
-compareLoadingStatus.el.hidden = true;
-const compareSide = view("x").class("compare-side").addInto(compareStage);
-const compareSidePaneA = view("y").class("compare-pane").addInto(compareSide);
-const compareSideImageA = ele("img")
-    .class("compare-image")
-    .attr({ alt: "" })
-    .addInto(compareSidePaneA);
-const compareSideNameA = label("small", "A").addInto(compareSidePaneA);
-const compareSidePaneB = view("y").class("compare-pane").addInto(compareSide);
-const compareSideImageB = ele("img")
-    .class("compare-image")
-    .attr({ alt: "" })
-    .addInto(compareSidePaneB);
-const compareSideNameB = label("small", "B").addInto(compareSidePaneB);
-const compareOverlay = view().class("compare-overlay").addInto(compareStage);
-const compareOverlayBase = ele("img")
-    .class("compare-overlay-image", "compare-overlay-base")
-    .attr({ alt: "" })
-    .addInto(compareOverlay);
-const compareOverlayTop = ele("img")
-    .class("compare-overlay-image", "compare-overlay-top")
-    .attr({ alt: "" })
-    .addInto(compareOverlay);
-const compareDivider = view().class("compare-divider").addInto(compareOverlay);
-compareDialog.el.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeModal(compareDialog.el);
-});
-compareDialog.el.addEventListener("close", () => {
-    compareLoadRequest++;
-    compareDialog.el.classList.remove("loading");
-    compareDialog.el.setAttribute("aria-busy", "false");
-    compareLoadingStatus.el.hidden = true;
-});
-// The factory-backed comparison surface below replaces this legacy local view.
-// Keep the detached nodes temporarily so older helper functions remain harmless
-// while integrations migrate, without exposing duplicate controls in the DOM.
-compareDialog.el.remove();
-
 modalBackdrop.on("click", (event) => {
     if (event.target === modalBackdrop.el) closeAllModals();
 });
@@ -3378,17 +3243,6 @@ function findKnownItem(id: string) {
     );
 }
 
-async function loadLibraryImage(item: OpenCaptureItem) {
-    const data =
-        quickLookImages.get(item.id) ??
-        (await window.openCapture.getItemData(item.id));
-    quickLookImages.set(item.id, data);
-    const image = new Image();
-    image.src = data;
-    await image.decode();
-    return { item, image, data };
-}
-
 async function copySelectedAsBundle() {
     if (copyBundleBusy) return;
     const items = selectedItemsInOrder();
@@ -3496,128 +3350,6 @@ async function openSelectedComparison() {
             thumbnail: item.thumbnail,
         })),
     );
-}
-
-function renderCompareSelectors(firstId: string, secondId: string) {
-    compareSelectA.clear();
-    compareSelectB.clear();
-    comparePool.forEach((item, index) => {
-        const text = `${String.fromCharCode(65 + index)} · ${item.name}`;
-        compareSelectA.add(
-            ele("option").attr({ value: item.id, textContent: text }),
-        );
-        compareSelectB.add(
-            ele("option").attr({ value: item.id, textContent: text }),
-        );
-    });
-    compareSelectA.el.value = firstId;
-    compareSelectB.el.value = secondId;
-}
-
-async function applyComparisonSelection() {
-    const firstId = compareSelectA.el.value;
-    const secondId = compareSelectB.el.value;
-    if (firstId === secondId) {
-        if (compareItems)
-            renderCompareSelectors(compareItems[0].id, compareItems[1].id);
-        showToast(t("서로 다른 이미지를 선택해 주세요."), true);
-        return;
-    }
-    await setComparisonPair(firstId, secondId);
-}
-
-async function setComparisonPair(firstId: string, secondId: string) {
-    const first = comparePool.find((item) => item.id === firstId);
-    const second = comparePool.find((item) => item.id === secondId);
-    if (!first || !second || first.id === second.id) return false;
-    const request = ++compareLoadRequest;
-    compareDialog.el.classList.add("loading");
-    compareDialog.el.setAttribute("aria-busy", "true");
-    compareLoadingStatus.el.textContent = t("이미지 불러오는 중…");
-    compareLoadingStatus.el.hidden = false;
-    try {
-        const [firstLoaded, secondLoaded] = await Promise.all([
-            loadLibraryImage(first),
-            loadLibraryImage(second),
-        ]);
-        if (request !== compareLoadRequest) return;
-        compareItems = [firstLoaded.item, secondLoaded.item];
-        compareSideImageA.el.src = firstLoaded.data;
-        compareSideImageB.el.src = secondLoaded.data;
-        compareOverlayBase.el.src = firstLoaded.data;
-        compareOverlayTop.el.src = secondLoaded.data;
-        renderCompareSelectors(first.id, second.id);
-        renderComparison();
-        compareLoadingStatus.el.hidden = true;
-        return true;
-    } catch (error) {
-        if (request === compareLoadRequest) {
-            if (compareItems)
-                renderCompareSelectors(compareItems[0].id, compareItems[1].id);
-            compareLoadingStatus.el.textContent = t(
-                "이미지를 불러오지 못했습니다.",
-            );
-            compareLoadingStatus.el.hidden = false;
-            showToast(errorMessage(error), true);
-        }
-        return false;
-    } finally {
-        if (request === compareLoadRequest) {
-            compareDialog.el.classList.remove("loading");
-            compareDialog.el.setAttribute("aria-busy", "false");
-        }
-    }
-}
-
-function setCompareMode(mode: "side" | "overlay" | "wipe") {
-    compareMode = mode;
-    renderComparison();
-}
-
-function setCompareZoom(value: number) {
-    compareZoom = Math.max(0.5, Math.min(3, value));
-    renderComparison();
-}
-
-function renderComparison() {
-    if (!compareItems) return;
-    const [first, second] = compareItems;
-    compareSideNameA.el.textContent = `A · ${first.name}`;
-    compareSideNameB.el.textContent = `B · ${second.name}`;
-    compareZoomLabel.el.textContent = `${Math.round(compareZoom * 100)}%`;
-    compareSide.el.hidden = compareMode !== "side";
-    compareOverlay.el.hidden = compareMode === "side";
-    for (const [mode, control] of compareModeButtons) {
-        control.classList.toggle("active", mode === compareMode);
-        control.setAttribute(
-            "aria-pressed",
-            mode === compareMode ? "true" : "false",
-        );
-    }
-    const width = `${compareZoom * 100}%`;
-    compareSideImageA.el.style.width = width;
-    compareSideImageB.el.style.width = width;
-    compareOverlayBase.el.style.width = width;
-    compareOverlayTop.el.style.width = width;
-    compareMixControl.el.hidden = compareMode === "side";
-    compareMixLabel.el.textContent =
-        compareMode === "overlay"
-            ? `${t("투명도")} ${compareMix}%`
-            : `${t("경계")} ${compareMix}%`;
-    if (compareMode === "overlay") {
-        compareOverlayTop.el.style.clipPath = "none";
-        compareOverlayTop.el.style.opacity = String(compareMix / 100);
-        compareDivider.el.hidden = true;
-    } else if (compareMode === "wipe") {
-        compareOverlayTop.el.style.opacity = "1";
-        compareOverlayTop.el.style.clipPath = `inset(0 ${100 - compareMix}% 0 0)`;
-        compareDivider.el.hidden = false;
-        const dividerPosition =
-            compareZoom < 1
-                ? (1 - compareZoom) * 50 + compareZoom * compareMix
-                : compareZoom * compareMix;
-        compareDivider.el.style.left = `${dividerPosition}%`;
-    }
 }
 
 async function composeLayout(
@@ -5313,7 +5045,7 @@ function renderConvertHistory() {
         chip.className = "convert-history-chip";
         chip.textContent = `${entry.format.toUpperCase()} ×${entry.count} · ${formatRelativeTime(entry.time)}`;
         chip.title = t(
-            t("변환된 파일 위치 보기 · Shift+클릭은 라이브러리에서 찾기"),
+            "변환된 파일 위치 보기 · Shift+클릭은 라이브러리에서 찾기",
         );
         chip.addEventListener("click", (event) => {
             if (event.shiftKey) locateConvertSource(entry);
@@ -5479,7 +5211,6 @@ const allDialogs = [
     foldDialog,
     gifDialog,
     quickLookDialog,
-    compareDialog,
 ];
 const externalDialogs = [
     bundleComposer.dialog,
@@ -6115,9 +5846,7 @@ async function applyGifTrim() {
     let end = Number(gifEndInput.el.value) || 0;
     if (start > end) [start, end] = [end, start];
     try {
-        const { GIFEncoder, applyPalette, quantize } =
-            // @ts-expect-error
-            (await import("gifenc")) as typeof import("gifenc");
+        const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
         const gif = GIFEncoder();
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
