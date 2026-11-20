@@ -639,6 +639,8 @@ const setNewDing = (
     let pinDrawing = false;
     let drawMode = false;
     const redrawPinStrokes = () => {
+        drawCanvas.dataset.strokes = String(strokes.length);
+        drawCanvas.dataset.pts = strokes.map((s) => s.pts.length).join(",");
         const w = div.el.clientWidth;
         const h = div.el.clientHeight;
         drawCanvas.width = w;
@@ -667,6 +669,7 @@ const setNewDing = (
                 [e.offsetX / drawCanvas.width, e.offsetY / drawCanvas.height],
             ],
         });
+        drawCanvas.dataset.strokes = String(strokes.length);
         drawCanvas.setPointerCapture(e.pointerId);
     });
     drawCanvas.addEventListener("pointermove", (e) => {
