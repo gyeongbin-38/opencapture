@@ -425,6 +425,7 @@ export interface CaptureConvertOptions {
     pngData?: boolean;
     namePattern?: string;
     encodedSize?: { width: number; height: number };
+    outDir?: string;
 }
 
 export interface CaptureConvertOutput {
@@ -523,6 +524,8 @@ export interface OpenCaptureApi {
         paths: string[],
     ): Promise<CaptureRegistrationOutcome[]>;
     dragConvertedPath(path: string): Promise<CaptureDragAcknowledgement>;
+    copyConvertedPath(path: string): Promise<boolean>;
+    pickDirectory(): Promise<string | null>;
     revealPath(path: string): Promise<boolean>;
     importPaths(paths: string[]): Promise<OpenCaptureState>;
     pathForFile(file: File): string;

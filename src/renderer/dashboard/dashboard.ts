@@ -5215,7 +5215,10 @@ function reportConvertResult(result: ConvertResult, sourceIds: string[]) {
     if (written.length && format)
         recordConversion({
             time: Date.now(),
-            format,
+            format:
+                result.formats.length > 1
+                    ? result.formats.map((f) => f.toUpperCase()).join("+")
+                    : format,
             count: written.length,
             written,
             sourceIds,
@@ -5234,6 +5237,7 @@ function reportConvertResult(result: ConvertResult, sourceIds: string[]) {
             `${written.length}${t("개 변환 완료")}${size ? ` · ${size}` : ""}`,
         );
     }
+    if (result.clipboard) parts.push(t("첫 결과를 클립보드에 복사했습니다."));
     if (skipped) parts.push(`${skipped}${t("개 동일 형식 건너뜀")}`);
     if (failed.length)
         parts.push(

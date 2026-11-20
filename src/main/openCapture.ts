@@ -3502,6 +3502,17 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             namePattern.length <= 120
         )
             parsed.namePattern = namePattern;
+        const outDir = (raw as { outDir?: unknown }).outDir;
+        if (outDir !== undefined) {
+            if (
+                typeof outDir !== "string" ||
+                !isAbsolute(outDir) ||
+                !existsSync(outDir) ||
+                !statSync(outDir).isDirectory()
+            )
+                throw new Error("저장 폴더가 올바르지 않습니다.");
+            parsed.outDir = outDir;
+        }
         return {
             format: format as CaptureConvertFormat,
             data,
@@ -4034,7 +4045,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             options.namePattern,
         );
         const target = uniqueExportPath(
-            dirname(sourcePath),
+            options.outDir ?? dirname(sourcePath),
             `${name}.${format}`,
         );
         writeFileSync(target, prepared.output, { flag: "wx" });
@@ -4231,6 +4242,30 @@ export function installOpenCapture(root: string, hooks: Hooks) {
     ipcMain.handle("oc:converted:drag", (event, target: unknown) =>
         startConvertedDrag(event, target),
     );
+    ipcMain.handle("oc:converted:copy", async (event, target: unknown) => {
+        assertRole(event, ["dashboard", "shelf"]);
+        if (typeof target !== "string" || !isAbsolute(target))
+            throw new Error("복사할 변환 파일이 아닙니다.");
+        const resolved = resolve(target);
+        const owned = renderers.get(event.sender.id)?.exportedPaths;
+        if (!owned?.has(resolved))
+            throw new Error("이 화면에서 만든 변환 파일이 아닙니다.");
+        if (!existsSync(resolved))
+            throw new Error("변환 파일이 존재하지 않습니다.");
+        if (!/\.(png|jpe?g|webp|bmp|gif|ico|avif|tiff?)$/i.test(resolved))
+            throw new Error("이 형식은 클립보드로 복사할 수 없습니다.");
+        if (nativeImage.createFromPath(resolved).isEmpty())
+            throw new Error("이 형식은 클립보드로 복사할 수 없습니다.");
+        await writeClipboardImage(resolved);
+        return true;
+    });
+    ipcMain.handle("oc:directory:pick", async (event) => {
+        assertRole(event, ["dashboard", "shelf"]);
+        const picked = await dialog.showOpenDialog({
+            properties: ["openDirectory", "createDirectory"],
+        });
+        return picked.canceled ? null : (picked.filePaths[0] ?? null);
+    });
     ipcMain.on("oc:drag-path", (event, target: unknown) => {
         try {
             startConvertedDrag(event, target);

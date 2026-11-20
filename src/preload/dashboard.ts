@@ -274,6 +274,9 @@ const api: OpenCaptureApi = {
         ipcRenderer.invoke("oc:converted:register", paths),
     dragConvertedPath: (path: string) =>
         ipcRenderer.invoke("oc:converted:drag", path),
+    copyConvertedPath: (path: string) =>
+        ipcRenderer.invoke("oc:converted:copy", path),
+    pickDirectory: () => ipcRenderer.invoke("oc:directory:pick"),
     revealPath: (path: string) => ipcRenderer.invoke("oc:reveal-path", path),
     importPaths: (paths: string[]) =>
         ipcRenderer.invoke("oc:import-files", paths),

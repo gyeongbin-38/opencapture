@@ -47,6 +47,8 @@ export interface ConvertApi {
         paths: string[],
     ): Promise<CaptureRegistrationOutcome[]>;
     dragConvertedPath?(path: string): Promise<CaptureDragAcknowledgement>;
+    copyConvertedPath?(path: string): Promise<boolean>;
+    pickDirectory?(): Promise<string | null>;
     revealPath?(path: string): Promise<boolean>;
 }
 
@@ -61,6 +63,7 @@ export type ConvertRowStatus =
 export interface ConvertResultRow {
     index: number;
     target: ConvertTarget;
+    format: CaptureConvertFormat;
     status: ConvertRowStatus;
     output?: CaptureConvertOutput;
     error?: string;
@@ -74,6 +77,8 @@ export interface ConvertResult {
     skipped: number;
     cancelled: boolean;
     format: CaptureConvertFormat | undefined;
+    formats: CaptureConvertFormat[];
+    clipboard: boolean;
     rows: ConvertResultRow[];
     registration: CaptureRegistrationOutcome[];
 }
@@ -101,6 +106,7 @@ const MAX_RENDERER_PIXELS = 100_000_000;
 
 type StoredSettings = {
     format: CaptureConvertFormat;
+    extraFormats: CaptureConvertFormat[];
     scale: number;
     quality: number;
     maxWidth: number;
@@ -108,19 +114,25 @@ type StoredSettings = {
     namePattern: string;
     signature: string;
     register: boolean;
+    outDir: string;
+    copyClipboard: boolean;
 };
 
 type OperationSettings = {
     format: CaptureConvertFormat;
+    formats: CaptureConvertFormat[];
     options: CaptureConvertOptions;
     signature: string;
     register: boolean;
+    outDir: string;
+    copyClipboard: boolean;
 };
 
 type NamedPreset = { name: string; settings: StoredSettings };
 
 const DEFAULT_SETTINGS: StoredSettings = {
     format: "png",
+    extraFormats: [],
     scale: 1,
     quality: 0.92,
     maxWidth: 0,
@@ -128,6 +140,8 @@ const DEFAULT_SETTINGS: StoredSettings = {
     namePattern: "{name}",
     signature: "",
     register: false,
+    outDir: "",
+    copyClipboard: false,
 };
 
 const BUILTIN_PRESETS: NamedPreset[] = [
@@ -194,6 +208,19 @@ const cleanSettings = (
         format: CONVERT_FORMATS.includes(data.format as CaptureConvertFormat)
             ? (data.format as CaptureConvertFormat)
             : DEFAULT_SETTINGS.format,
+        extraFormats: Array.isArray(data.extraFormats)
+            ? data.extraFormats
+                  .filter(
+                      (value): value is CaptureConvertFormat =>
+                          typeof value === "string" &&
+                          CONVERT_FORMATS.includes(
+                              value as CaptureConvertFormat,
+                          ) &&
+                          value !== data.format,
+                  )
+                  .filter((value, index, list) => list.indexOf(value) === index)
+                  .slice(0, CONVERT_FORMATS.length - 1)
+            : [],
         scale:
             typeof data.scale === "number" &&
             Number.isFinite(data.scale) &&
@@ -230,6 +257,14 @@ const cleanSettings = (
             typeof data.register === "boolean"
                 ? data.register
                 : fallbackRegister,
+        outDir:
+            typeof data.outDir === "string" && data.outDir.length <= 512
+                ? data.outDir
+                : "",
+        copyClipboard:
+            typeof data.copyClipboard === "boolean"
+                ? data.copyClipboard
+                : false,
     };
 };
 
@@ -417,6 +452,8 @@ export function openConvertDonut(options: {
                 skipped: 0,
                 cancelled: true,
                 format: undefined,
+                formats: [],
+                clipboard: false,
                 rows: [],
                 registration: [],
             });
@@ -424,11 +461,16 @@ export function openConvertDonut(options: {
         queueMicrotask(finish);
         return finish;
     }
-    const rows: ConvertResultRow[] = targets.map((target, index) => ({
-        index,
-        target,
-        status: "pending",
-    }));
+    const buildRows = (formats: CaptureConvertFormat[]) =>
+        targets.flatMap((target, targetIndex) =>
+            formats.map((format, formatIndex) => ({
+                index: targetIndex * formats.length + formatIndex,
+                target,
+                format,
+                status: "pending" as const,
+            })),
+        );
+    let rows: ConvertResultRow[] = [];
     const opener =
         document.activeElement instanceof HTMLElement
             ? document.activeElement
@@ -438,8 +480,11 @@ export function openConvertDonut(options: {
         Boolean(options.register),
     );
     if (!api.registerConvertedPaths) settings.register = false;
+    if (!api.copyConvertedPath) settings.copyClipboard = false;
+    rows = buildRows([settings.format]);
     const namedPresets = readNamedPresets();
     let operationSnapshot: OperationSettings | undefined;
+    let clipboardCopied = false;
     let activeRows: ConvertResultRow[] = [];
     let previewToken = 0;
     let operationToken = 0;
@@ -633,6 +678,52 @@ export function openConvertDonut(options: {
     registerField.append(registerInput, registerText);
     optionGrid.append(registerField);
 
+    const extraField = element("div", "convert-donut-extra-formats");
+    const extraLabel = element("span");
+    extraLabel.textContent = t("同时输出其他格式");
+    const extraList = element("div", "convert-donut-format-checks");
+    extraField.append(extraLabel, extraList);
+    optionGrid.append(extraField);
+    const extraInputs = new Map<CaptureConvertFormat, HTMLInputElement>();
+    for (const format of CONVERT_FORMATS) {
+        const wrap = element("label", "convert-donut-format-check");
+        const input = element("input");
+        input.type = "checkbox";
+        input.checked = settings.extraFormats.includes(format);
+        const text = element("span");
+        text.textContent = format.toUpperCase();
+        wrap.append(input, text);
+        extraList.append(wrap);
+        extraInputs.set(format, input);
+    }
+
+    const dirField = element("div", "convert-donut-field");
+    const dirLabel = element("span");
+    dirLabel.textContent = t("保存位置");
+    const dirRow = element("div", "convert-donut-inline-actions");
+    const dirValue = element("small");
+    dirValue.dataset.convertOutDir = "";
+    const dirPick = element("button");
+    dirPick.type = "button";
+    dirPick.textContent = t("选择文件夹");
+    dirPick.disabled = !api.pickDirectory;
+    const dirReset = element("button");
+    dirReset.type = "button";
+    dirReset.textContent = t("与原文件同目录");
+    dirRow.append(dirValue, dirPick, dirReset);
+    dirField.append(dirLabel, dirRow);
+    optionGrid.append(dirField);
+
+    const clipboardField = element("label", "convert-donut-check");
+    const clipboardInput = element("input");
+    clipboardInput.type = "checkbox";
+    clipboardInput.checked = settings.copyClipboard;
+    clipboardInput.disabled = !api.copyConvertedPath;
+    const clipboardText = element("span");
+    clipboardText.textContent = t("保存后复制首个结果到剪贴板");
+    clipboardField.append(clipboardInput, clipboardText);
+    optionGrid.append(clipboardField);
+
     const presetEditor = element("div", "convert-donut-preset-editor");
     const presetName = element("input");
     presetName.dataset.convertPresetName = "";
@@ -764,8 +855,13 @@ export function openConvertDonut(options: {
             return;
         }
         setError();
+        const primary = formatSelect.value as CaptureConvertFormat;
         return {
-            format: formatSelect.value as CaptureConvertFormat,
+            format: primary,
+            extraFormats: CONVERT_FORMATS.filter(
+                (format) =>
+                    format !== primary && extraInputs.get(format)?.checked,
+            ),
             scale: scale / 100,
             quality: quality / 100,
             maxWidth,
@@ -773,6 +869,8 @@ export function openConvertDonut(options: {
             namePattern,
             signature: signatureInput.value.trim().slice(0, MAX_SIGNATURE),
             register: registerInput.checked && !registerInput.disabled,
+            outDir: settings.outDir,
+            copyClipboard: clipboardInput.checked && !clipboardInput.disabled,
         };
     };
 
@@ -783,6 +881,7 @@ export function openConvertDonut(options: {
         writeStorage(SETTINGS_KEY, settings);
         return {
             format: next.format,
+            formats: [next.format, ...next.extraFormats],
             options: {
                 ...(next.scale !== DEFAULT_SETTINGS.scale
                     ? { scale: next.scale }
@@ -796,9 +895,12 @@ export function openConvertDonut(options: {
                 ...(next.namePattern !== "{name}"
                     ? { namePattern: next.namePattern }
                     : {}),
+                ...(next.outDir ? { outDir: next.outDir } : {}),
             },
             signature: next.signature,
             register: next.register,
+            outDir: next.outDir,
+            copyClipboard: next.copyClipboard,
         };
     };
 
@@ -806,6 +908,12 @@ export function openConvertDonut(options: {
         const relevant = ["jpg", "webp", "avif"].includes(formatSelect.value);
         qualityInput.disabled = !relevant;
         qualityField.classList.toggle("disabled", !relevant);
+        for (const [format, input] of extraInputs) {
+            const isPrimary = format === formatSelect.value;
+            input.disabled = isPrimary;
+            if (isPrimary) input.checked = false;
+            input.closest("label")?.classList.toggle("primary", isPrimary);
+        }
     };
 
     const applySettings = (next: StoredSettings) => {
@@ -819,10 +927,47 @@ export function openConvertDonut(options: {
         signatureInput.value = settings.signature;
         nameInput.value = settings.namePattern;
         registerInput.checked = settings.register;
+        for (const [format, input] of extraInputs)
+            input.checked = settings.extraFormats.includes(format);
+        clipboardInput.checked =
+            settings.copyClipboard && !clipboardInput.disabled;
+        syncDirDisplay();
         writeStorage(SETTINGS_KEY, settings);
         syncFormatFields();
         schedulePreview();
     };
+
+    const syncDirDisplay = () => {
+        dirValue.textContent = settings.outDir
+            ? settings.outDir.split(/[\\/]/).filter(Boolean).pop() ||
+              settings.outDir
+            : t("与原文件同目录");
+        dirValue.title = settings.outDir;
+        dirReset.disabled = !settings.outDir;
+    };
+    dirPick.addEventListener("click", () => {
+        if (!api.pickDirectory || busy || closed) return;
+        dirPick.disabled = true;
+        void api
+            .pickDirectory()
+            .then((dir) => {
+                if (closed) return;
+                if (dir) {
+                    settings = { ...settings, outDir: dir };
+                    writeStorage(SETTINGS_KEY, settings);
+                }
+                syncDirDisplay();
+            })
+            .catch((error) => setError(t(errorMessage(error))))
+            .finally(() => {
+                if (!closed) dirPick.disabled = !api.pickDirectory;
+            });
+    });
+    dirReset.addEventListener("click", () => {
+        settings = { ...settings, outDir: "" };
+        writeStorage(SETTINGS_KEY, settings);
+        syncDirDisplay();
+    });
 
     const renderPresetOptions = () => {
         presetSelect.replaceChildren();
@@ -898,12 +1043,13 @@ export function openConvertDonut(options: {
     const prepareData = async (
         target: ConvertTarget,
         frozen: OperationSettings,
+        format: CaptureConvertFormat,
     ): Promise<{ data?: Uint8Array; extra?: CaptureConvertOptions }> => {
-        if (frozen.format === "webp" || frozen.format === "avif") {
+        if (format === "webp" || format === "avif") {
             const prepared = await canvasPrepare(
                 await getSourceBytes(target),
                 frozen,
-                frozen.format === "avif" ? "image/avif" : "image/webp",
+                format === "avif" ? "image/avif" : "image/webp",
                 sourceMime(target),
             );
             return {
@@ -938,7 +1084,7 @@ export function openConvertDonut(options: {
     ) => {
         const call = target.id ? api.previewItem : api.previewPath;
         if (!call) throw new Error(t("此页面暂不支持转换预览"));
-        const prepared = await prepareData(target, frozen);
+        const prepared = await prepareData(target, frozen, frozen.format);
         return call(target.id ?? target.path, frozen.format, prepared.data, {
             ...frozen.options,
             ...prepared.extra,
@@ -985,8 +1131,8 @@ export function openConvertDonut(options: {
     ) => {
         const extension = row.target.path.split(".").pop()?.toLowerCase();
         const sameFormat =
-            extension === frozen.format ||
-            (extension === "jpeg" && frozen.format === "jpg");
+            extension === row.format ||
+            (extension === "jpeg" && row.format === "jpg");
         return (
             sameFormat &&
             !frozen.signature &&
@@ -1001,14 +1147,14 @@ export function openConvertDonut(options: {
     ) => {
         if (closed || token !== operationToken)
             throw new DOMException("Aborted", "AbortError");
-        const prepared = await prepareData(row.target, frozen);
+        const prepared = await prepareData(row.target, frozen, row.format);
         if (closed || token !== operationToken)
             throw new DOMException("Aborted", "AbortError");
         const call = row.target.id ? api.convertItem : api.convertPath;
         if (!call) throw new Error(t("此页面暂不支持转换"));
         return call(
             row.target.id ?? row.target.path,
-            frozen.format,
+            row.format,
             prepared.data,
             { ...frozen.options, ...prepared.extra },
         );
@@ -1044,7 +1190,7 @@ export function openConvertDonut(options: {
             if (row.output) item.dataset.outputPath = row.output.path;
             const identity = element("div");
             const name = element("strong");
-            name.textContent = fileName(row.target);
+            name.textContent = `${fileName(row.target)} · ${row.format.toUpperCase()}`;
             const detail = element("small");
             detail.textContent = row.output
                 ? `${pathName(row.output.path)} · ${row.output.width} × ${row.output.height} · ${formatBytes(row.output.bytes)}${row.registration?.error ? ` · ${t(row.registration.error)}` : ""}`
@@ -1136,6 +1282,7 @@ export function openConvertDonut(options: {
         setBusy(true);
         conversionPromisePending = true;
         operationCancelled = false;
+        clipboardCopied = false;
         operationSnapshot = frozen;
         const token = ++operationToken;
         activeRows = candidates;
@@ -1167,6 +1314,24 @@ export function openConvertDonut(options: {
             renderRows();
         }
         activeRows = [];
+        if (
+            !closed &&
+            token === operationToken &&
+            frozen.copyClipboard &&
+            api.copyConvertedPath
+        ) {
+            const first = candidates.find(
+                (row) => row.status === "written" && row.output,
+            );
+            if (first?.output)
+                try {
+                    clipboardCopied = await api.copyConvertedPath(
+                        first.output.path,
+                    );
+                } catch (error) {
+                    setError(t(errorMessage(error)));
+                }
+        }
         if (!closed && token === operationToken && frozen.register)
             await registerRows(candidates);
         conversionPromisePending = false;
@@ -1201,6 +1366,8 @@ export function openConvertDonut(options: {
             rows.some((row) => row.status === "cancelled") ||
             !operationSnapshot,
         format: operationSnapshot?.format,
+        formats: operationSnapshot?.formats ?? [],
+        clipboard: clipboardCopied,
         rows: rows.map((row) => ({ ...row })),
         registration: rows.flatMap((row) =>
             row.registration ? [row.registration] : [],
@@ -1365,6 +1532,8 @@ export function openConvertDonut(options: {
         if (busy || closed) return;
         const frozen = snapshot();
         if (!frozen) return;
+        if (operationSnapshot?.formats.join() !== frozen.formats.join())
+            rows = buildRows(frozen.formats);
         let candidates = rows.filter(
             (row) => row.status === "pending" || row.status === "cancelled",
         );
@@ -1401,8 +1570,11 @@ export function openConvertDonut(options: {
     });
     prepareDrag.addEventListener("click", () => {
         const frozen = snapshot();
+        if (!frozen || busy) return;
+        if (rows[0]?.format !== frozen.formats[0])
+            rows = buildRows(frozen.formats);
         const row = rows[0];
-        if (!frozen || !row || busy) return;
+        if (!row) return;
         operationSnapshot = frozen;
         operationCancelled = false;
         const token = ++operationToken;
@@ -1535,6 +1707,7 @@ export function openConvertDonut(options: {
         });
     renderPresetOptions();
     syncFormatFields();
+    syncDirDisplay();
     queueMicrotask(() => {
         formatSelect.focus();
         schedulePreview();

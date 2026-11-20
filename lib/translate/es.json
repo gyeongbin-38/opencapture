@@ -2518,5 +2518,12 @@
     "cf3dad": "AI upscaling {percent}%",
     "d19704": "×5",
     "c8ebee": "×10",
-    "d05980": "Pausar"
+    "d05980": "Pausar",
+    "a786e0": "Guardar también como",
+    "84b787": "Misma carpeta que el origen",
+    "f54f81": "Copiar el primer resultado al portapapeles al guardar",
+    "5e7995": "Primer resultado copiado al portapapeles.",
+    "70a6d6": "No es un archivo convertido para copiar.",
+    "6457e3": "Este formato no se puede copiar al portapapeles.",
+    "b5cedc": "La carpeta de destino no es válida."
 }

@@ -2599,5 +2599,12 @@
     "cf3dad": "AI upscaling {percent}%",
     "d19704": "×5",
     "c8ebee": "×10",
-    "d05980": "Pause"
+    "d05980": "Pause",
+    "a786e0": "Also output as",
+    "84b787": "Same folder as source",
+    "f54f81": "Copy the first result to the clipboard after saving",
+    "5e7995": "Copied the first result to the clipboard.",
+    "70a6d6": "Not a converted file to copy.",
+    "6457e3": "This format cannot be copied to the clipboard.",
+    "b5cedc": "The destination folder is not valid."
 }

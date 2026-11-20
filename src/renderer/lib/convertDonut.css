@@ -313,6 +313,79 @@
     accent-color: #fff;
 }
 
+.convert-donut-extra-formats {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 6px;
+    color: var(--convert-muted);
+    font-size: 11px;
+}
+
+.convert-donut-extra-formats > span {
+    font-weight: 600;
+}
+
+.convert-donut-format-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.convert-donut-format-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 3px 9px;
+    border: 1px solid var(--convert-line);
+    border-radius: 7px;
+    background: var(--convert-raised);
+    color: var(--convert-text);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.convert-donut-format-check:hover {
+    border-color: var(--convert-line-strong);
+}
+
+.convert-donut-format-check input {
+    width: 13px;
+    min-height: 13px;
+    margin: 0;
+    accent-color: #fff;
+}
+
+.convert-donut-format-check:has(input:checked) {
+    border-color: var(--convert-line-strong);
+    background: #2a2a30;
+}
+
+.convert-donut-format-check.primary {
+    opacity: 0.46;
+    cursor: default;
+}
+
+.convert-donut-field .convert-donut-inline-actions {
+    gap: 6px;
+}
+
+.convert-donut-field .convert-donut-inline-actions small {
+    flex: 1 1 auto;
+    align-self: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--convert-text);
+}
+
+.convert-donut-field .convert-donut-inline-actions button {
+    min-height: 28px;
+    padding: 4px 9px;
+    font-size: 10px;
+}
+
 .convert-donut-preset-editor {
     display: grid;
     grid-column: 1 / -1;

@@ -2518,5 +2518,12 @@
     "cf3dad": "AI upscaling {percent}%",
     "d19704": "×5",
     "c8ebee": "×10",
-    "d05980": "Pause"
+    "d05980": "Pause",
+    "a786e0": "Enregistrer aussi en",
+    "84b787": "Même dossier que la source",
+    "f54f81": "Copier le premier résultat dans le presse-papiers après l'enregistrement",
+    "5e7995": "Premier résultat copié dans le presse-papiers.",
+    "70a6d6": "Fichier converti à copier invalide.",
+    "6457e3": "Ce format ne peut pas être copié dans le presse-papiers.",
+    "b5cedc": "Le dossier de destination est invalide."
 }
