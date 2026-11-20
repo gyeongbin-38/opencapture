@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
     constants,
@@ -7,14 +8,17 @@ import {
     existsSync,
     lstatSync,
     mkdirSync,
+    mkdtempSync,
     readFileSync,
     readdirSync,
     renameSync,
+    rmSync,
     statSync,
     unlinkSync,
     watch,
     writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import {
     basename,
     dirname,
@@ -25,6 +29,7 @@ import {
     sep,
 } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { encode as bmpEncode } from "bmp-js";
 import {
     BrowserWindow,
@@ -99,7 +104,7 @@ import {
 } from "./captureCatalogQuery";
 import { CaptureDraftStore } from "./captureDraftStore";
 import { copyFilesToWindowsClipboard } from "./captureFileClipboard";
-import { createFileToolsService } from "./fileToolsService";
+import { createFileToolsService, resolveFfmpegPath } from "./fileToolsService";
 import { createSuperResolution } from "./superResolution";
 import { ThumbnailDiskCache } from "./thumbnailDiskCache";
 
@@ -3430,6 +3435,59 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 throw new Error(`지원하지 않는 형식입니다: ${format}`);
         }
     };
+    const execFileAsync = promisify(execFile);
+    // image must be preprocessed by prepareConverted.
+    const encodeAvif = async (
+        working: Electron.NativeImage,
+        options: ConvertOptions = {},
+    ): Promise<Buffer> => {
+        const ffmpeg = resolveFfmpegPath(root);
+        if (!existsSync(ffmpeg))
+            throw new Error("이 환경에서는 AVIF 변환을 지원하지 않습니다.");
+        const quality =
+            typeof options.quality === "number"
+                ? Math.min(100, Math.max(10, Math.round(options.quality * 100)))
+                : 92;
+        const crf = Math.round(51 - (quality / 100) * 33);
+        const dir = mkdtempSync(join(tmpdir(), "oc-avif-"));
+        const input = join(dir, "in.png");
+        const output = join(dir, "out.avif");
+        try {
+            writeFileSync(input, working.toPNG());
+            await execFileAsync(
+                ffmpeg,
+                [
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    input,
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    "libaom-av1",
+                    "-still-picture",
+                    "1",
+                    "-cpu-used",
+                    "8",
+                    "-crf",
+                    String(crf),
+                    "-f",
+                    "avif",
+                    output,
+                ],
+                { timeout: 60_000 },
+            );
+            return readFileSync(output);
+        } catch {
+            throw new Error("AVIF 변환에 실패했습니다.");
+        } finally {
+            try {
+                rmSync(dir, { recursive: true, force: true });
+            } catch {}
+        }
+    };
     const isValidEncodedSize = (
         value: unknown,
     ): value is { width: number; height: number } => {
@@ -3911,7 +3969,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                 );
         }
     };
-    const prepareConvertOutput = (
+    const prepareConvertOutput = async (
         sourcePath: string,
         format: CaptureConvertFormat,
         data: unknown,
@@ -3934,7 +3992,10 @@ export function installOpenCapture(root: string, hooks: Hooks) {
                       })();
             displayImage = prepareConverted(sourceImage, options);
             size = displayImage.getSize();
-            output = encodeConverted(displayImage, format, options);
+            output =
+                format === "avif"
+                    ? await encodeAvif(displayImage, options)
+                    : encodeConverted(displayImage, format, options);
             if (format === "ico") size = { width: 48, height: 48 };
         } else {
             output = convertData(data);
@@ -3986,13 +4047,13 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             throw new Error("출력 이미지 크기를 확인할 수 없습니다.");
         return { output, size, displayImage };
     };
-    const previewConverted = (
+    const previewConverted = async (
         sourcePath: string,
         format: CaptureConvertFormat,
         data: unknown,
         options: ConvertOptions,
-    ): CaptureConvertPreview => {
-        const prepared = prepareConvertOutput(
+    ): Promise<CaptureConvertPreview> => {
+        const prepared = await prepareConvertOutput(
             sourcePath,
             format,
             data,
@@ -4018,7 +4079,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             approximate: containerPreview,
         };
     };
-    const writeConverted = (
+    const writeConverted = async (
         event: IpcMainInvokeEvent,
         sourcePath: string,
         format: CaptureConvertFormat,
@@ -4032,7 +4093,7 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             throw new Error(
                 "이 화면에서 만든 변환 파일이 1,000개에 도달했습니다.",
             );
-        const prepared = prepareConvertOutput(
+        const prepared = await prepareConvertOutput(
             sourcePath,
             format,
             data,
@@ -4086,6 +4147,26 @@ export function installOpenCapture(root: string, hooks: Hooks) {
         if (statSync(source).size > 100 * 1024 * 1024)
             throw new Error("파일이 너무 큽니다.");
         return writeConverted(event, source, format, data, options);
+    });
+    ipcMain.handle("oc:convert:encode", async (event, args: unknown) => {
+        assertRole(event, ["dashboard", "clip", "shelf"]);
+        const { format, data, options } = parseConvertArgs(args);
+        if (format !== "avif") throw new Error("잘못된 변환 요청입니다.");
+        if (data === undefined || data === null)
+            throw new Error("잘못된 변환 요청입니다.");
+        const bytes = convertData(data);
+        if (!hasEncodedSignature(bytes, "png"))
+            throw new Error("PNG 중간 데이터가 올바르지 않습니다.");
+        const image = prepareConverted(
+            nativeImage.createFromBuffer(bytes),
+            options,
+        );
+        const output = await encodeAvif(image, options);
+        return {
+            data: output,
+            width: image.getSize().width,
+            height: image.getSize().height,
+        };
     });
     ipcMain.handle("oc:items:preview", (event, args: unknown) => {
         const role = assertRole(event, ["dashboard", "shelf"]);

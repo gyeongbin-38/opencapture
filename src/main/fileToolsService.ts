@@ -74,17 +74,9 @@ interface Session {
     jobs: Map<string, AbortController>;
 }
 
-export function createFileToolsService(options: {
-    root: string;
-    userData: string;
-    pin: (path: string) => Promise<void>;
-    edit: (path: string) => void;
-    language?: () => string;
-    engines?: FileToolEngine[];
-    destinations?: () => { id: string; name: string; path: string }[];
-}) {
+export function resolveFfmpegPath(root: string) {
     const binary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-    const bundled = join(options.root, "lib", "ffmpeg", binary);
+    const bundled = join(root, "lib", "ffmpeg", binary);
     const systemFfmpeg =
         process.platform === "linux"
             ? (process.env.PATH ?? "")
@@ -99,9 +91,19 @@ export function createFileToolsService(options: {
                       }
                   })
             : undefined;
-    const ffmpegPath = existsSync(bundled)
-        ? bundled
-        : (systemFfmpeg ?? bundled);
+    return existsSync(bundled) ? bundled : (systemFfmpeg ?? bundled);
+}
+
+export function createFileToolsService(options: {
+    root: string;
+    userData: string;
+    pin: (path: string) => Promise<void>;
+    edit: (path: string) => void;
+    language?: () => string;
+    engines?: FileToolEngine[];
+    destinations?: () => { id: string; name: string; path: string }[];
+}) {
+    const ffmpegPath = resolveFfmpegPath(options.root);
     const renderPdf = createPdfRenderer(options.root);
     const office = createOfficeTools();
     const engines = options.engines ?? [

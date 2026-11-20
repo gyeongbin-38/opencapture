@@ -163,7 +163,7 @@ app.whenReady().then(async () => {
             for (const wrap of donut.querySelectorAll('.convert-donut-format-check')) {
                 const label=wrap.querySelector('span').textContent.toLowerCase();
                 const input=wrap.querySelector('input');
-                if (['png','jpg'].includes(label) && !input.checked) input.click();
+                if (['png','jpg','avif'].includes(label) && !input.checked) input.click();
                 if (input.checked) checked.push(label);
             }
             const checks=[...donut.querySelectorAll('.convert-donut-option-grid .convert-donut-check input')];
@@ -177,6 +177,7 @@ app.whenReady().then(async () => {
             configured.format === "webp" &&
                 configured.extra.includes("png") &&
                 configured.extra.includes("jpg") &&
+                configured.extra.includes("avif") &&
                 configured.checks.every(Boolean),
             `Donut controls did not configure: ${JSON.stringify(configured)}`,
         );
@@ -196,7 +197,7 @@ app.whenReady().then(async () => {
                 () =>
                     run(`(() => {
                     const rows=[...document.querySelectorAll('.convert-donut-result-row')];
-                    if (rows.length !== 6) return false;
+                    if (rows.length !== 8) return false;
                     return rows.every((row)=>!['pending','converting'].includes(row.dataset.status))
                         && document.querySelector('[data-convert-action=convert]').disabled === false;
                 })()`),
@@ -218,8 +219,8 @@ app.whenReady().then(async () => {
         );
         const written = rows.filter((row) => row.status === "written");
         assert(
-            written.length === 6,
-            `Expected 6 written rows, saw ${JSON.stringify(rows)}`,
+            written.length === 8,
+            `Expected 8 written rows, saw ${JSON.stringify(rows)}`,
         );
         assert(
             written.every((row) => row.output.startsWith(outDir)),
@@ -231,14 +232,38 @@ app.whenReady().then(async () => {
         assert(
             extensions.has("webp") &&
                 extensions.has("png") &&
+                extensions.has("avif") &&
                 (extensions.has("jpg") || extensions.has("jpeg")),
             `Missing converted formats: ${JSON.stringify([...extensions])}`,
         );
         const files = fs.readdirSync(outDir);
         assert(
-            files.length === 6,
-            `Expected 6 files in outDir, saw ${files.length}: ${JSON.stringify(files)}`,
+            files.length === 8,
+            `Expected 8 files in outDir, saw ${files.length}: ${JSON.stringify(files)}`,
         );
+        const signatures = {
+            png: (b) =>
+                b.length > 8 && b.toString("hex", 0, 8) === "89504e470d0a1a0a",
+            jpg: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8,
+            jpeg: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8,
+            webp: (b) =>
+                b.length > 12 &&
+                b.toString("ascii", 0, 4) === "RIFF" &&
+                b.toString("ascii", 8, 12) === "WEBP",
+            avif: (b) =>
+                b.length > 12 &&
+                b.toString("ascii", 4, 8) === "ftyp" &&
+                /^(avif|avis)$/.test(b.toString("ascii", 8, 12)),
+        };
+        for (const row of written) {
+            const ext = path.extname(row.output).slice(1).toLowerCase();
+            const check = signatures[ext];
+            if (!check) continue;
+            assert(
+                check(fs.readFileSync(row.output)),
+                `Signature mismatch for ${row.output}`,
+            );
+        }
         await shot(dashboard, "convert-donut-results");
 
         const copied = await until(

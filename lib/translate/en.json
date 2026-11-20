@@ -2606,5 +2606,6 @@
     "5e7995": "Copied the first result to the clipboard.",
     "70a6d6": "Not a converted file to copy.",
     "6457e3": "This format cannot be copied to the clipboard.",
-    "b5cedc": "The destination folder is not valid."
+    "b5cedc": "The destination folder is not valid.",
+    "6d832c": "AVIF conversion failed."
 }

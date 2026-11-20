@@ -2525,5 +2525,6 @@
     "5e7995": "Primer resultado copiado al portapapeles.",
     "70a6d6": "No es un archivo convertido para copiar.",
     "6457e3": "Este formato no se puede copiar al portapapeles.",
-    "b5cedc": "La carpeta de destino no es válida."
+    "b5cedc": "La carpeta de destino no es válida.",
+    "6d832c": "Error al convertir a AVIF."
 }

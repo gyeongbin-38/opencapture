@@ -1046,11 +1046,11 @@ export function openConvertDonut(options: {
         frozen: OperationSettings,
         format: CaptureConvertFormat,
     ): Promise<{ data?: Uint8Array; extra?: CaptureConvertOptions }> => {
-        if (format === "webp" || format === "avif") {
+        if (format === "webp") {
             const prepared = await canvasPrepare(
                 await getSourceBytes(target),
                 frozen,
-                format === "avif" ? "image/avif" : "image/webp",
+                "image/webp",
                 sourceMime(target),
             );
             return {
@@ -1059,6 +1059,7 @@ export function openConvertDonut(options: {
             };
         }
         if (
+            format === "avif" ||
             frozen.signature ||
             ["svg", "avif"].includes(sourceExtension(target) ?? "")
         ) {
