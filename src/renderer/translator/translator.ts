@@ -152,19 +152,27 @@ pack(document.body).style({
 });
 
 const playIcon = iconEl("pause");
-const playEl = button(playIcon).on("click", () => {
-    pause = !pause;
-    playIcon.el.src = pause ? getImgUrl("recume.svg") : getImgUrl("pause.svg");
-    runRun();
-});
+const playEl = button(playIcon)
+    .attr({ title: t("暂停"), ariaLabel: t("暂停") })
+    .on("click", () => {
+        pause = !pause;
+        playIcon.el.src = pause
+            ? getImgUrl("recume.svg")
+            : getImgUrl("pause.svg");
+        const label = pause ? t("恢复") : t("暂停");
+        playEl.attr({ title: label, ariaLabel: label });
+        runRun();
+    });
 
-const runEl = button(iconEl("ocr")).on("click", async () => {
-    mainEl.el.style.opacity = "0";
-    await sl();
-    await sl();
-    await run();
-    mainEl.el.style.opacity = "1";
-});
+const runEl = button(iconEl("ocr"))
+    .attr({ title: t("运行OCR"), ariaLabel: t("运行OCR") })
+    .on("click", async () => {
+        mainEl.el.style.opacity = "0";
+        await sl();
+        await sl();
+        await run();
+        mainEl.el.style.opacity = "1";
+    });
 
 const toolsEl = view("x")
     .style({ position: "absolute", right: 0, top: 0 })
@@ -183,14 +191,25 @@ const toolsEl = view("x")
     .add([
         playEl,
         runEl,
-        button(iconEl("copy")).on("click", () => {
-            const text = textEl.el.innerText;
-            writeText(text);
-        }),
-        button(iconEl("close")).on("click", () =>
-            renderSend("windowClose", []),
-        ),
+        button(iconEl("copy"))
+            .attr({ title: t("复制"), ariaLabel: t("复制") })
+            .on("click", () => {
+                const text = textEl.el.innerText;
+                writeText(text);
+            }),
+        button(iconEl("close"))
+            .attr({ title: t("关闭"), ariaLabel: t("关闭") })
+            .on("click", () => renderSend("windowClose", [])),
     ]);
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        renderSend("windowClose", []);
+    } else if (e.key === " " && e.target === document.body) {
+        e.preventDefault();
+        playEl.el.click();
+    }
+});
 
 let OCR: Awaited<ReturnType<typeof import("esearch-ocr").init>> | null = null;
 
