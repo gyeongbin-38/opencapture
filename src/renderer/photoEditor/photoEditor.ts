@@ -335,7 +335,12 @@ async function doSave() {
         const img = getImg(true).replace(/^data:image\/\w+;base64,/, "");
         buf = Buffer.from(img, "base64");
     }
-    writeFileSync(path, buf);
+    try {
+        writeFileSync(path, buf);
+    } catch (error) {
+        alert(error instanceof Error ? error.message : String(error));
+        return;
+    }
     renderSend("ok_save", [path]);
     renderSend("windowClose", []);
 }

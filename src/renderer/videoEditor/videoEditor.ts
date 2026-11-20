@@ -2487,7 +2487,13 @@ async function saveGif(op?: {
     decoder.close();
     gif.finish();
     const bytes = gif.bytes();
-    fs.writeFileSync(exportPath, Buffer.from(bytes));
+    try {
+        fs.writeFileSync(exportPath, Buffer.from(bytes));
+    } catch (error) {
+        tipLog(t("파일을 저장하지 못했습니다."));
+        console.error("GIF write failed:", error);
+        return;
+    }
 
     gifProgress.remove();
 
@@ -2559,7 +2565,13 @@ async function saveApng() {
     const UPNG = (await import("@pdf-lib/upng")).default;
     const bytes = UPNG.encode(images, outputV.width, outputV.height, 0, dels);
 
-    fs.writeFileSync(exportPath, Buffer.from(bytes));
+    try {
+        fs.writeFileSync(exportPath, Buffer.from(bytes));
+    } catch (error) {
+        tipLog(t("파일을 저장하지 못했습니다."));
+        console.error("APNG write failed:", error);
+        return;
+    }
 
     apngProgress.remove();
 
@@ -2613,8 +2625,13 @@ async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
     await output.finalize();
     const { buffer } = output.target;
     if (buffer) {
-        fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-        renderSend("ok_save", [exportPath, true]);
+        try {
+            fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
+            renderSend("ok_save", [exportPath, true]);
+        } catch (error) {
+            tipLog(t("파일을 저장하지 못했습니다."));
+            console.error("WebM write failed:", error);
+        }
     } else {
         tipLog(t("동영상 인코딩에 실패했습니다."));
     }
@@ -2665,8 +2682,13 @@ async function saveMp4(op: { codec: "avc" | "vp9" | "av1" }) {
     await output.finalize();
     const { buffer } = output.target;
     if (buffer) {
-        fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-        renderSend("ok_save", [exportPath, true]);
+        try {
+            fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
+            renderSend("ok_save", [exportPath, true]);
+        } catch (error) {
+            tipLog(t("파일을 저장하지 못했습니다."));
+            console.error("MP4 write failed:", error);
+        }
     } else {
         tipLog(t("동영상 인코딩에 실패했습니다."));
     }

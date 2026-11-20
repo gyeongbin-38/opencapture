@@ -4171,7 +4171,7 @@ mainOn("clearCache", () => {
     ]);
 });
 mainOn("move_user_data", ([target]) => {
-    if (!target) return;
+    if (!target) return "no target";
     const toPath = resolve(target);
     const prePath = app.getPath("userData");
     mkdirSync(toPath, { recursive: true });
@@ -4181,8 +4181,11 @@ mainOn("move_user_data", ([target]) => {
         } else {
             execSync(`cp -r "${prePath}/**" "${toPath}"`);
         }
-    } catch (error) {}
-    // todo 错误返回
+        return null;
+    } catch (error) {
+        console.error("move_user_data failed:", error);
+        return error instanceof Error ? error.message : String(error);
+    }
 });
 mainOn("getAutoStart", () => {
     if (process.platform === "linux") {

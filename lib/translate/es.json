@@ -2529,5 +2529,6 @@
     "6d832c": "Error al convertir a AVIF.",
     "94e78a": "No se pudo guardar el archivo.",
     "524cb4": "No se pudo copiar al portapapeles.",
-    "5426c1": "El códec seleccionado no es compatible."
+    "5426c1": "El códec seleccionado no es compatible.",
+    "2cb5b3": "No se pudo migrar los datos."
 }

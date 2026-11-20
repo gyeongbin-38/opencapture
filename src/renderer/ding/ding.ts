@@ -947,7 +947,14 @@ const setNewDing = (
         renderSend("windowTopest", [true]);
         if (!path) return;
         const bytes = Buffer.from(await (await renderPinBlob()).arrayBuffer());
-        fs.writeFileSync(path, bytes);
+        try {
+            fs.writeFileSync(path, bytes);
+        } catch (error) {
+            ocrTransStateBar.el.classList.remove(Class.hide);
+            ocrTransStateBar.sv(t("파일을 저장하지 못했습니다."));
+            console.error("savePin failed:", error);
+            return;
+        }
         renderSend("ok_save", [path]);
     };
     const editPin = async () => {

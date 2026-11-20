@@ -2087,7 +2087,15 @@ const xs: Record<
                 if (!c) return;
                 try {
                     fs.mkdirSync(portablePath, { recursive: true });
-                    renderSendSync("move_user_data", [portablePath]);
+                    const moveError = renderSendSync("move_user_data", [
+                        portablePath,
+                    ]);
+                    if (moveError) {
+                        alert(
+                            `${t("데이터 이전에 실패했습니다.")}\n${moveError}`,
+                        );
+                        return;
+                    }
                     renderSend("reload", []);
                 } catch (error) {
                     // @ts-ignore
@@ -4380,7 +4388,15 @@ function inpaintEl() {
                     }
                     const b = Buffer.from(await new Blob(chunks).arrayBuffer());
                     fs.mkdirSync(dir, { recursive: true });
-                    fs.writeFileSync(file, b);
+                    try {
+                        fs.writeFileSync(file, b);
+                    } catch (error) {
+                        console.error("download write failed:", error);
+                        alert(
+                            `${t("파일을 저장하지 못했습니다.")}\n${String(error)}`,
+                        );
+                        return;
+                    }
                     render();
                 });
             }),

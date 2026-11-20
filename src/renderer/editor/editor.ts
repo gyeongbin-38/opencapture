@@ -1853,7 +1853,9 @@ function storeHistory() {
     fs.writeFile(
         historyPath,
         JSON.stringify({ 历史记录: historyList }),
-        () => {},
+        (err) => {
+            if (err) console.error("history write failed:", err);
+        },
     );
 }
 
@@ -1957,7 +1959,11 @@ renderOn("editorInit", ([name, list]) => {
 function editOnOther(editingOnOther: boolean) {
     if (editingOnOther) {
         const data = Buffer.from(editor.get());
-        fs.writeFile(tmpTextPath, data, () => {
+        fs.writeFile(tmpTextPath, data, (err) => {
+            if (err) {
+                console.error("edit-on-other write failed:", err);
+                return;
+            }
             shell.openPath(tmpTextPath);
             fileWatcher = fs.watch(tmpTextPath, () => {
                 fs.readFile(tmpTextPath, "utf8", (e, data) => {
@@ -1977,7 +1983,9 @@ function editOnOther(editingOnOther: boolean) {
 function writeEditOnOther() {
     if (!editOnOtherEl.gv) return;
     const data = Buffer.from(editor.get());
-    fs.writeFile(tmpTextPath, data, () => {});
+    fs.writeFile(tmpTextPath, data, (err) => {
+        if (err) console.error("edit-on-other sync failed:", err);
+    });
 }
 
 async function edit(arg: EditToolsType) {

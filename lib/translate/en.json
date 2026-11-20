@@ -2610,5 +2610,6 @@
     "6d832c": "AVIF conversion failed.",
     "94e78a": "The file could not be saved.",
     "524cb4": "Could not copy to the clipboard.",
-    "5426c1": "The selected codec is not supported."
+    "5426c1": "The selected codec is not supported.",
+    "2cb5b3": "Data migration failed."
 }
