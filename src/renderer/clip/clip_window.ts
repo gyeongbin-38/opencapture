@@ -4564,11 +4564,14 @@ const ratioToggle = button(txt("a:b"))
         );
         whBar(finalRect);
     });
+whX0.attr({ ariaLabel: t("左上x"), inputMode: "numeric" });
+whY0.attr({ ariaLabel: t("左上y"), inputMode: "numeric" });
+whX1.attr({ ariaLabel: t("右下x"), inputMode: "numeric" });
+whY1.attr({ ariaLabel: t("右下y"), inputMode: "numeric" });
 whW.attr({ ariaLabel: t("너비"), inputMode: "numeric" });
 whH.attr({ ariaLabel: t("높이"), inputMode: "numeric" });
 const dimExprTip = t("수식 입력 가능 (100+50*2) · ↑↓ ±1 · Ctrl ×5 · Shift ×10");
-whW.el.setAttribute("data-title", dimExprTip);
-whH.el.setAttribute("data-title", dimExprTip);
+for (const xel of whL) xel.el.setAttribute("data-title", dimExprTip);
 whEl.add([
     whGrip,
     whCoordinates,
@@ -4630,7 +4633,10 @@ for (const [key, desc] of [
     ["Ctrl+C", t("복사")],
     ["Ctrl+Z · Ctrl+Y / Ctrl+Shift+Z", t("실행 취소 · 다시 실행")],
     ["Ctrl+D", t("도형 복제")],
+    ["Ctrl+V", t("붙여넣기")],
     ["Delete · Backspace", t("도형 삭제")],
+    ["휠 · Ctrl+휠", `${t("移动")} · ${t("缩放")}`],
+    ["Ctrl+0", t("원래 크기로")],
     ["?", t("이 도움말 표시")],
 ] as const) {
     captureHelp.add(
@@ -5898,6 +5904,7 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
         hotkey: [
             { name: "移动", keys: [t("方向键"), "wheel"] },
             { name: "缩放", keys: ["Control+wheel"] },
+            { name: "원래 크기로", keys: ["Control+0"] },
         ],
     },
     {
@@ -5914,6 +5921,7 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
             { name: "宽", keys: [store.get("大小栏快捷键.宽")] },
             { name: "高", keys: [store.get("大小栏快捷键.高")] },
             { name: "自动框选", keys: ["S"] },
+            { name: "마지막 선택 크기와 위치를 다시 사용", keys: ["R"] },
             { name: "自由选择", keys: ["F"] },
             { name: "창 선택", keys: ["W"] },
             { name: "匹配自动框选", keys: [`Shift ${t("框选")}`] },
@@ -5924,9 +5932,18 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
         hotkey: [
             { name: "全选", keys: ["Control+A"] },
             { name: "复制", keys: ["Control+D"] },
+            { name: "붙여넣기", keys: ["Control+V"] },
             { name: "删除", keys: ["Delete", "Backspace"] },
             { name: "撤回", keys: ["Control+Z"] },
             { name: "重做", keys: ["Control+Y", "Control+Shift+Z"] },
+            { name: "취소 · 선택 해제 · 닫기", keys: ["Escape"] },
+        ],
+    },
+    {
+        name: "도구",
+        hotkey: [
+            { name: "저장", keys: ["Control+S"] },
+            { name: "복사", keys: ["Control+C"] },
         ],
     },
     {
@@ -5944,7 +5961,13 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
             { name: "复制颜色", keys: [store.get("其他快捷键.复制颜色")] },
         ],
     },
-    { name: "快捷键", hotkey: [{ name: "展示", keys: ["Alt"] }] },
+    {
+        name: "快捷键",
+        hotkey: [
+            { name: "展示", keys: ["Alt"] },
+            { name: "단축키", keys: ["?"] },
+        ],
+    },
 ];
 
 let autoDo = store.get("框选后默认操作");
@@ -6447,7 +6470,7 @@ document.onwheel = (e) => {
 
 document.onkeyup = (e) => {
     if (e.key === "0") {
-        if (e.ctrlKey) {
+        if (e.ctrlKey || e.metaKey) {
             setEditorP(1 / window.devicePixelRatio, 0, 0); // todo 统一缩放标准
             zoomW = mainCanvas.width;
         }

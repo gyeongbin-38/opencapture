@@ -779,7 +779,9 @@ app.whenReady().then(async () => {
                 helpText.text.includes("Ctrl+A") &&
                 helpText.text.includes("Ctrl+S") &&
                 helpText.kbds.includes("R") &&
-                helpText.rows >= 15,
+                helpText.kbds.includes("Ctrl+V") &&
+                helpText.kbds.includes("Ctrl+0") &&
+                helpText.rows >= 18,
             `Help panel missing marker gestures: ${JSON.stringify(helpText)}`,
         );
         report.checks.push({ helpPanel: helpText.rows });

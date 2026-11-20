@@ -40,6 +40,7 @@
     "373847": "L'utilisateur a annulé la sauvegarde",
     "384704": "Récupérer la liste des modèles",
     "394293": "Position horizontale",
+    "402249": "{count} sélectionnés",
     "407695": "Couper la fin",
     "408350": "Instructions utilisateur, ${t} pour le texte, ${to}, ${from}",
     "411931": "Convertir des données tabulaires",
@@ -102,6 +103,7 @@
     "841632": "Barre de suivi de la souris",
     "869382": "presse-papiers",
     "870933": "Impossible d'encoder les images.",
+    "878449": "Langue de l’application",
     "882920": "Hauteur",
     "897334": "Les paramètres sont invalides.",
     "901234": "Coller à partir du presse-papiers",
@@ -2400,7 +2402,6 @@
     "af7886": "Développer la liste des fichiers",
     "b57eff": "Les actions sur les fichiers ne convertissent pas le contenu",
     "6b23be": "Changer d’opération",
-    "878449": "Langue de l’application",
     "b14ad9": "Langue d’affichage",
     "8ce1d3": "Les changements de langue prendront effet au prochain démarrage de l’application.",
     "a4bdca": "Langue non prise en charge.",
@@ -2408,7 +2409,6 @@
     "a3cc95": "{images} images · {elements} éléments",
     "cafe4b": "{count} · {total} au total",
     "f484bf": "{count}",
-    "402249": "{count} sélectionnés",
     "e0648d": "Charger plus ({current}/{total})",
     "9c2215": "Impossible de capturer l’écran.",
     "7fb916": "L’écran capturé est vide. Réessayez de le capturer.",
@@ -2426,5 +2426,7 @@
     "bb5054": "Full screen · select all shapes",
     "57e66f": "Cancel · deselect · close",
     "e31bf1": "Decrease remaining time by 1 second",
-    "df3cba": "Increase remaining time by 1 second"
+    "df3cba": "Increase remaining time by 1 second",
+    "124d4a": "Paste",
+    "e1102a": "Reset zoom"
 }

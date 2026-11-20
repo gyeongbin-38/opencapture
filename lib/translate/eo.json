@@ -40,6 +40,7 @@
     "373847": "Uzanto nuligis konservadon",
     "384704": "Alporti model-liston",
     "394293": "Horizontala pozicio",
+    "402249": "{count} elektitaj",
     "407695": "Kutimigi la finon",
     "408350": "uzanto sugestoj, ${t} estas teksto, ${to}, ${from}",
     "411931": "Konverti tabelajn datumojn",
@@ -102,6 +103,7 @@
     "841632": "Mussekvanta langeto",
     "869382": "tondujo",
     "870933": "Ne eblis kodadi kadrojn.",
+    "878449": "Aplika lingvo",
     "882920": "Alto",
     "897334": "La agordoj estas malvalidaj.",
     "901234": "Inkludoj de la ŝnureto",
@@ -2400,7 +2402,6 @@
     "af7886": "Etendi la dosierliston",
     "b57eff": "Dosieraj agoj ne konvertas enhavon",
     "6b23be": "Ŝanĝi agon",
-    "878449": "Aplika lingvo",
     "b14ad9": "Montra lingvo",
     "8ce1d3": "Lingvoŝanĝoj ekvalidos je la sekva lanĉo de la aplikaĵo.",
     "a4bdca": "Nesubtenata lingvo.",
@@ -2408,7 +2409,6 @@
     "a3cc95": "{images} bildoj · {elements} elementoj",
     "cafe4b": "{count} · {total} entute",
     "f484bf": "{count}",
-    "402249": "{count} elektitaj",
     "e0648d": "Ŝargi pli ({current}/{total})",
     "9c2215": "Malsukcesis kapti la ekranon.",
     "7fb916": "La kaptita ekrano estas malplena. Provu kapti ĝin denove.",
@@ -2426,5 +2426,7 @@
     "bb5054": "Full screen · select all shapes",
     "57e66f": "Cancel · deselect · close",
     "e31bf1": "Decrease remaining time by 1 second",
-    "df3cba": "Increase remaining time by 1 second"
+    "df3cba": "Increase remaining time by 1 second",
+    "124d4a": "Paste",
+    "e1102a": "Reset zoom"
 }

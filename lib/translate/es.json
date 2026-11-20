@@ -40,6 +40,7 @@
     "373847": "El usuario ha cancelado la grabación",
     "384704": "Obtener lista de modelos",
     "394293": "Posición horizontal",
+    "402249": "{count} seleccionados",
     "407695": "Recortar cola",
     "408350": "Palabras de aviso del usuario, ${t} para texto, ${to}，${from}",
     "411931": "Convertir datos tabulares",
@@ -102,6 +103,7 @@
     "841632": "Barra de seguimiento del mouse",
     "869382": "portapapeles",
     "870933": "No se pudieron codificar los fotogramas.",
+    "878449": "Idioma de la aplicación",
     "882920": "Alto",
     "897334": "Los ajustes no son válidos.",
     "901234": "Pegar desde el portapapeles",
@@ -2400,7 +2402,6 @@
     "af7886": "Expandir lista de archivos",
     "b57eff": "Las acciones de archivo no convierten el contenido",
     "6b23be": "Cambiar operación",
-    "878449": "Idioma de la aplicación",
     "b14ad9": "Idioma de visualización",
     "8ce1d3": "Los cambios de idioma se aplicarán la próxima vez que inicies la aplicación.",
     "a4bdca": "Idioma no compatible.",
@@ -2408,7 +2409,6 @@
     "a3cc95": "{images} imágenes · {elements} elementos",
     "cafe4b": "{count} · {total} en total",
     "f484bf": "{count}",
-    "402249": "{count} seleccionados",
     "e0648d": "Cargar más ({current}/{total})",
     "9c2215": "No se pudo capturar la pantalla.",
     "7fb916": "La pantalla capturada está vacía. Intenta capturarla de nuevo.",
@@ -2426,5 +2426,7 @@
     "bb5054": "Full screen · select all shapes",
     "57e66f": "Cancel · deselect · close",
     "e31bf1": "Decrease remaining time by 1 second",
-    "df3cba": "Increase remaining time by 1 second"
+    "df3cba": "Increase remaining time by 1 second",
+    "124d4a": "Paste",
+    "e1102a": "Reset zoom"
 }
