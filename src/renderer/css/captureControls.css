@@ -40,7 +40,7 @@ body {
     border-radius: var(--r-md);
     background: var(--capture-surface);
     box-shadow: var(--shadow);
-    transition: opacity 140ms ease;
+    transition: opacity var(--transition);
 }
 .capture-tool {
     box-sizing: border-box !important;
@@ -60,13 +60,18 @@ body {
     transition: background 120ms ease, color 120ms ease !important;
     outline: none !important;
 }
+/* 基类的 background-color: transparent !important 会吞掉非 !important 的状态背景 */
 .capture-tool:hover,
 .capture-tool[aria-pressed="true"],
 #clip_wh button[aria-pressed="true"] {
-    background: #ffffff1c;
+    background: #ffffff1c !important;
 }
 .capture-tool:active {
-    background: #ffffff26;
+    background: #ffffff26 !important;
+}
+.capture-tool:disabled {
+    opacity: 0.45;
+    cursor: default;
 }
 .capture-tool.is-primary {
     background: var(--accent) !important;
@@ -385,7 +390,7 @@ body {
     background: rgb(0 0 0 / 50%);
     box-sizing: border-box;
     box-shadow: 0 0 0 1px rgb(0 0 0 / 40%);
-    transition: background-color 0.12s ease-out, transform 0.12s ease-out;
+    transition: background-color 120ms ease-out, transform 120ms ease-out;
 }
 .capture-free-start.is-near {
     background: #fff;
@@ -488,12 +493,21 @@ body {
 .radial_item:active {
     background: #ffffff26 !important;
 }
+/* 否则会与 :active 同优先级且靠后，主按钮按下变深底深字 */
+.radial_item.is-primary:active {
+    background: var(--accent) !important;
+}
+/* 弹出动画 fill:both 会常驻锁定 opacity:1，disabled 需要 !important 才能压暗 */
+.radial_item:disabled {
+    opacity: 0.45 !important;
+    cursor: default;
+}
 .radial-halo {
     position: fixed;
     z-index: 118;
     border-radius: 50%;
     border: 1px solid #ffffff17;
-    background: var(--bg, #0c0c0e) 50;
+    background: color-mix(in srgb, var(--bg, #0c0c0e) 50%, transparent);
     transform: translate(-50%, -50%);
     pointer-events: none;
     animation: capture_halo_expand 180ms ease-out both;
@@ -504,7 +518,7 @@ body {
     background-color: var(--surface-soft) !important;
     border-radius: 50% !important;
     outline: none !important;
-    transition: none !important;
+    transition: background-color 120ms ease, color 120ms ease !important;
     position: fixed;
     z-index: 121;
     width: 28px;
@@ -517,6 +531,10 @@ body {
     color: var(--muted);
     transform: translate(-50%, -50%);
     cursor: pointer;
+}
+.radial-center:hover {
+    background-color: var(--surface-hover) !important;
+    color: var(--capture-text);
 }
 .radial-center .capture-icon,
 .radial-center svg {
@@ -643,7 +661,7 @@ body {
     font-variant-numeric: tabular-nums;
 }
 .capture-dimensions > :last-child {
-    color: #71717a;
+    color: var(--font-color-ll);
     font-size: var(--fs-xs);
 }
 .capture-coordinates {
@@ -661,7 +679,10 @@ body {
 #clip_wh .capture-ratios[hidden] {
     display: none !important;
 }
-.wh-ratio-chip {
+/* 需要 #clip_wh 前缀压住 #clip_wh button 的尺寸/内边距，hover/active 的 !important
+   才能盖过按钮基类的 background-color: transparent !important */
+#clip_wh .wh-ratio-chip {
+    width: auto;
     height: 22px;
     display: inline-flex;
     align-items: center;
@@ -674,13 +695,13 @@ body {
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
 }
-.wh-ratio-chip:hover {
+#clip_wh .wh-ratio-chip:hover {
     color: var(--text);
-    background: var(--surface-hover);
+    background: var(--surface-hover) !important;
 }
-.wh-ratio-chip:active {
+#clip_wh .wh-ratio-chip:active {
     color: var(--text);
-    background: #ffffff26;
+    background: #ffffff26 !important;
 }
 #clip_wh input {
     height: 24px !important;
@@ -708,12 +729,22 @@ body {
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease;
 }
+#clip_wh button:hover {
+    color: var(--capture-text);
+    background: var(--surface-hover) !important;
+}
 #clip_wh button[aria-pressed="true"],
 #clip_wh button[aria-expanded="true"] {
     color: var(--capture-text);
+    background: #ffffff1c !important;
 }
-#clip_wh button[aria-expanded="true"] {
-    background: #ffffff1c;
+#clip_wh button[aria-pressed="true"]:hover,
+#clip_wh button[aria-expanded="true"]:hover {
+    background: #ffffff26 !important;
+}
+#clip_wh button:active {
+    color: var(--capture-text);
+    background: #ffffff26 !important;
 }
 #clip_wh .capture-icon,
 #clip_wh svg {
@@ -769,7 +800,8 @@ body {
     #clip_wh,
     #tool_bar,
     #draw_main,
-    #draw_side {
+    #draw_side,
+    .radial-halo {
         background: var(--surface-soft);
         backdrop-filter: none;
     }

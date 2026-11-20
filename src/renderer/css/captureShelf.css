@@ -14,6 +14,8 @@
     --r-md: 10px;
     --r-lg: 12px;
     --r-full: 999px;
+    --fs-xs: 11px;
+    --fs-sm: 12px;
 }
 
 * {
@@ -49,7 +51,7 @@ body {
     align-items: center;
     justify-content: space-between;
     -webkit-app-region: drag;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     color: var(--muted);
 }
 button {
@@ -76,6 +78,9 @@ button:focus-visible {
 .shelf-close:hover {
     background: var(--accent-soft);
 }
+.shelf-close:active {
+    background: var(--surface-hover);
+}
 .shelf-rail {
     display: flex;
     align-items: center;
@@ -84,6 +89,20 @@ button:focus-visible {
     flex: 1;
     min-height: 52px;
     scrollbar-width: thin;
+    scrollbar-color: #ffffff2e transparent;
+}
+.shelf-rail::-webkit-scrollbar {
+    height: 5px;
+}
+.shelf-rail::-webkit-scrollbar-thumb {
+    border-radius: var(--r-full);
+    background: #ffffff2e;
+}
+.shelf-rail::-webkit-scrollbar-thumb:hover {
+    background: #ffffff4d;
+}
+.shelf-rail::-webkit-scrollbar-track {
+    background: transparent;
 }
 .shelf-card {
     width: 76px;
@@ -93,14 +112,29 @@ button:focus-visible {
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
     background: var(--surface-hover);
-    transition: border-color 0.12s ease;
+    cursor: grab;
+    transition: border-color 0.12s ease, transform 0.12s ease, background 0.12s
+        ease, box-shadow 0.12s ease;
 }
 .shelf-card:hover {
     border-color: var(--line-bright);
+    transform: translateY(-1px);
+}
+.shelf-card:active {
+    transform: none;
+    cursor: grabbing;
+}
+.shelf-card:focus-visible {
+    outline-offset: -2px;
+}
+.shelf-card.is-dragging {
+    opacity: 0.55;
+    cursor: grabbing;
 }
 .shelf-card[aria-pressed="true"] {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px #d4d4d830;
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 1px #d4d4d866;
 }
 .shelf-card img {
     width: 100%;
@@ -110,8 +144,9 @@ button:focus-visible {
 }
 .shelf-empty {
     margin: auto;
+    padding: 0 8px;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--fs-xs);
     white-space: nowrap;
 }
 .shelf-actions {
@@ -148,7 +183,7 @@ button:focus-visible {
 }
 .shelf-action:disabled {
     opacity: 0.35;
-    cursor: default;
+    cursor: not-allowed;
 }
 .shelf-status {
     font-size: 10px;
@@ -161,7 +196,7 @@ button:focus-visible {
     display: none;
 }
 .shelf-hint {
-    font-size: var(--fs-xs, 11px);
+    font-size: var(--fs-xs);
     color: var(--muted);
     opacity: 0.7;
     text-align: center;
@@ -185,8 +220,34 @@ button:focus-visible {
 .shelf-reduced .shelf-arrived {
     animation: none;
 }
+.shelf-feedback-off .shelf-close,
+.shelf-reduced .shelf-close,
+.shelf-feedback-off .shelf-action,
+.shelf-reduced .shelf-action,
+.shelf-feedback-off .shelf-card,
+.shelf-reduced .shelf-card {
+    transition: none;
+}
+.shelf-feedback-off .shelf-card,
+.shelf-reduced .shelf-card {
+    transform: none;
+}
 @media (prefers-reduced-motion: reduce) {
     .shelf-arrived {
         animation: none;
+    }
+    .shelf-close,
+    .shelf-action,
+    .shelf-card {
+        transition: none;
+    }
+    .shelf-card {
+        transform: none;
+    }
+}
+/* biome-ignore lint/correctness/noUnknownMediaFeatureName: Chromium supports the reduced transparency preference. */
+@media (prefers-reduced-transparency: reduce) {
+    :root {
+        --surface-deep: #101012;
     }
 }
