@@ -76,6 +76,7 @@ import { safeJSONParse, tryD, tryx } from "../../../lib/utils";
 import type { IconType } from "../../iconTypes";
 import { runAI } from "../lib/ai";
 import { isDeepStrictEqual } from "../lib/isDeepStrictEqual";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { defaultOcrId } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
 
@@ -5266,6 +5267,10 @@ function about() {
 setTranslate((text) => t(text));
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 for (const v of Object.values(s)) {
     if (!v) continue;

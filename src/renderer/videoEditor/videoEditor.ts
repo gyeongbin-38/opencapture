@@ -42,6 +42,7 @@ import { typedEntries } from "../../../lib/utils";
 import type { IconType } from "../../iconTypes";
 import floydSteinberg from "../lib/dither";
 import xhistory from "../lib/history";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import {
     type SrcAudio,
     audioCapture,
@@ -50,6 +51,8 @@ import {
 } from "./audio";
 
 initStyle(store);
+
+reportUnhandledErrors(tipLog);
 
 setTitle(t("超级录屏"));
 

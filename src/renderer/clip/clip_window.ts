@@ -99,6 +99,7 @@ import type {
 import type { IconType } from "../../iconTypes";
 import xhistory from "../lib/history";
 import { encodeGif, encodeIco } from "../lib/imageEncode";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { ocrList } from "../ocr/ocr_omni";
 import { createCaptureRadial } from "./captureRadial";
@@ -115,6 +116,10 @@ type SrcPoint = { x: number; y: number } & { readonly _: unique symbol };
 
 initStyle(store);
 let captureWorkspace: ReturnType<typeof createCaptureWorkspace> | null = null;
+reportUnhandledErrors((message) => {
+    if (captureWorkspace) captureWorkspace.showError(message);
+    else renderSend("noti", [{ title: t("오류"), body: message }]);
+});
 let capturePreferences: CaptureExperiencePreferences = structuredClone(
     DEFAULT_CAPTURE_EXPERIENCE,
 );

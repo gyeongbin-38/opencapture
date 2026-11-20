@@ -12,10 +12,15 @@ import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
 import { writeText } from "../lib/clipboard";
 import { loadTranslator } from "../lib/translate";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import { Class, getImgUrl, initStyle, setTitle } from "../root/root";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 setTitle(t("屏幕翻译"));
 

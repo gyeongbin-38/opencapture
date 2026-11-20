@@ -14,7 +14,10 @@ import { t } from "../../../lib/translate/translate";
 import { Class, cssColor, getImgUrl, initStyle, setTitle } from "../root/root";
 
 import store from "../../../lib/store/renderStore";
+import { reportUnhandledErrors } from "../lib/unhandled";
 initStyle(store);
+
+reportUnhandledErrors((message) => setRecorderState("error", message));
 
 setTitle(t("录屏"));
 

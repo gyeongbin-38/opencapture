@@ -40,8 +40,13 @@ const os = require("node:os") as typeof import("os");
 const path = require("node:path") as typeof import("path");
 import type { FSWatcher } from "node:fs";
 import xhistory from "../lib/history";
+import { reportUnhandledErrors } from "../lib/unhandled";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 type TabItem = {
     el: ElType<HTMLElement>;

@@ -31,6 +31,7 @@ import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
 import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
 import removeobj from "../lib/removeObj";
+import { reportUnhandledErrors } from "../lib/unhandled";
 
 function icon(src: IconType) {
     return image(getImgUrl(`${src}.svg`), noI18n("icon")).class("icon");
@@ -56,6 +57,8 @@ function alert(m: string) {
 }
 
 initStyle(store);
+
+reportUnhandledErrors(alert);
 
 setTranslate(t);
 

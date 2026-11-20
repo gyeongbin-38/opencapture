@@ -32,6 +32,7 @@ import type { DingStart, Dire } from "../../ShareTypes";
 import type { IconType } from "../../iconTypes";
 import { createImageHold } from "../lib/imageHold";
 import { loadTranslator } from "../lib/translate";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { defaultOcrId, loadOCR } from "../ocr/ocr";
 import {
     pinOutputSize,
@@ -40,6 +41,10 @@ import {
 } from "./pinRendering";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 setTitle(t("贴图"));
 
