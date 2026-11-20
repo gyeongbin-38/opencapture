@@ -49,6 +49,12 @@ function harness() {
         isRect: true,
         finalRect: [10, 20, 80, 60],
         freeSelect: [],
+        drawBarOpen: false,
+        fabricCanvas: {
+            getActiveObject: vi.fn(() => null),
+            requestRenderAll: vi.fn(),
+        },
+        nudgePushSoon: vi.fn(),
         mainCanvas: { width: 640, height: 480 },
         editorP: { x: 0, y: 0, zoom: 1 },
         rectSelect: true,
@@ -195,5 +201,50 @@ describe("production capture keyboard movement", () => {
             { x: 110, y: 100 },
         );
         expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    it("nudges the active fabric object with arrows while annotating", () => {
+        const h = harness();
+        const obj = {
+            left: 50,
+            top: 60,
+            set: vi.fn(function (
+                this: { left: number; top: number },
+                key: string,
+                value: number,
+            ) {
+                this[key as "left" | "top"] = value;
+            }),
+            setCoords: vi.fn(),
+        };
+        Object.assign(h.state, {
+            drawBarOpen: true,
+            direction: "",
+            fabricCanvas: {
+                getActiveObject: () => obj,
+                requestRenderAll: vi.fn(),
+            },
+        });
+        const event = keyEvent("ArrowRight", { shiftKey: true });
+        h.handleKey(event);
+        expect(obj.left).toBe(60);
+        expect(obj.top).toBe(60);
+        expect(obj.setCoords).toHaveBeenCalledOnce();
+        expect(h.state.nudgePushSoon).toHaveBeenCalledOnce();
+        expect(h.state.moveRect).not.toHaveBeenCalled();
+        expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    it("keeps selection movement when the draw bar is closed", () => {
+        const h = harness();
+        Object.assign(h.state, {
+            fabricCanvas: {
+                getActiveObject: () => ({ left: 0, top: 0 }),
+                requestRenderAll: vi.fn(),
+            },
+        });
+        const event = keyEvent("ArrowRight");
+        h.handleKey(event);
+        expect(h.state.moveRect).toHaveBeenCalledOnce();
     });
 });

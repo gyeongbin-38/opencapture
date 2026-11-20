@@ -2503,5 +2503,6 @@
     "de7254": "Marker",
     "5e1b6d": "Capture countdown",
     "f0d9f0": "Move selection",
-    "54c450": "No temporary captures"
+    "54c450": "No temporary captures",
+    "c649fa": "Frame capture failed; stitched up to this point only"
 }

@@ -2420,5 +2420,6 @@
     "b1bf7d": "Selecciona primero una región de captura.",
     "dd2f23": "La pantalla de Windows está bloqueada o hay otro escritorio activo. Desbloquéala e intenta capturar de nuevo.",
     "c30767": "Se necesita una ruta de archivo.",
-    "d14057": "La ruta de ejecución de la aplicación no está disponible."
+    "d14057": "La ruta de ejecución de la aplicación no está disponible.",
+    "c649fa": "Error al capturar el fotograma; solo se unió hasta aquí"
 }

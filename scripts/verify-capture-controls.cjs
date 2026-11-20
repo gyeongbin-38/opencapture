@@ -1444,6 +1444,88 @@ app.whenReady().then(async () => {
             return typeof n === "number" && n > inkBefore ? n : null;
         }, "Ctrl+V did not paste the clipboard image onto the canvas");
         report.checks.push({ clipboardImagePaste: { inkBefore, inkAfter } });
+        // Drag-and-drop: an image file dropped onto the canvas area lands
+        // as a fabric annotation object, matching the paste path.
+        // Keys handled by document.body.onkeydown must target the body.
+        const pressBodyKey = (key, code, mods) =>
+            clip(
+                `(() => { for (const type of ["keydown","keyup"]) document.body.dispatchEvent(new KeyboardEvent(type,{key:"${key}",keyCode:${code},which:${code},ctrlKey:${Boolean(mods?.ctrl)},shiftKey:${Boolean(mods?.shift)},bubbles:true})); })()`,
+            );
+        const frameX = () =>
+            clip(
+                `(() => document.querySelector('#selection_frame').getBoundingClientRect().x)()`,
+            );
+        const canvasSig = (sel) =>
+            clip(
+                `(() => { const u=document.querySelector('${sel}'); const c=document.createElement('canvas'); c.width=Math.min(u.width,480); c.height=Math.min(u.height,270); const x=c.getContext('2d'); x.drawImage(u,0,0,c.width,c.height); const d=x.getImageData(0,0,c.width,c.height).data; let h=0; for(let i=0;i<d.length;i+=4){ h=(h*31+d[i])>>>0; } return h; })()`,
+            );
+        const lowerSig = () => canvasSig(".lower-canvas");
+        const sigBeforeDrop = await lowerSig();
+        await clip(`(async () => {
+            const c = document.createElement("canvas"); c.width = 60; c.height = 40;
+            const x = c.getContext("2d"); x.fillStyle = "#0af"; x.fillRect(0, 0, 60, 40);
+            const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+            const dt = new DataTransfer();
+            dt.items.add(new File([blob], "drop.png", { type: "image/png" }));
+            const el = document.querySelector("#editor");
+            el.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
+            el.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+        })()`);
+        const sigAfterDrop = await until(async () => {
+            const s = await lowerSig();
+            return s !== sigBeforeDrop ? s : null;
+        }, "Dropping an image file did not insert it onto the canvas");
+        report.checks.push({ dropImageInsert: true });
+        // Non-image files are ignored by the drop handler.
+        await clip(`(() => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([new Blob(["plain text"])], "notes.txt", { type: "text/plain" }));
+            document.querySelector("#editor").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+        })()`);
+        await pause(300);
+        assert(
+            (await lowerSig()) === sigAfterDrop,
+            "Non-image drop changed the canvas",
+        );
+        // With the draw bar closed, arrows keep moving the selection rect
+        // even though the dropped object is still the active object.
+        const fxClosed = await frameX();
+        const sigClosed = await lowerSig();
+        await pressBodyKey("ArrowRight", 39);
+        await pause(150);
+        const fxAfterMove = await frameX();
+        assert(
+            fxAfterMove > fxClosed && (await lowerSig()) === sigClosed,
+            `Arrow without draw bar should move the rect, not the object: ${JSON.stringify({ fxClosed, fxAfterMove, sigClosed, sigNow: await lowerSig() })}`,
+        );
+        // Open the annotate bar; the dropped image is still active, so
+        // Shift+ArrowRight nudges the object and leaves the rect alone.
+        await clip(
+            'document.querySelector("[data-capture-action=draw]")?.click()',
+        );
+        await pause(200);
+        const sigBeforeNudge = await lowerSig();
+        const fxBeforeNudge = await frameX();
+        await pressBodyKey("ArrowRight", 39, { shift: true });
+        await pause(250);
+        const sigAfterNudge = await lowerSig();
+        const fxAfterNudge = await frameX();
+        assert(
+            sigAfterNudge !== sigBeforeNudge &&
+                Math.abs(fxAfterNudge - fxBeforeNudge) <= 1,
+            `Arrow with draw bar open did not nudge the object: ${JSON.stringify({ sigBeforeNudge, sigAfterNudge, fxBeforeNudge, fxAfterNudge })}`,
+        );
+        // Closing the bar deselects the object and arrows move the rect again.
+        await pressKey("Escape", 27);
+        await pause(200);
+        const fxEsc = await frameX();
+        await pressBodyKey("ArrowRight", 39);
+        await pause(150);
+        assert(
+            (await frameX()) > fxEsc,
+            "Arrow after closing the draw bar did not move the rect",
+        );
+        report.checks.push({ objectArrowNudge: true });
         capture.hide();
         await run('document.querySelectorAll(".nav-button")[1].click();');
         await until(

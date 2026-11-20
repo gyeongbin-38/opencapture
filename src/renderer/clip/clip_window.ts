@@ -664,6 +664,11 @@ function 记忆框选f() {
 
 // 关闭
 async function closeWin() {
+    // 长截屏拼接中先收尾：直接关窗会丢掉已拼好的内容
+    if (longRunning) {
+        await stopLong();
+        return;
+    }
     cancelSelectionInteraction();
     try {
         await captureWorkspace?.flush();
@@ -848,6 +853,9 @@ async function long_s(session = longSession) {
             if (session !== longSession) return;
             longCapped = true;
             console.error(`长截图单帧失败: ${error}`);
+            captureWorkspace?.showStatus(
+                t("프레임 캡처에 실패해 여기까지만 이어붙입니다"),
+            );
             renderSend("windowIgnoreMouse", [false]);
         }
     })();
@@ -1534,58 +1542,70 @@ function getClipPhoto() {
     const mainCtx = mainCanvas.getContext("2d")!;
     if (!finalRect) finalRect = [0, 0, mainCanvas.width, mainCanvas.height];
 
-    if (typeof fabricCanvas !== "undefined") {
+    // 预览导出时不带选中框，但选区状态要在导出后还原，避免后台快照把用户选中的对象丢焦
+    const photoActiveObject =
+        typeof fabricCanvas === "undefined"
+            ? undefined
+            : fabricCanvas.getActiveObject();
+    if (photoActiveObject) {
         fabricCanvas.discardActiveObject();
         fabricCanvas.renderAll();
     }
 
-    const tmpCanvas = document.createElement("canvas");
-    const tmpctx = tmpCanvas.getContext("2d")!;
-    tmpCanvas.width = finalRect[2];
-    tmpCanvas.height = finalRect[3];
-    const gid = mainCtx.getImageData(
-        finalRect[0],
-        finalRect[1],
-        finalRect[2],
-        finalRect[3],
-    ); // 裁剪
-    tmpctx.putImageData(gid, 0, 0);
-    tmpctx.drawImage(
-        fabricCanvas.toCanvasElement(1, {
-            left: finalRect[0],
-            top: finalRect[1],
-            width: finalRect[2],
-            height: finalRect[3],
-        }),
-        0,
-        0,
-    );
-    if (!isRect) {
-        const ctx = tmpctx;
+    try {
+        const tmpCanvas = document.createElement("canvas");
+        const tmpctx = tmpCanvas.getContext("2d")!;
+        tmpCanvas.width = finalRect[2];
+        tmpCanvas.height = finalRect[3];
+        const gid = mainCtx.getImageData(
+            finalRect[0],
+            finalRect[1],
+            finalRect[2],
+            finalRect[3],
+        ); // 裁剪
+        tmpctx.putImageData(gid, 0, 0);
+        tmpctx.drawImage(
+            fabricCanvas.toCanvasElement(1, {
+                left: finalRect[0],
+                top: finalRect[1],
+                width: finalRect[2],
+                height: finalRect[3],
+            }),
+            0,
+            0,
+        );
+        if (!isRect) {
+            const ctx = tmpctx;
 
-        // 创建临时Canvas并保存原始内容
-        const tempCanvas = createTemporaryCanvas(tmpCanvas);
+            // 创建临时Canvas并保存原始内容
+            const tempCanvas = createTemporaryCanvas(tmpCanvas);
 
-        // 清除主Canvas
-        ctx.clearRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+            // 清除主Canvas
+            ctx.clearRect(0, 0, tmpCanvas.width, tmpCanvas.height);
 
-        // 定义裁剪区域
-        ctx.beginPath();
-        freeSelect.forEach((point, index) => {
-            if (index === 0) {
-                ctx.moveTo(point.x - finalRect[0], point.y - finalRect[1]);
-            } else {
-                ctx.lineTo(point.x - finalRect[0], point.y - finalRect[1]);
-            }
-        });
-        ctx.closePath();
-        ctx.clip();
+            // 定义裁剪区域
+            ctx.beginPath();
+            freeSelect.forEach((point, index) => {
+                if (index === 0) {
+                    ctx.moveTo(point.x - finalRect[0], point.y - finalRect[1]);
+                } else {
+                    ctx.lineTo(point.x - finalRect[0], point.y - finalRect[1]);
+                }
+            });
+            ctx.closePath();
+            ctx.clip();
 
-        // 将原始内容重新绘制到主Canvas上
-        ctx.drawImage(tempCanvas, 0, 0);
+            // 将原始内容重新绘制到主Canvas上
+            ctx.drawImage(tempCanvas, 0, 0);
+        }
+        if (rulerImprint && isRect) drawRulerTicks(tmpctx, tmpCanvas);
+        return tmpCanvas;
+    } finally {
+        if (photoActiveObject) {
+            fabricCanvas.setActiveObject(photoActiveObject);
+            fabricCanvas.requestRenderAll();
+        }
     }
-    if (rulerImprint && isRect) drawRulerTicks(tmpctx, tmpCanvas);
-    return tmpCanvas;
 }
 
 function drawRulerTicks(
@@ -2996,6 +3016,13 @@ function hisPush() {
     undoStack.apply();
     captureWorkspace?.changed();
 }
+
+// 方向键微调标注时按住会连续触发，合并成一条历史记录
+let nudgePushTimer = 0;
+function nudgePushSoon() {
+    window.clearTimeout(nudgePushTimer);
+    nudgePushTimer = window.setTimeout(() => hisPush(), 400);
+}
 /**
  * 更改历史指针
  * @param {boolean} v true向前 false向后
@@ -3951,6 +3978,31 @@ async function clipboardImageUrl(): Promise<{
     return null;
 }
 
+/** 把图片作为标注对象放入选区中央（无选区则放到画布中央） */
+async function insertImageIntoClip(url: string) {
+    const img = await FabricImage.fromURL(url);
+    if (!img.width || !img.height) return;
+    const box =
+        finalRect[2] > 1 && finalRect[3] > 1
+            ? finalRect
+            : ([0, 0, mainCanvas.width, mainCanvas.height] as const);
+    const scale = Math.min(
+        1,
+        (box[2] * 0.8) / img.width,
+        (box[3] * 0.8) / img.height,
+    );
+    img.set({
+        left: box[0] + (box[2] - img.width * scale) / 2,
+        top: box[1] + (box[3] - img.height * scale) / 2,
+        scaleX: scale,
+        scaleY: scale,
+    });
+    fabricCanvas.add(img);
+    fabricCanvas.setActiveObject(img);
+    fabricCanvas.requestRenderAll();
+    hisPush();
+}
+
 /** 把剪贴板图片作为标注对象贴入选区（无选区则贴到画布中央） */
 async function pasteClipboardImage() {
     if (longRunning) return;
@@ -3962,27 +4014,7 @@ async function pasteClipboardImage() {
         return;
     }
     try {
-        const img = await FabricImage.fromURL(source.url);
-        if (!img.width || !img.height) return;
-        const box =
-            finalRect[2] > 1 && finalRect[3] > 1
-                ? finalRect
-                : ([0, 0, mainCanvas.width, mainCanvas.height] as const);
-        const scale = Math.min(
-            1,
-            (box[2] * 0.8) / img.width,
-            (box[3] * 0.8) / img.height,
-        );
-        img.set({
-            left: box[0] + (box[2] - img.width * scale) / 2,
-            top: box[1] + (box[3] - img.height * scale) / 2,
-            scaleX: scale,
-            scaleY: scale,
-        });
-        fabricCanvas.add(img);
-        fabricCanvas.setActiveObject(img);
-        fabricCanvas.requestRenderAll();
-        hisPush();
+        await insertImageIntoClip(source.url);
     } catch (error) {
         captureWorkspace?.showError(error);
     } finally {
@@ -5585,6 +5617,13 @@ document.addEventListener(
     "keydown",
     (e) => {
         if (e.key === "Escape" && hotkeys.getScope() === "c_bar") return;
+        // 长截屏进行中按 Esc 完成拼接，而不是直接关掉窗口丢掉结果
+        if (e.key === "Escape" && longRunning) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            void stopLong();
+            return;
+        }
         if (e.key === "Escape" && captureWorkspace?.hasPanel()) {
             e.stopImmediatePropagation();
             e.preventDefault();
@@ -6657,6 +6696,28 @@ document.body.onkeydown = (e) => {
     }
     if (isWasd && (nowType === "draw" || nowType === "shape" || !direction))
         return;
+    // 标注模式下选中对象时，方向键微调对象位置而不是改画笔粗细或移动选区
+    const nudgeObj = drawBarOpen ? fabricCanvas.getActiveObject() : null;
+    if (nudgeObj && controlKey in o && !isWasd) {
+        e.preventDefault();
+        let v = 1;
+        if (e.ctrlKey) v = v * 5;
+        if (e.shiftKey) v = v * 10;
+        const dx =
+            (o[controlKey] === "right" ? v : 0) -
+            (o[controlKey] === "left" ? v : 0);
+        const dy =
+            (o[controlKey] === "down" ? v : 0) -
+            (o[controlKey] === "up" ? v : 0);
+        if (!nudgeObj.lockMovementX)
+            nudgeObj.set("left", (nudgeObj.left ?? 0) + dx);
+        if (!nudgeObj.lockMovementY)
+            nudgeObj.set("top", (nudgeObj.top ?? 0) + dy);
+        nudgeObj.setCoords();
+        fabricCanvas.requestRenderAll();
+        nudgePushSoon();
+        return;
+    }
     if (nowType === "draw" || nowType === "shape") {
         if (!(controlKey in o)) return;
         let v = strokeWidthEl.gv;
@@ -7595,6 +7656,26 @@ document.addEventListener(
     },
     true,
 );
+
+// 拖入图片文件，作为标注对象放入选区中央
+editor.el.addEventListener("dragover", (e) => {
+    if (longRunning || !e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+});
+editor.el.addEventListener("drop", (e) => {
+    if (!e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    if (longRunning) return;
+    const file = [...e.dataTransfer.files].find((f) =>
+        f.type.startsWith("image/"),
+    );
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    void insertImageIntoClip(url)
+        .catch((error) => captureWorkspace?.showError(error))
+        .finally(() => URL.revokeObjectURL(url));
+});
+
 document.addEventListener(
     "keydown",
     (e) => {
