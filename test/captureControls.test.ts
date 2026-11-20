@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
     captureDock,
+    crosshairSegments,
     dimBarX,
     dimBarY,
     evalDimExpression,
     fitCaptureToolbar,
+    followBarPlacement,
+    pointsBounds,
     radialLayout,
     rectsOverlap,
     toolbarDock,
@@ -204,5 +207,66 @@ describe("evalDimExpression", () => {
         expect(evalDimExpression("1e3")).toBeNull();
         expect(evalDimExpression("")).toBeNull();
         expect(evalDimExpression("1/0")).toBeNull();
+    });
+});
+
+describe("pointsBounds", () => {
+    it("returns a degenerate rect for empty input and single points", () => {
+        expect(pointsBounds([])).toEqual([0, 0, 0, 0]);
+        expect(pointsBounds([{ x: 7, y: 9 }])).toEqual([7, 9, 0, 0]);
+    });
+
+    it("bounds scattered points", () => {
+        expect(
+            pointsBounds([
+                { x: 10, y: 20 },
+                { x: 50, y: 30 },
+                { x: 5, y: 8 },
+            ]),
+        ).toEqual([5, 8, 45, 22]);
+    });
+});
+
+describe("followBarPlacement", () => {
+    const bar = { width: 200, height: 160 };
+    const viewport = { width: 1920, height: 1080 };
+
+    it("offsets from the cursor in open space", () => {
+        expect(
+            followBarPlacement({ x: 100, y: 100 }, bar, viewport),
+        ).toEqual({ x: 116, y: 116 });
+    });
+
+    it("clamps at the right and bottom edges", () => {
+        expect(
+            followBarPlacement({ x: 1900, y: 100 }, bar, viewport),
+        ).toEqual({ x: 1704, y: 116 });
+        expect(
+            followBarPlacement({ x: 100, y: 1000 }, bar, viewport),
+        ).toEqual({ x: 116, y: 904 });
+    });
+
+    it("flips to the other side of the cursor in the bottom-right corner", () => {
+        expect(
+            followBarPlacement({ x: 1900, y: 1000 }, bar, viewport),
+        ).toEqual({ x: 1684, y: 824 });
+    });
+});
+
+describe("crosshairSegments", () => {
+    it("covers the canvas around the cursor line", () => {
+        const segments = crosshairSegments(
+            { x: 100, y: 120 },
+            2,
+            { width: 1000, height: 800 },
+        );
+        expect(segments).toEqual([
+            { x: 0, y: 119.5, width: 99.5, height: 2 },
+            { x: 101.5, y: 119.5, width: 898.5, height: 2 },
+            { x: 99.5, y: 0, width: 2, height: 119.5 },
+            { x: 99.5, y: 121.5, width: 2, height: 678.5 },
+        ]);
+        expect(segments[0].width + 2 + segments[1].width).toBe(1000);
+        expect(segments[2].height + 2 + segments[3].height).toBe(800);
     });
 });

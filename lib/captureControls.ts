@@ -156,6 +156,68 @@ export function evalDimExpression(input: string) {
     }
 }
 
+export function pointsBounds(
+    points: readonly { x: number; y: number }[],
+): [number, number, number, number] {
+    if (points.length === 0) return [0, 0, 0, 0];
+    let minX = points[0].x;
+    let maxX = points[0].x;
+    let minY = points[0].y;
+    let maxY = points[0].y;
+    for (const point of points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+    }
+    return [minX, minY, maxX - minX, maxY - minY];
+}
+
+export function followBarPlacement(
+    cursor: { x: number; y: number },
+    bar: { width: number; height: number },
+    viewport: { width: number; height: number },
+    offset = 16,
+) {
+    const x = Math.round(cursor.x + offset);
+    const y = Math.round(cursor.y + offset);
+    const rightLimit = viewport.width - bar.width - offset;
+    const bottomLimit = viewport.height - bar.height - offset;
+    if (x > rightLimit && y > bottomLimit)
+        return {
+            x: x - bar.width - offset * 2,
+            y: y - bar.height - offset * 2,
+        };
+    if (x > rightLimit) return { x: rightLimit, y };
+    if (y > bottomLimit) return { x, y: bottomLimit };
+    return { x, y };
+}
+
+export function crosshairSegments(
+    cursor: { x: number; y: number },
+    lineWidth: number,
+    canvas: { width: number; height: number },
+): CaptureBox[] {
+    const cx = cursor.x + 0.5 - lineWidth / 2;
+    const cy = cursor.y + 0.5 - lineWidth / 2;
+    return [
+        { x: 0, y: cy, width: cx, height: lineWidth },
+        {
+            x: cx + lineWidth,
+            y: cy,
+            width: canvas.width - cx - lineWidth,
+            height: lineWidth,
+        },
+        { x: cx, y: 0, width: lineWidth, height: cy },
+        {
+            x: cx,
+            y: cy + lineWidth,
+            width: lineWidth,
+            height: canvas.height - cy - lineWidth,
+        },
+    ];
+}
+
 export function radialLayout(
     pointer: { x: number; y: number },
     viewport: { width: number; height: number },

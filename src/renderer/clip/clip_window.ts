@@ -3,12 +3,16 @@
 import type * as Crypto from "node:crypto";
 import chroma from "chroma-js";
 import hotkeys from "hotkeys-js";
+import { colorConversion, rgbaCss } from "../../../lib/captureColor";
 import {
     captureDock,
+    crosshairSegments,
     dimBarX,
     dimBarY,
     evalDimExpression,
     fitCaptureToolbar,
+    followBarPlacement,
+    pointsBounds,
     radialLayout,
     rectsOverlap,
     toolbarDock,
@@ -1687,28 +1691,6 @@ function dragRect(e: MouseEvent): rect {
         : p2Rect(start, { x: start.x + dx, y: start.y + dy } as px_position);
 }
 
-function pointsOutRect(points: point[]) {
-    if (points.length === 0) {
-        return [0, 0, 0, 0] as rect;
-    }
-
-    let minX = points[0].x;
-    let maxX = points[0].x;
-    let minY = points[0].y;
-    let maxY = points[0].y;
-
-    // 遍历所有点，找到最小和最大的x,y坐标
-    for (const point of points) {
-        minX = Math.min(minX, point.x);
-        maxX = Math.max(maxX, point.x);
-        minY = Math.min(minY, point.y);
-        maxY = Math.max(maxY, point.y);
-    }
-
-    // 返回边框的左下角和右上角坐标
-    return [minX, minY, maxX - minX, maxY - minY] as rect;
-}
-
 // 开始操纵框选
 function clipStart(e: MouseEvent, inRect: boolean) {
     dismissStartHint();
@@ -1771,7 +1753,7 @@ function clipStart(e: MouseEvent, inRect: boolean) {
         } else {
             selecting = true;
             freeSelect = [p];
-            finalRect = pointsOutRect(freeSelect);
+            finalRect = pointsBounds(freeSelect);
             rightKey = false;
             changeRightBar(false);
         }
@@ -1891,7 +1873,7 @@ function clipEnd(e: MouseEvent) {
             freeSelect,
             lassoTolerance(套索平滑, editorP.zoom),
         );
-        finalRect = pointsOutRect(freeSelect);
+        finalRect = pointsBounds(freeSelect);
     }
     setSnapGuides(null, null);
     // 此时 selecting 已为 false，选区已定，直接重绘
@@ -1987,7 +1969,7 @@ function drawClipPoly(points: point[]) {
     setElBox(clipPolyFrame, 0, 0, cw, ch);
 
     // 大小栏
-    whBar(pointsOutRect(points));
+    whBar(pointsBounds(points));
     selectionHandles.el.hidden = true;
 }
 
@@ -2138,7 +2120,7 @@ function restoreStagedRegion(entry: StagedRegion) {
     if (entry.points) {
         setEditType("select", "free");
         freeSelect = entry.points.map((p) => ({ ...p }));
-        finalRect = pointsOutRect(freeSelect);
+        finalRect = pointsBounds(freeSelect);
     } else {
         setEditType("select", "rect");
         finalRect = [...entry.rect];
@@ -2206,7 +2188,7 @@ function renderClip(e: MouseEvent) {
             finalRect = snapDrag(e, dragRect(e));
         } else {
             freeSelect.push(src2pXY(e2srcPoint(e)));
-            finalRect = pointsOutRect(freeSelect);
+            finalRect = pointsBounds(freeSelect);
         }
     }
     const showFreeStart = selecting && !isRect && freeSelect.length > 1;
@@ -2490,57 +2472,13 @@ function mouseBar(finalRect: rect, e: SrcPoint) {
 function ckx(e: SrcPoint) {
     if (!g光标参考线) return;
     const { x, y } = src2cXY(e);
-    const w = lineW();
-    const cx = x + 0.5 - w / 2;
-    const cy = y + 0.5 - w / 2;
-    setElBox(clipCkx[0].el, 0, cy, cx, w);
-    setElBox(clipCkx[1].el, cx + w, cy, mainCanvas.width - cx - w, w);
-    setElBox(clipCkx[2].el, cx, 0, w, cy);
-    setElBox(clipCkx[3].el, cx, cy + w, w, mainCanvas.height - cy - w);
-}
-
-function numberFormat(num: number) {
-    return (num || 0).toFixed(1).replace(/\.?0+$/, "");
-}
-
-function rgba2str(rgba: colorRGBA) {
-    return `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${rgba[3]})`;
-}
-
-// 色彩空间转换
-function colorConversion(rgba: colorRGBA | null, type: colorFormat): string {
-    const color = chroma(rgba2str(rgba || [0, 0, 0, 0]));
-    if (color.alpha() !== 1) return "/";
-    switch (type) {
-        case "HEX":
-            return color.hex();
-        case "RGB":
-            return color.css();
-        case "HSL": {
-            return color.css("hsl");
-        }
-        case "HSV": {
-            const hsv = color.hsv();
-            return `hsv(${numberFormat(hsv[0])} ${numberFormat(hsv[1] * 100)}% ${numberFormat(hsv[2] * 100)}%)`;
-        }
-        case "CMYK": {
-            const cmyk = color.cmyk();
-            return `cmyk(${numberFormat(cmyk[0] * 100)}% ${numberFormat(cmyk[1] * 100)}% ${numberFormat(cmyk[2] * 100)}% ${numberFormat(cmyk[3] * 100)}%)`;
-        }
-        case "HWB": {
-            const [h, s, v] = color.hsv();
-            return `hwb(${numberFormat(h)} ${numberFormat((1 - s) * v * 100)}% ${numberFormat((1 - v) * 100)}%)`;
-        }
-        case "LAB":
-            return color.css("lab");
-        case "LCH":
-            return color.css("lch");
-        case "OKLAB":
-            return color.css("oklab");
-        case "OKLCH":
-            return color.css("oklch");
-        default:
-            return "";
+    const segments = crosshairSegments({ x, y }, lineW(), {
+        width: mainCanvas.width,
+        height: mainCanvas.height,
+    });
+    for (let i = 0; i < 4; i++) {
+        const s = segments[i];
+        setElBox(clipCkx[i].el, s.x, s.y, s.width, s.height);
     }
 }
 
@@ -2550,7 +2488,7 @@ function getColorFormatEl() {
 
 // 改变颜色文字和样式
 function clipColorText(l: colorRGBA, type: colorFormat) {
-    const color = chroma(rgba2str(l));
+    const color = chroma(rgbaCss(l));
     const clipColorTextColor = color.alpha() === 1 ? pickTextColor(color) : "";
     theTextColor = [color.hex(), clipColorTextColor];
 
@@ -2648,7 +2586,7 @@ function changeRightBar(v: boolean) {
  */
 function copy(e: ElType<HTMLElement>) {
     writeText(e.el.innerText);
-    if (theColor) captureWorkspace?.sampled(chroma(rgba2str(theColor)).hex());
+    if (theColor) captureWorkspace?.sampled(chroma(rgbaCss(theColor)).hex());
     rightKey = false;
     changeRightBar(false);
 }
@@ -3005,7 +2943,7 @@ function movePoly(
     const dx = p.x - op.x;
     const dy = p.y - op.y;
     if (direction === "move") {
-        const oRect = pointsOutRect(oldPoly);
+        const oRect = pointsBounds(oldPoly);
         const target: rect = [oRect[0] + dx, oRect[1] + dy, oRect[2], oRect[3]];
         const snapped = 选区吸附
             ? snapAdjustRect(
@@ -7083,30 +7021,17 @@ document.onmousemove = (e) => {
             // 鼠标跟随栏
             mouseBar(finalRect, e2srcPoint(ev));
 
-            const d = 16;
-            const x = Math.round(ev.clientX + d);
-            const y = Math.round(ev.clientY + d);
-            const w = mouseBarW;
-            const h = mouseBarH;
-            const sw = window.innerWidth;
-            const sh = window.innerHeight;
+            const pos = followBarPlacement(
+                { x: ev.clientX, y: ev.clientY },
+                { width: mouseBarW, height: mouseBarH },
+                { width: window.innerWidth, height: window.innerHeight },
+            );
 
-            let _x = x;
-            let _y = y;
-            if (x > sw - w - d && y > sh - h - d) {
-                _x = x - w - d - d;
-                _y = y - h - d - d;
-            } else if (x > sw - w - d) {
-                _x = sw - w - d;
-            } else if (y > sh - h - d) {
-                _y = sh - h - d;
-            }
-
-            mouseBarX = _x;
-            mouseBarY = _y;
+            mouseBarX = pos.x;
+            mouseBarY = pos.y;
 
             mouseBarEl.style({
-                transform: `translate(${_x}px, ${_y}px)`,
+                transform: `translate(${pos.x}px, ${pos.y}px)`,
             });
 
             const isDrawBar = drawBar.contains(ev.target as HTMLElement);
