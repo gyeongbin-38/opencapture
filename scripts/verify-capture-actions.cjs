@@ -144,7 +144,15 @@ function createFakeTimers() {
 }
 
 const captureCode = extractDeclarations(["captureRegion"]);
-const sendCaptureCode = extractDeclarations(["sendCaptureEvent"]);
+const sendCaptureCode = extractDeclarations(
+    [
+        "sendCaptureEvent",
+        "showCaptureDelayWin",
+        "waitCaptureDelay",
+        "closeCaptureDelayWin",
+    ],
+    ["pendingCaptureDelay", "captureDelayWin"],
+);
 const quickClipCode = extractDeclarations(["quickClip"]);
 const clipSaveCode = extractMainOnCallback("clip_save");
 const recordSavePathCode = extractMainOnCallback("recordSavePath");
@@ -392,6 +400,18 @@ async function testDelayedCaptureSelectsDisplayAtAcquisitionAndFreezesIt() {
                 releaseDelay = callback;
                 return 1;
             },
+            clearTimeout: () => {},
+            BrowserWindow: class {
+                constructor() {}
+                setAlwaysOnTop() {}
+                on() {}
+                close() {}
+                isDestroyed() {
+                    return false;
+                }
+            },
+            showWhenReady: () => {},
+            rendererPath: () => {},
             flushCaptureDraft: async () => true,
             diagnosticInput: () => "test",
             hideCaptureShelf: () => 4,
@@ -403,7 +423,10 @@ async function testDelayedCaptureSelectsDisplayAtAcquisitionAndFreezesIt() {
                 }),
                 getDisplayNearestPoint: () => {
                     displayCalls.push(cursorDisplayId);
-                    return { id: cursorDisplayId };
+                    return {
+                        id: cursorDisplayId,
+                        bounds: { x: 0, y: 0, width: 800, height: 600 },
+                    };
                 },
             },
             getClipWin: () => clipWindowReady.promise,
@@ -415,19 +438,19 @@ async function testDelayedCaptureSelectsDisplayAtAcquisitionAndFreezesIt() {
     const capture = context.sendCaptureEvent();
     await flushMicrotasks();
     assert.equal(typeof releaseDelay, "function");
-    assert.deepEqual(displayCalls, []);
+    assert.deepEqual(displayCalls, [1]);
 
     cursorDisplayId = 2;
     releaseDelay();
     await flushMicrotasks();
-    assert.deepEqual(displayCalls, [2]);
+    assert.deepEqual(displayCalls, [1, 2]);
 
     cursorDisplayId = 3;
     clipWindowReady.resolve({});
     await capture;
     assert.equal(delivered.length, 1);
     assert.equal(delivered[0].displayId, 2);
-    assert.deepEqual(displayCalls, [2]);
+    assert.deepEqual(displayCalls, [1, 2]);
 }
 
 function captureArbitrationHarness(options = {}) {
@@ -476,13 +499,28 @@ function captureArbitrationHarness(options = {}) {
                 releaseDelay = callback;
                 return 1;
             },
+            clearTimeout: () => {},
+            BrowserWindow: class {
+                constructor() {}
+                setAlwaysOnTop() {}
+                on() {}
+                close() {}
+                isDestroyed() {
+                    return false;
+                }
+            },
+            showWhenReady: () => {},
+            rendererPath: () => {},
             flushCaptureDraft: async () => true,
             hideCaptureShelf: () => 4,
             restoreCaptureShelf: () => {},
             screen: {
                 getAllDisplays: () => [{ id: 1 }],
                 getCursorScreenPoint: () => ({ x: 10, y: 10 }),
-                getDisplayNearestPoint: () => ({ id: 1 }),
+                getDisplayNearestPoint: () => ({
+                    id: 1,
+                    bounds: { x: 0, y: 0, width: 800, height: 600 },
+                }),
             },
             getClipWin: async () => ({}),
             deliverClipInit: (_win, pending) => delivered.push(pending),
@@ -718,6 +756,7 @@ async function testQuickPathModeRequiresDestinationBeforeCapture() {
         {
             captureAcquireSequence: 0,
             pendingClipInit: null,
+            pendingCaptureDelay: undefined,
             clearCaptureInitWatchdog: () => {},
             flushCaptureDraft: async () => true,
             hideCaptureShelf: () => 1,
@@ -802,6 +841,7 @@ async function testQuickClipboardCapturesOnlyCursorDisplay() {
         {
             captureAcquireSequence: 0,
             pendingClipInit: null,
+            pendingCaptureDelay: undefined,
             clearCaptureInitWatchdog: () => {},
             flushCaptureDraft: async () => true,
             hideCaptureShelf: () => {},
@@ -865,6 +905,7 @@ async function testQuickCaptureReportsEmptyImageAndRestoresShelf() {
         {
             captureAcquireSequence: 0,
             pendingClipInit: null,
+            pendingCaptureDelay: undefined,
             clearCaptureInitWatchdog: () => {},
             flushCaptureDraft: async () => true,
             hideCaptureShelf: () => 7,
