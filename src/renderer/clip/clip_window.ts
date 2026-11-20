@@ -24,7 +24,7 @@ import {
 import open_with from "../../../lib/open_with";
 import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
-import { writeImage, writeText } from "../lib/clipboard";
+import { readImage, writeImage, writeText } from "../lib/clipboard";
 import { Class, cssColor, getImgUrl, initStyle, setTitle } from "../root/root";
 
 import { EraserBrush } from "@erase2d/fabric";
@@ -1191,9 +1191,34 @@ function pjLong(session = longSession) {
     }
 }
 
+// R 단축키 복원용 — 화면별 최근 선택 영역(설정과 무관하게 항상 갱신)
+const sessionLastRects = new Map<number, rect>();
+const rememberedRect = () =>
+    sessionLastRects.get(nowScreenId) ?? 记忆框选值[nowScreenId];
+
+function restoreLastRect(remembered: rect | undefined): boolean {
+    if (!remembered?.[2] || !remembered?.[3]) return false;
+    if (captureSelectionMode === "window") captureSelectionMode = "region";
+    if (!isRect) {
+        freeSelect = [];
+        setEditType("select", "rect");
+    }
+    finalRect = [...remembered];
+    rectSelect = true;
+    finalRectFix();
+    if (finalRect[2] < 1 || finalRect[3] < 1) return false;
+    hisPush();
+    drawClip();
+    isShowBars = true;
+    showBars(isShowBars);
+    followBar();
+    return true;
+}
+
 // 마지막 선택 영역을 절대 좌표로 기억 — 이후 "같은 영역 다시 캡처"에 사용
 function rememberLastRect() {
     if (!finalRect || finalRect[2] < 2 || finalRect[3] < 2) return;
+    sessionLastRects.set(nowScreenId, [...finalRect]);
     const display = getNowScreen();
     renderSend("clip_last_rect", [
         {
@@ -3913,6 +3938,58 @@ async function fabricCopy() {
     hisPush();
 }
 
+/** 剪贴板图片地址：优先 navigator.clipboard，失败时经主进程读（Electron 44 起 renderer 无 clipboard 模块） */
+async function clipboardImageUrl(): Promise<{
+    url: string;
+    revoke: boolean;
+} | null> {
+    const blob = await readImage();
+    if (blob) return { url: URL.createObjectURL(blob), revoke: true };
+    const dataURL = renderSendSync("clip_clipboard_image", []);
+    if (typeof dataURL === "string" && dataURL)
+        return { url: dataURL, revoke: false };
+    return null;
+}
+
+/** 把剪贴板图片作为标注对象贴入选区（无选区则贴到画布中央） */
+async function pasteClipboardImage() {
+    if (longRunning) return;
+    const source = await clipboardImageUrl();
+    if (!source) {
+        captureWorkspace?.showStatus(
+            t("클립보드에 붙여넣을 이미지가 없습니다"),
+        );
+        return;
+    }
+    try {
+        const img = await FabricImage.fromURL(source.url);
+        if (!img.width || !img.height) return;
+        const box =
+            finalRect[2] > 1 && finalRect[3] > 1
+                ? finalRect
+                : ([0, 0, mainCanvas.width, mainCanvas.height] as const);
+        const scale = Math.min(
+            1,
+            (box[2] * 0.8) / img.width,
+            (box[3] * 0.8) / img.height,
+        );
+        img.set({
+            left: box[0] + (box[2] - img.width * scale) / 2,
+            top: box[1] + (box[3] - img.height * scale) / 2,
+            scaleX: scale,
+            scaleY: scale,
+        });
+        fabricCanvas.add(img);
+        fabricCanvas.setActiveObject(img);
+        fabricCanvas.requestRenderAll();
+        hisPush();
+    } catch (error) {
+        captureWorkspace?.showError(error);
+    } finally {
+        if (source.revoke) URL.revokeObjectURL(source.url);
+    }
+}
+
 // 获取设置
 
 const screenShotCache = new Map<number, ImageData>();
@@ -4502,6 +4579,7 @@ for (const [key, desc] of [
     [`${t("마커")} ${t("클릭")}`, t("복원")],
     [`${t("마커")} Alt+${t("클릭")}`, t("삭제")],
     ["S", t("자동 선택")],
+    ["R", t("마지막 선택 크기와 위치를 다시 사용")],
     ["F", t("自由选择")],
     ["W", t("창 선택")],
     ["Alt", t("중심 기준 확장")],
@@ -4872,13 +4950,7 @@ ipcRenderer.on("oc:capture-mode", (_event, payload: unknown) => {
               ? (payload as { mode?: unknown }).mode
               : undefined;
     if (mode !== "previous-region") return;
-    const remembered = 记忆框选值[nowScreenId];
-    if (!remembered?.[2] || !remembered?.[3]) return;
-    finalRect = [...remembered];
-    rectSelect = true;
-    finalRectFix();
-    drawClip();
-    followBar();
+    restoreLastRect(rememberedRect());
 });
 
 const drawBar = drawBarEl.el;
@@ -6836,6 +6908,15 @@ hotkeys("w", () => {
     captureWorkspace?.showStatus("창 위로 포인터를 이동한 다음 클릭하세요.");
 });
 
+hotkeys("r", () => {
+    dismissStartHint();
+    if (nowType !== "select" || longRunning) return;
+    if (!restoreLastRect(rememberedRect()))
+        captureWorkspace?.showStatus(
+            t("이전 캡처 영역이 없습니다. 먼저 영역을 캡처해 주세요."),
+        );
+});
+
 const whHotKeyMap = {
     左上x: whX0,
     左上y: whY0,
@@ -7390,7 +7471,8 @@ hotkeys("esc", "drawing", () => {
 });
 
 hotkeys("Ctrl+v", () => {
-    fabricCopy();
+    if (fabricCanvas.getActiveObject()) void fabricCopy();
+    else void pasteClipboardImage();
 });
 
 setEditType("select", editType.select);

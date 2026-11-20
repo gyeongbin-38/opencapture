@@ -1,4 +1,10 @@
-const { app, BrowserWindow, clipboard, nativeImage } = require("electron");
+const {
+    app,
+    BrowserWindow,
+    clipboard,
+    ClipboardItem,
+    nativeImage,
+} = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "..");
@@ -247,6 +253,34 @@ app.whenReady().then(async () => {
             "Start hint did not dismiss after drag",
         );
         report.checks.push({ captureLayout: ui, startHint: hintInitial });
+        // R restores the last completed selection in one keystroke:
+        // Ctrl+A swaps it for the full canvas, then R brings it back.
+        const rectA = ui.selection;
+        await pressCombo("a", 65, { ctrl: true });
+        await pause(150);
+        const fullFrame = await clip(
+            `(() => { const r=document.querySelector('#selection_frame').getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height}; })()`,
+        );
+        assert(
+            Math.abs(fullFrame.w - rectA.width) > 4 ||
+                Math.abs(fullFrame.h - rectA.height) > 4,
+            `Ctrl+A did not replace the selection: ${JSON.stringify({ rectA, fullFrame })}`,
+        );
+        await pressKey("r", 82);
+        await pause(150);
+        const restoredFrame = await clip(
+            `(() => { const r=document.querySelector('#selection_frame').getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height}; })()`,
+        );
+        assert(
+            Math.abs(restoredFrame.x - rectA.x) <= 4 &&
+                Math.abs(restoredFrame.y - rectA.y) <= 4 &&
+                Math.abs(restoredFrame.w - rectA.width) <= 4 &&
+                Math.abs(restoredFrame.h - rectA.height) <= 4,
+            `R did not restore the last selection: ${JSON.stringify({ rectA, restoredFrame })}`,
+        );
+        report.checks.push({
+            restoreLastRect: { before: rectA, restored: restoredFrame },
+        });
         // The pixel loupe follows the pointer while picking in region
         // mode — not only mid-drag — and steps aside over the toolbar.
         capture.webContents.sendInputEvent({
@@ -354,9 +388,7 @@ app.whenReady().then(async () => {
         );
         assert(
             dimTips.length === 2 &&
-                dimTips.every(
-                    (d) => d.includes("수식") && d.includes("±1"),
-                ),
+                dimTips.every((d) => d.includes("수식") && d.includes("±1")),
             `Dimension inputs missing the expression tooltip: ${JSON.stringify(dimTips)}`,
         );
         const stepped = await clip(`(() => {
@@ -734,7 +766,7 @@ app.whenReady().then(async () => {
             `[...document.querySelectorAll('#clip_wh button')].find((b) => b.textContent === '?')?.click()`,
         );
         const helpText = await clip(
-            `(() => { const h = document.querySelector('.capture-help'); return { hidden: h.hidden, text: h.textContent, rows: h.querySelectorAll('.capture-help-row').length }; })()`,
+            `(() => { const h = document.querySelector('.capture-help'); return { hidden: h.hidden, text: h.textContent, rows: h.querySelectorAll('.capture-help-row').length, kbds: [...h.querySelectorAll('.capture-help-row kbd')].map(k=>k.textContent) }; })()`,
         );
         await clip(
             `(() => { document.querySelector('.capture-help').hidden = true; })()`,
@@ -746,6 +778,7 @@ app.whenReady().then(async () => {
                 helpText.text.includes("자동 선택") &&
                 helpText.text.includes("Ctrl+A") &&
                 helpText.text.includes("Ctrl+S") &&
+                helpText.kbds.includes("R") &&
                 helpText.rows >= 15,
             `Help panel missing marker gestures: ${JSON.stringify(helpText)}`,
         );
@@ -1030,7 +1063,10 @@ app.whenReady().then(async () => {
             '(() => { const m=document.querySelector(".capture-free-start"); return !m || getComputedStyle(m).display === "none"; })()',
         );
         assert(
-            lassoMarker?.shown && lassoNear === true && lassoFar === false && lassoGone,
+            lassoMarker?.shown &&
+                lassoNear === true &&
+                lassoFar === false &&
+                lassoGone,
             `Lasso start marker failed: ${JSON.stringify({ lassoMarker, lassoNear, lassoFar, lassoGone })}`,
         );
         report.checks.push({ lassoMarker: true });
@@ -1133,8 +1169,7 @@ app.whenReady().then(async () => {
             `(() => { const pf=document.querySelector('#selection_frame_poly'); return { markers: document.querySelectorAll('#capture_staged > div').length, polyDisplay: pf ? getComputedStyle(pf).display : null }; })()`,
         );
         assert(
-            polyRestored.markers === 0 &&
-                polyRestored.polyDisplay !== "none",
+            polyRestored.markers === 0 && polyRestored.polyDisplay !== "none",
             `Free-form restore failed: ${JSON.stringify(polyRestored)}`,
         );
         report.checks.push({ stagedPoly });
@@ -1206,10 +1241,7 @@ app.whenReady().then(async () => {
                 '(() => { const s=document.querySelector(".capture-workspace-status"); const t=s?.textContent ?? ""; return { t, err: s?.classList.contains("has-error"), hidden: s?.hidden }; })()',
             );
             lastStatus = JSON.stringify(probe);
-            if (
-                probe.t.includes("창 위로") ||
-                probe.err
-            )
+            if (probe.t.includes("창 위로") || probe.err)
                 windowModeStatus = probe.t;
             else await pause(100);
         }
@@ -1337,8 +1369,7 @@ app.whenReady().then(async () => {
             `(() => { const b=[...document.querySelectorAll('.capture-toggle')].find(b=>b.textContent.includes('시각 피드백')); return b ? { text: b.textContent, active: b.classList.contains('active') } : null; })()`,
         );
         assert(
-            feedbackRow?.active === true &&
-                feedbackRow.text.includes("켜짐"),
+            feedbackRow?.active === true && feedbackRow.text.includes("켜짐"),
             `Visual feedback toggle missing: ${JSON.stringify(feedbackRow)}`,
         );
         await clip(
@@ -1387,6 +1418,32 @@ app.whenReady().then(async () => {
             visualFeedbackToggle: true,
             loupeToggle: true,
         });
+        // With no active fabric object, Ctrl+V pastes a clipboard image
+        // as an annotation object onto the canvas.
+        const lowerInk = () =>
+            clip(
+                `(() => { const u=document.querySelector('.lower-canvas'); if(!u||!u.width||!u.height) return -1; const c=document.createElement('canvas'); c.width=Math.min(u.width,240); c.height=Math.min(u.height,140); const x=c.getContext('2d'); x.drawImage(u,0,0,c.width,c.height); const d=x.getImageData(0,0,c.width,c.height).data; let n=0; for(let i=3;i<d.length;i+=4){ if(d[i]) n++; } return n; })()`,
+            );
+        const inkBefore = await lowerInk();
+        // Electron 44: main-process clipboard.write needs ClipboardItem
+        // from the electron module (not installed as a global there).
+        const stampPng = nativeImage
+            .createFromBitmap(Buffer.alloc(60 * 40 * 4, 0xff), {
+                width: 60,
+                height: 40,
+            })
+            .toPNG();
+        await clipboard.write([
+            new ClipboardItem({
+                "image/png": new Blob([stampPng], { type: "image/png" }),
+            }),
+        ]);
+        await pressCombo("v", 86, { ctrl: true });
+        const inkAfter = await until(async () => {
+            const n = await lowerInk();
+            return typeof n === "number" && n > inkBefore ? n : null;
+        }, "Ctrl+V did not paste the clipboard image onto the canvas");
+        report.checks.push({ clipboardImagePaste: { inkBefore, inkAfter } });
         capture.hide();
         await run('document.querySelectorAll(".nav-button")[1].click();');
         await until(
@@ -1516,7 +1573,7 @@ app.whenReady().then(async () => {
         });
         capture.close();
         await pause(300);
-        void run('window.openCapture.action("capture")');
+        void run('window.openCapture.action("record")');
         const delayWin = await until(
             () =>
                 BrowserWindow.getAllWindows().find(
@@ -1535,6 +1592,12 @@ app.whenReady().then(async () => {
         assert(
             delayInfo.count === "2" || delayInfo.count === "1",
             `Countdown shows ${delayInfo.count}`,
+        );
+        // The countdown names the pending action ("record" from the
+        // dashboard action) after the separator.
+        assert(
+            delayInfo.label?.includes("·"),
+            `Countdown did not name the pending action: ${JSON.stringify(delayInfo)}`,
         );
         assert(
             /^\d+s$/.test(delayInfo.bar ?? "") &&
@@ -1557,9 +1620,7 @@ app.whenReady().then(async () => {
             () =>
                 BrowserWindow.getAllWindows().find(
                     (window) =>
-                        window.webContents
-                            .getURL()
-                            .includes("capture.html") &&
+                        window.webContents.getURL().includes("capture.html") &&
                         !window.webContents.isLoading(),
                 ),
             "Capture did not open after countdown",

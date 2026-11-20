@@ -2875,6 +2875,10 @@ mainOn("clip_last_rect", ([rect]) => {
     history.unshift(slot);
     store.set("捕获.历史区域", history.slice(0, 5));
 });
+mainOn("clip_clipboard_image", async () => {
+    const img = await readImageFromClipboard();
+    return img.isEmpty() ? null : img.toDataURL();
+});
 mainOn("clip_mac_app", async () => {
     hideClip();
     const x = await dialog.showOpenDialog({
@@ -3042,7 +3046,7 @@ function closeCaptureDelayWin() {
     captureDelayWin = undefined;
 }
 
-function showCaptureDelayWin(seconds: number) {
+function showCaptureDelayWin(seconds: number, action?: 功能) {
     closeCaptureDelayWin();
     const display = screen.getDisplayNearestPoint(
         screen.getCursorScreenPoint(),
@@ -3069,7 +3073,10 @@ function showCaptureDelayWin(seconds: number) {
     captureDelayWin = win;
     showWhenReady(win);
     rendererPath(win, "captureDelay.html", {
-        query: { seconds: String(seconds) },
+        query: {
+            seconds: String(seconds),
+            ...(action ? { action } : {}),
+        },
     });
     win.setAlwaysOnTop(true, "screen-saver");
     win.on("closed", () => {
@@ -3106,7 +3113,7 @@ async function sendCaptureEvent(
                 ? 0
                 : Math.min(15, Number(store.get("框选.延迟")) || 0);
         if (captureDelay > 0) {
-            showCaptureDelayWin(captureDelay);
+            showCaptureDelayWin(captureDelay, type);
             await new Promise((r) => setTimeout(r, captureDelay * 1000));
             closeCaptureDelayWin();
         }

@@ -109,6 +109,8 @@ type Message = {
         y: number;
         displayId?: number;
     }) => void;
+    /** 剪贴板位图 dataURL；无图片返回 null */
+    clip_clipboard_image: () => string | null;
     clip_mac_app: () => { canceled: boolean; filePaths: string[] };
     clip_record: (
         rect: [number, number, number, number],
