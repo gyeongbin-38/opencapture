@@ -288,24 +288,46 @@ const controls = frame("sidebar", {
         },
         _ex_save: {
             _: flexLayout("x"),
-            save: button(icon("save")).on("click", () => {
-                const path = renderSendSync("save_file_path", [els.formart.gv]);
-                if (!path) return;
-                const img = getImg(true).replace(
-                    /^data:image\/\w+;base64,/,
-                    "",
-                );
-                writeFileSync(path, Buffer.from(img, "base64"));
-                renderSend("ok_save", [path]);
-                renderSend("windowClose", []);
-            }),
-            copy: button(icon("copy")).on("click", async () => {
-                const img = await getImg("blob");
-                await writeImage(img);
-                renderSend("windowClose", []);
-            }),
+            save: button(icon("save"))
+                .attr({ title: `${t("保存")}  Ctrl+S`, ariaLabel: t("保存") })
+                .on("click", doSave),
+            copy: button(icon("copy"))
+                .attr({ title: `${t("复制")}  Ctrl+C`, ariaLabel: t("复制") })
+                .on("click", doCopy),
         },
     },
+});
+
+function doSave() {
+    const path = renderSendSync("save_file_path", [els.formart.gv]);
+    if (!path) return;
+    const img = getImg(true).replace(/^data:image\/\w+;base64,/, "");
+    writeFileSync(path, Buffer.from(img, "base64"));
+    renderSend("ok_save", [path]);
+    renderSend("windowClose", []);
+}
+
+async function doCopy() {
+    const img = await getImg("blob");
+    await writeImage(img);
+    renderSend("windowClose", []);
+}
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        renderSend("windowClose", []);
+        return;
+    }
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        doSave();
+    } else if (e.key === "c" || e.key === "C") {
+        e.preventDefault();
+        void doCopy();
+    }
 });
 
 function flexLayout(a: "x" | "y") {

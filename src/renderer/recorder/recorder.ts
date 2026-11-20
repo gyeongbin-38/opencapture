@@ -858,6 +858,21 @@ const togglePause = () => {
 const pauseBtn = iconBEl("play_pause")
     .attr({ title: t("일시정지/재개") })
     .on("click", () => togglePause());
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        if (
+            recorderState === "recording" ||
+            recorderState === "paused" ||
+            recorderState === "processing"
+        )
+            return;
+        renderSend("windowClose", []);
+    } else if (e.key === " " && e.target === document.body) {
+        e.preventDefault();
+        startStop.el.click();
+    }
+});
 const cancelEl = iconBEl("close")
     .attr({ title: t("녹화 취소") })
     .on("click", () => {
