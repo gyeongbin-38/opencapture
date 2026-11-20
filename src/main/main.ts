@@ -2095,6 +2095,7 @@ app.whenReady().then(async () => {
         }).show();
 
     await hotkeyClaim;
+    const failedHotkeys: string[] = [];
     const 快捷键 = store.get("快捷键");
     for (const [k, m] of typedEntries(快捷键)) {
         if (!m.key) continue;
@@ -2104,6 +2105,7 @@ app.whenReady().then(async () => {
             })
         ) {
             console.error(`快捷键注册失败：${k} = ${m.key}`);
+            failedHotkeys.push(k);
         }
     }
     const 工具快捷键 = store.get("全局工具快捷键");
@@ -2115,6 +2117,7 @@ app.whenReady().then(async () => {
             })
         ) {
             console.error(`全局工具快捷键注册失败：${k} = ${m}`);
+            failedHotkeys.push(k);
         }
     }
 
@@ -2133,6 +2136,23 @@ app.whenReady().then(async () => {
         });
     }
     syncMouseChord();
+    const failedNames = [
+        ...shortcutStatus
+            .filter((s) => !s.available && s.requested)
+            .map((s) => s.label),
+        ...failedHotkeys,
+    ];
+    if (failedNames.length) {
+        const notification = new Notification({
+            title: app.name,
+            body: t(
+                "단축키 등록 실패: {names}. 다른 앱이 점유 중입니다. 설정에서 다시 지정하세요.",
+            ).replace("{names}", failedNames.join(", ")),
+            icon: join(runPath, "assets/logo/64x64.png"),
+        });
+        notification.on("click", () => createSettingWindow());
+        notification.show();
+    }
     if (!existsSync(tmpDir)) mkdir(tmpDir, () => {});
     if (keepClip) {
         clipWindow = createClipWindow();
