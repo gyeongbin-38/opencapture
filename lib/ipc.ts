@@ -133,6 +133,9 @@ type Message = {
     dropzone_close: () => void;
     clip_stop_long: () => void;
     captureDelayCancel: () => void;
+    captureDelaySkip: () => void;
+    /** 增减倒计时剩余秒数（倒计时窗口 +1/-1 按钮） */
+    captureDelayAdjust: (deltaSeconds: number) => void;
     clip_init: (
         displays: Electron.Display[],
         imgBuffer: Buffer | undefined,

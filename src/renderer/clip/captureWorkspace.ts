@@ -157,6 +157,7 @@ export function createCaptureWorkspace(options: {
             );
             const existing = thumbnails.get(result.id);
             if (existing && existing.result.revision > result.revision) return;
+            if (!thumbnailKeys.has(result.id)) return;
             thumbnails.delete(result.id);
             thumbnails.set(result.id, { result, data: canvas.toDataURL() });
             while (thumbnails.size > 8) {
@@ -189,6 +190,42 @@ export function createCaptureWorkspace(options: {
                 act();
             });
     }
+    function trashThumbnail(id: string) {
+        const pendingKey = thumbnailKeys.get(id);
+        if (pendingKey != null) pendingDiscards.add(pendingKey);
+        void ipcRenderer
+            .invoke("oc:items:trash", [id])
+            .then(() => {
+                const key = thumbnailKeys.get(id);
+                thumbnails.delete(id);
+                thumbnailKeys.delete(id);
+                if (key != null) options.stagedRegionTrashed?.(key);
+                renderStrip();
+                showStatus(t("휴지통으로 이동됨"));
+            })
+            .catch(showError);
+    }
+    async function discardAllStaged() {
+        try {
+            await queue.flush();
+        } catch {
+            // 失败的暂存交给重试按钮，继续清空已提交的项
+        }
+        const ids = new Set([...thumbnails.keys(), ...thumbnailKeys.keys()]);
+        const keys = [...thumbnailKeys.values()];
+        thumbnails.clear();
+        thumbnailKeys.clear();
+        if (ids.size)
+            void ipcRenderer
+                .invoke("oc:items:trash", [...ids])
+                .catch(showError);
+        for (const key of keys) {
+            pendingDiscards.add(key);
+            options.stagedRegionTrashed?.(key);
+        }
+        renderStrip();
+        if (ids.size || keys.length) showStatus(t("휴지통으로 이동됨"));
+    }
     function renderStrip() {
         strip.clear();
         strip.add(
@@ -213,11 +250,17 @@ export function createCaptureWorkspace(options: {
                             textContent: `${t("마커")} ${t("복원")}`,
                         }),
                         ele("kbd").attr({
-                            textContent: `Alt+${t("클릭")}`,
+                            textContent: `Alt+${t("클릭")}·MMB`,
                         }),
                         ele("span").attr({ textContent: t("삭제") }),
                     ]),
             );
+            const clearAll = shelfActionButton(
+                "trash",
+                `${t("전체")} ${t("휴지통으로 이동")}`,
+                () => void discardAllStaged(),
+            ).data({ "shelf-clear": "all" });
+            strip.add(clearAll);
         }
         for (const [id, entry] of thumbnails) {
             const thumbnail = button(
@@ -227,18 +270,57 @@ export function createCaptureWorkspace(options: {
                 }),
             )
                 .class("capture-shelf-thumb")
+                .data({ "item-id": id })
                 .attr({
                     type: "button",
                     draggable: true,
-                    title: `${t("주석·편집")} · ${t("드래그로 내보내기")} · ${t("더블클릭하여 화면에 고정")}`,
+                    title: `${t("주석·편집")} · ${t("드래그로 내보내기")} · ${t("더블클릭하여 화면에 고정")} · ${t("삭제")} (MMB·Del)`,
                 });
             thumbnail.on("dragstart", (event) => {
                 event.preventDefault();
+                thumbnail.el.classList.add("is-dragging");
+                const release = () =>
+                    thumbnail.el.classList.remove("is-dragging");
+                window.addEventListener("mouseup", release, { once: true });
+                window.setTimeout(release, 1500);
                 ipcRenderer.send("oc:drag", id);
             });
             let clickTimer: number | undefined;
+            let middlePress: { x: number; y: number } | null = null;
+            thumbnail.on("pointerdown", (event) => {
+                middlePress =
+                    event.button === 1
+                        ? { x: event.clientX, y: event.clientY }
+                        : null;
+            });
+            thumbnail.on("auxclick", (event) => {
+                if (event.button !== 1) return;
+                const near =
+                    !middlePress ||
+                    Math.hypot(
+                        event.clientX - middlePress.x,
+                        event.clientY - middlePress.y,
+                    ) <= 6;
+                middlePress = null;
+                if (!near) return;
+                event.preventDefault();
+                window.clearTimeout(clickTimer);
+                trashThumbnail(id);
+            });
+            thumbnail.on("keydown", (event) => {
+                if (event.key !== "Delete" && event.key !== "Backspace") return;
+                event.preventDefault();
+                event.stopPropagation();
+                window.clearTimeout(clickTimer);
+                trashThumbnail(id);
+            });
             thumbnail.on("click", (event) => {
                 if (event.detail > 1) return;
+                if (event.altKey) {
+                    window.clearTimeout(clickTimer);
+                    trashThumbnail(id);
+                    return;
+                }
                 clickTimer = window.setTimeout(() => {
                     void queue
                         .flush()
@@ -277,18 +359,7 @@ export function createCaptureWorkspace(options: {
                             .catch(showError),
                     ),
                     shelfActionButton("trash", t("휴지통으로 이동"), () =>
-                        ipcRenderer
-                            .invoke("oc:items:trash", [id])
-                            .then(() => {
-                                const key = thumbnailKeys.get(id);
-                                thumbnails.delete(id);
-                                thumbnailKeys.delete(id);
-                                if (key != null)
-                                    options.stagedRegionTrashed?.(key);
-                                renderStrip();
-                                showStatus(t("휴지통으로 이동됨"));
-                            })
-                            .catch(showError),
+                        trashThumbnail(id),
                     ),
                 ]);
             strip.add(
@@ -327,7 +398,8 @@ export function createCaptureWorkspace(options: {
         dismiss();
         statusQueue.reset();
         regionBatchCount = 0;
-        queue.begin(draft);
+        // 재활성화된 draft의 커밋은 폐기된 자동저장이 아니므로 대기 키 해제
+        pendingDiscards.delete(queue.begin(draft).key);
     }
     async function stage(audible = false) {
         showStatus(t("임시 저장 중…"));
@@ -540,6 +612,7 @@ export function createCaptureWorkspace(options: {
         flush: () => queue.flush(),
         nextRegion,
         discardStagedRegion,
+        discardStagedAll: discardAllStaged,
         loadPreferences,
         configurePreferences,
         showStatus,

@@ -2421,5 +2421,10 @@
     "dd2f23": "L’écran Windows est verrouillé ou un autre bureau est actif. Déverrouillez-le, puis réessayez la capture.",
     "c30767": "Un chemin de fichier est requis.",
     "d14057": "Le chemin d’exécution de l’application n’est pas disponible.",
-    "c649fa": "Échec de la capture d’image ; assemblage limité à ce point"
+    "c649fa": "Échec de la capture d’image ; assemblage limité à ce point",
+    "60a329": "Duplicate shape",
+    "bb5054": "Full screen · select all shapes",
+    "57e66f": "Cancel · deselect · close",
+    "e31bf1": "Decrease remaining time by 1 second",
+    "df3cba": "Increase remaining time by 1 second"
 }

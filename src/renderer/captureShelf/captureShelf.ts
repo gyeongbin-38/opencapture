@@ -203,6 +203,10 @@ function render() {
         });
         card.on("dragstart", (event) => {
             event.preventDefault();
+            card.el.classList.add("is-dragging");
+            const release = () => card.el.classList.remove("is-dragging");
+            window.addEventListener("mouseup", release, { once: true });
+            window.setTimeout(release, 1500);
             window.openCapture.startDrag(
                 selected.has(item.id) && selected.size > 1
                     ? items.filter((i) => selected.has(i.id)).map((i) => i.id)

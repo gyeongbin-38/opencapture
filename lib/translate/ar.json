@@ -2421,5 +2421,10 @@
     "dd2f23": "شاشة Windows مقفلة أو يوجد سطح مكتب آخر نشط. ألغِ القفل، ثم حاول الالتقاط مرة أخرى.",
     "c30767": "يلزم إدخال مسار ملف.",
     "d14057": "مسار تشغيل التطبيق غير متاح.",
-    "c649fa": "فشل التقاط الإطار؛ تم الدمج حتى هذه النقطة فقط"
+    "c649fa": "فشل التقاط الإطار؛ تم الدمج حتى هذه النقطة فقط",
+    "60a329": "Duplicate shape",
+    "bb5054": "Full screen · select all shapes",
+    "57e66f": "Cancel · deselect · close",
+    "e31bf1": "Decrease remaining time by 1 second",
+    "df3cba": "Increase remaining time by 1 second"
 }

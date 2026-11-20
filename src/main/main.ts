@@ -2394,7 +2394,7 @@ async function showCaptureShelf() {
     const sequence = ++shelfRefreshSequence;
     if (!openCapture?.getPreferences().shelfEnabled) {
         shelfPendingReshow = false;
-        hideCaptureShelf(false);
+        hideCaptureShelf(false, false);
         return;
     }
     const temporary = await openCapture.queryItems({
@@ -2407,7 +2407,8 @@ async function showCaptureShelf() {
     if (sequence !== shelfRefreshSequence) return;
     if (temporary.total === 0) {
         shelfPendingReshow = false;
-        hideCaptureShelf(false);
+        // 상태 변동(비우기)은 새 캡처 시작이 아니므로 복원 시퀀스를 무효화하지 않는다
+        hideCaptureShelf(false, false);
         return;
     }
     if (clipWindow?.isVisible()) {
@@ -3040,10 +3041,35 @@ async function fullScreen(requestId?: string, nowScreenId?: number) {
 /** 延迟截屏倒计时提示窗：小窗显示剩余秒数，可点击取消 */
 let captureDelayWin: BrowserWindow | undefined;
 
+/** 进行中的倒计时等待；窗口可提前结束或调整剩余秒数 */
+let pendingCaptureDelay:
+    | {
+          resolve: () => void;
+          endsAt: number;
+          timeout: ReturnType<typeof setTimeout>;
+      }
+    | undefined;
+
 function closeCaptureDelayWin() {
     if (captureDelayWin && !captureDelayWin.isDestroyed())
         captureDelayWin.close();
     captureDelayWin = undefined;
+}
+
+function waitCaptureDelay(seconds: number) {
+    return new Promise<void>((resolve) => {
+        const pending = {
+            endsAt: Date.now() + seconds * 1000,
+            resolve: () => {
+                clearTimeout(pending.timeout);
+                if (pendingCaptureDelay === pending)
+                    pendingCaptureDelay = undefined;
+                resolve();
+            },
+            timeout: setTimeout(() => pending.resolve(), seconds * 1000),
+        };
+        pendingCaptureDelay = pending;
+    });
 }
 
 function showCaptureDelayWin(seconds: number, action?: 功能) {
@@ -3051,8 +3077,8 @@ function showCaptureDelayWin(seconds: number, action?: 功能) {
     const display = screen.getDisplayNearestPoint(
         screen.getCursorScreenPoint(),
     );
-    const w = 200;
-    const h = 150;
+    const w = 220;
+    const h = 170;
     const win = new BrowserWindow({
         x: display.bounds.x + Math.round((display.bounds.width - w) / 2),
         y: display.bounds.y + Math.round(display.bounds.height / 4),
@@ -3086,7 +3112,29 @@ function showCaptureDelayWin(seconds: number, action?: 功能) {
 
 mainOn("captureDelayCancel", () => {
     captureAcquireSequence++;
+    pendingCaptureDelay?.resolve();
     closeCaptureDelayWin();
+});
+
+mainOn("captureDelaySkip", () => {
+    pendingCaptureDelay?.resolve();
+});
+
+mainOn("captureDelayAdjust", ([delta]) => {
+    const pending = pendingCaptureDelay;
+    if (typeof delta !== "number" || !Number.isFinite(delta) || !pending)
+        return;
+    const endsAt = Math.min(
+        Math.max(pending.endsAt + delta * 1000, Date.now() + 1000),
+        Date.now() + 15_000,
+    );
+    if (endsAt === pending.endsAt) return;
+    pending.endsAt = endsAt;
+    clearTimeout(pending.timeout);
+    pending.timeout = setTimeout(
+        () => pending.resolve(),
+        Math.max(0, endsAt - Date.now()),
+    );
 });
 
 async function sendCaptureEvent(
@@ -3097,6 +3145,7 @@ async function sendCaptureEvent(
     requestedSelectionMode: ClipCaptureContext["selectionMode"] = "region",
 ) {
     const sequence = ++captureAcquireSequence;
+    pendingCaptureDelay?.resolve();
     clearCaptureInitWatchdog();
     const requestId = providedContext?.requestId ?? randomUUID();
     const input =
@@ -3114,7 +3163,7 @@ async function sendCaptureEvent(
                 : Math.min(15, Number(store.get("框选.延迟")) || 0);
         if (captureDelay > 0) {
             showCaptureDelayWin(captureDelay, type);
-            await new Promise((r) => setTimeout(r, captureDelay * 1000));
+            await waitCaptureDelay(captureDelay);
             closeCaptureDelayWin();
         }
         if (superseded()) {
@@ -3432,6 +3481,7 @@ async function quickClip() {
     if (!(await flushCaptureDraft())) return false;
     if (observedSequence !== captureAcquireSequence) return false;
     const sequence = ++captureAcquireSequence;
+    pendingCaptureDelay?.resolve();
     clearCaptureInitWatchdog();
     const superseded = () => sequence !== captureAcquireSequence;
     const previous = pendingClipInit;

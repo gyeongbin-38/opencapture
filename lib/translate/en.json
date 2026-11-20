@@ -2504,5 +2504,10 @@
     "5e1b6d": "Capture countdown",
     "f0d9f0": "Move selection",
     "54c450": "No temporary captures",
-    "c649fa": "Frame capture failed; stitched up to this point only"
+    "c649fa": "Frame capture failed; stitched up to this point only",
+    "60a329": "Duplicate shape",
+    "bb5054": "Full screen · select all shapes",
+    "57e66f": "Cancel · deselect · close",
+    "e31bf1": "Decrease remaining time by 1 second",
+    "df3cba": "Increase remaining time by 1 second"
 }

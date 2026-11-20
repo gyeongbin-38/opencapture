@@ -1515,17 +1515,112 @@ app.whenReady().then(async () => {
                 Math.abs(fxAfterNudge - fxBeforeNudge) <= 1,
             `Arrow with draw bar open did not nudge the object: ${JSON.stringify({ sigBeforeNudge, sigAfterNudge, fxBeforeNudge, fxAfterNudge })}`,
         );
-        // Closing the bar deselects the object and arrows move the rect again.
+        // The first Esc only deselects the active annotation object;
+        // the draw bar stays open and arrows move the rect again.
+        const upperSig = () => canvasSig(".upper-canvas");
+        const activeObject = () =>
+            clip(`window.captureDraftBridge.debug().activeObject`);
+        const drawBarVisible = () =>
+            clip(
+                'getComputedStyle(document.querySelector("#draw_bar")).opacity === "1"',
+            );
+        assert(
+            await activeObject(),
+            "Dropped image should still be the active object",
+        );
         await pressKey("Escape", 27);
         await pause(200);
+        assert(
+            !(await activeObject()) && (await drawBarVisible()),
+            "Esc did not deselect the object while keeping the draw bar open",
+        );
         const fxEsc = await frameX();
         await pressBodyKey("ArrowRight", 39);
         await pause(150);
         assert(
             (await frameX()) > fxEsc,
-            "Arrow after closing the draw bar did not move the rect",
+            "Arrow after deselecting the object did not move the rect",
         );
-        report.checks.push({ objectArrowNudge: true });
+        // A second Esc collapses the draw bar.
+        await pressKey("Escape", 27);
+        await pause(200);
+        assert(
+            !(await drawBarVisible()),
+            "Second Esc did not close the draw bar",
+        );
+        report.checks.push({ objectArrowNudge: true, escDeselect: true });
+        // Editor keyboard parity with the draw bar open: Ctrl+A selects
+        // every annotation object, Ctrl+D duplicates the selection, and
+        // Delete/Backspace remove it — all with undo history.
+        await clip(
+            'document.querySelector("[data-capture-action=draw]")?.click()',
+        );
+        await pause(200);
+        const baseLower = await lowerSig();
+        assert(
+            !(await activeObject()),
+            "No annotation object should be selected after reopening the draw bar",
+        );
+        await pressCombo("a", 65, { ctrl: true });
+        await pause(200);
+        assert(
+            await activeObject(),
+            "Ctrl+A did not select all annotation objects",
+        );
+        await pressCombo("d", 68, { ctrl: true });
+        const fabricCount = () =>
+            clip(`window.captureDraftBridge.debug().fabricObjects`);
+        await until(
+            async () => ((await fabricCount()) === 2 ? true : null),
+            "Ctrl+D did not duplicate the selected objects",
+        );
+        await pressKey("Delete", 46);
+        await until(
+            async () => ((await fabricCount()) === 1 ? true : null),
+            "Delete did not remove the duplicated objects",
+        );
+        // Backspace is bound to the same delete path.
+        await pressCombo("a", 65, { ctrl: true });
+        await pause(150);
+        await pressCombo("d", 68, { ctrl: true });
+        await until(
+            async () => ((await fabricCount()) === 2 ? true : null),
+            "Second Ctrl+D did not duplicate the object",
+        );
+        await pressKey("Backspace", 8);
+        await until(
+            async () => ((await fabricCount()) === 1 ? true : null),
+            "Backspace did not remove the duplicated objects",
+        );
+        // Undo restores the deleted duplicate; redo removes it again.
+        await pressCombo("z", 90, { ctrl: true });
+        await until(
+            async () => ((await fabricCount()) === 2 ? true : null),
+            "Ctrl+Z did not undo the object deletion",
+        );
+        await pressCombo("y", 89, { ctrl: true });
+        await until(
+            async () => ((await fabricCount()) === 1 ? true : null),
+            "Ctrl+Y did not redo the object deletion",
+        );
+        // The delete shortcut must not fire while typing in an input.
+        await clip(
+            '(() => { const i=document.querySelector(".capture-dimensions input"); i.focus(); for (const type of ["keydown","keyup"]) i.dispatchEvent(new KeyboardEvent(type,{key:"Delete",keyCode:46,which:46,bubbles:true})); i.blur(); })()',
+        );
+        await pause(200);
+        assert(
+            (await fabricCount()) === 1,
+            "Delete leaked into a focused input and removed objects",
+        );
+        report.checks.push({
+            editorParity: {
+                ctrlASelectAll: true,
+                ctrlDDuplicate: true,
+                deleteBackspace: true,
+                undoRedo: true,
+                typingGuard: true,
+            },
+        });
         capture.hide();
         await run('document.querySelectorAll(".nav-button")[1].click();');
         await until(

@@ -4258,7 +4258,16 @@ export function installOpenCapture(root: string, hooks: Hooks) {
             );
             if (!ids.length) return;
             const fromDashboard = event.sender.id === dashboard?.webContents.id;
-            if (!fromDashboard) assertRole(event, ["shelf", "clip"]);
+            if (!fromDashboard) {
+                const role = assertRole(event, ["shelf", "clip"]);
+                if (role === "clip") {
+                    const owned = renderers.get(event.sender.id)?.ownedDraftIds;
+                    if (!owned || ids.some((i) => !owned.has(i)))
+                        throw new Error(
+                            "Clip renderer does not own this draft.",
+                        );
+                }
+            }
             const items = ids.map((i) =>
                 fromDashboard ? getItem(i) : shelfItem(i),
             );

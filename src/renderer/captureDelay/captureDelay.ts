@@ -36,7 +36,8 @@ const actionText =
 
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const countEl = txt(String(total)).class("delay-count");
+let left = total;
+const countEl = txt(String(left)).class("delay-count");
 
 const progressBar = view()
     .class("delay-progress-bar")
@@ -48,7 +49,7 @@ const progress = view()
         ariaLabel: t("截屏倒计时"),
         ariaValueMin: "0",
         ariaValueMax: String(total),
-        ariaValueNow: String(total),
+        ariaValueNow: String(left),
     })
     .add(progressBar);
 if (!reducedMotion)
@@ -57,6 +58,48 @@ if (!reducedMotion)
             progressBar.style({ transform: "scaleX(0)" }),
         ),
     );
+
+// 调整剩余秒数后让进度条从当前位置重新匀速耗尽
+const syncProgress = () => {
+    progress.el.ariaValueNow = String(left);
+    const fraction = Math.min(1, Math.max(0, left / total));
+    if (reducedMotion) {
+        progressBar.style({ transform: `scaleX(${fraction})` });
+        return;
+    }
+    progressBar.style({
+        transitionDuration: "0s",
+        transform: `scaleX(${fraction})`,
+    });
+    void progressBar.el.offsetWidth;
+    progressBar.style({
+        transitionDuration: `${left}s`,
+        transform: "scaleX(0)",
+    });
+};
+
+const adjust = (delta: number) => {
+    const next = Math.max(1, Math.min(15, left + delta));
+    if (next === left) return;
+    left = next;
+    countEl.sv(String(left));
+    syncProgress();
+    renderSend("captureDelayAdjust", [delta]);
+};
+
+const minus = button(txt("−1s"))
+    .class("delay-adjust")
+    .attr({ type: "button", ariaLabel: t("남은 시간 1초 줄이기") })
+    .on("click", () => adjust(-1));
+const plus = button(txt("+1s"))
+    .class("delay-adjust")
+    .attr({ type: "button", ariaLabel: t("남은 시간 1초 늘리기") })
+    .on("click", () => adjust(1));
+
+const skip = button(txt(t("캡처하기")))
+    .class("delay-skip")
+    .attr({ type: "button" })
+    .on("click", () => renderSend("captureDelaySkip", []));
 
 const cancel = button(txt(t("取消")))
     .class("delay-cancel")
@@ -67,13 +110,12 @@ view()
     .class("delay-card")
     .add([
         txt(`${t("截屏倒计时")}${actionText}`).class("delay-label"),
-        countEl,
+        view("x").class("delay-stepper").add([minus, countEl, plus]),
         progress,
-        cancel,
+        view("x").class("delay-actions").add([skip, cancel]),
     ])
     .addInto();
 
-let left = total;
 const timer = setInterval(() => {
     left -= 1;
     if (left <= 0) {
@@ -88,5 +130,16 @@ const timer = setInterval(() => {
 }, 1000);
 
 document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") renderSend("captureDelayCancel", []);
+    if (e.key === "Escape") {
+        renderSend("captureDelayCancel", []);
+        return;
+    }
+    if (e.key === "Enter") {
+        // 焦点在按钮上时交给按钮自身点击，避免重复触发
+        if ((e.target as HTMLElement | null)?.tagName !== "BUTTON")
+            renderSend("captureDelaySkip", []);
+        return;
+    }
+    if (e.key === "+" || e.key === "=") adjust(1);
+    else if (e.key === "-") adjust(-1);
 });

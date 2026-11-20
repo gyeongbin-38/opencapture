@@ -706,6 +706,156 @@ app.whenReady().then(async () => {
         report.checks.push({
             inlineShelfDrag: { files: inlineDragPayload.files.length },
         });
+
+        const thumbIds = await clip(
+            '[...document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb")].map(node=>node.dataset.itemId)',
+        );
+        assert(
+            thumbIds.includes(firstStage.id) &&
+                thumbIds.includes(secondStage.id),
+            `Inline shelf thumbs lack stable item ids: ${JSON.stringify(thumbIds)}.`,
+        );
+        const stagedBeforeDiscard = await clip(
+            'document.querySelectorAll("#capture_staged .capture-staged-box").length',
+        );
+        assert(
+            stagedBeforeDiscard === 1,
+            `Expected one staged marker before discard, saw ${stagedBeforeDiscard}.`,
+        );
+        await clip(`(() => {
+            const thumb=document.querySelector('#capture_inline_shelf .capture-shelf-thumb[data-item-id=${JSON.stringify(firstStage.id)}]');
+            thumb.dispatchEvent(new PointerEvent("pointerdown",{button:1,bubbles:true}));
+            thumb.dispatchEvent(new PointerEvent("pointerup",{button:1,bubbles:true}));
+            thumb.dispatchEvent(new MouseEvent("auxclick",{button:1,bubbles:true}));
+        })()`);
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 1',
+                ),
+            "Middle-click did not discard the inline shelf thumbnail.",
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_staged .capture-staged-box").length === 0',
+                ),
+            "Middle-click discard did not clear the staged marker.",
+        );
+        await clip(`(() => {
+            const thumb=document.querySelector('#capture_inline_shelf .capture-shelf-thumb[data-item-id=${JSON.stringify(secondStage.id)}]');
+            thumb.focus();
+            thumb.dispatchEvent(new KeyboardEvent("keydown",{key:"Delete",bubbles:true}));
+        })()`);
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 0 && document.querySelector("#capture_inline_shelf")?.hidden === true',
+                ),
+            "Delete key did not discard the remaining inline shelf thumbnail.",
+        );
+
+        await clip("window.captureDraftBridge.stage()");
+        await pause(700);
+        const discardedStaysDiscarded = await clip(
+            'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 0',
+        );
+        assert(
+            discardedStaysDiscarded,
+            "Discarded thumbnail resurrected on the first silent recommit.",
+        );
+        await clip("window.captureDraftBridge.stage()");
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 1',
+                ),
+            "Explicit restage did not return a thumbnail to the inline shelf.",
+        );
+        const thirdStart = {
+            x: Math.round(photo.x + photo.width * 0.3),
+            y: Math.round(photo.y + photo.height * 0.32),
+        };
+        const thirdEnd = {
+            x: Math.round(photo.x + photo.width * 0.8),
+            y: Math.round(photo.y + photo.height * 0.82),
+        };
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            ...thirdStart,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...thirdStart,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseMove",
+            modifiers: ["shift"],
+            ...thirdEnd,
+        });
+        capture.webContents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            modifiers: ["shift"],
+            ...thirdEnd,
+        });
+        await pause(250);
+        const thirdStage = await clip("window.captureDraftBridge.stage()");
+        assert(
+            thirdStage?.id &&
+                thirdStage.id !== firstStage.id &&
+                thirdStage.id !== secondStage.id,
+            "Third staged draft did not get a distinct id.",
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 2 && document.querySelectorAll("#capture_staged .capture-staged-box").length === 1',
+                ),
+            "Third region did not render a thumbnail with a staged marker.",
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelector("#capture_inline_shelf [data-shelf-clear]") !== null',
+                ),
+            "Inline shelf clear-all control did not render.",
+        );
+        await clip(
+            'document.querySelector("#capture_inline_shelf [data-shelf-clear]").click()',
+        );
+        await until(
+            () =>
+                clip(
+                    'document.querySelectorAll("#capture_inline_shelf .capture-shelf-thumb").length === 0 && document.querySelector("#capture_inline_shelf")?.hidden === true && document.querySelectorAll("#capture_staged .capture-staged-box").length === 0',
+                ),
+            "Clear-all did not empty the inline shelf and staged markers.",
+        );
+        const discardedIds = await run(`window.openCapture.queryItems({
+            scope:"trash",sort:"newest",offset:0,limit:200,queryId:"shelf-discard-trash"
+        }).then(result => result.items.map(item => item.id))`);
+        assert(
+            [firstStage.id, secondStage.id, thirdStage.id].every((id) =>
+                discardedIds.includes(id),
+            ),
+            `Clear-all did not trash every staged draft: ${JSON.stringify(discardedIds)}.`,
+        );
+        await run(
+            `window.openCapture.restoreItems(${JSON.stringify([firstStage.id, secondStage.id])})`,
+        );
+        await shot(capture, "inline-shelf-cleared");
+        report.checks.push({
+            inlineShelfDiscard: {
+                middleClick: firstStage.id,
+                deleteKey: secondStage.id,
+                clearAll: [secondStage.id, thirdStage.id],
+                stagedMarkersCleared: stagedBeforeDiscard,
+            },
+        });
         await clip(
             'document.querySelector("#quick_toolbar [data-capture-action=close]").click()',
         );
@@ -713,7 +863,6 @@ app.whenReady().then(async () => {
             () => capture.isDestroyed() || !capture.isVisible(),
             "Capture editor did not close after staging the regions.",
         );
-
         const shelf = await until(
             () =>
                 BrowserWindow.getAllWindows().find(
@@ -1199,6 +1348,40 @@ app.whenReady().then(async () => {
                 "compare,draw,stage,textselect,redact,ding,more",
             `Editor radial menu ignored configured order: ${JSON.stringify(radialOrder)}.`,
         );
+        const radialPaging = await clip(`(() => {
+            const dots=()=>[...document.querySelectorAll("#radial_menu [data-radial-page]")];
+            const active=()=>dots().findIndex(node=>node.getAttribute("aria-current")==="page");
+            const items=()=>document.querySelectorAll("#radial_menu .radial_item").length;
+            const order=()=>[...document.querySelectorAll("#radial_menu .radial_item")].map(node=>node.dataset.captureAction);
+            const clickMore=()=>document.querySelector('#radial_menu .radial_item[data-capture-action="more"]').click();
+            const page0={dots:dots().length,active:active(),items:items()};
+            clickMore();
+            const page1={active:active(),items:items()};
+            clickMore();
+            const page2={active:active(),items:items()};
+            clickMore();
+            const back={active:active(),items:items(),order:order()};
+            return {page0,page1,page2,back};
+        })()`);
+        assert(
+            radialPaging.page0.dots === 3 &&
+                radialPaging.page0.active === 0,
+            `Radial page indicator missing on the primary page: ${JSON.stringify(radialPaging)}.`,
+        );
+        assert(
+            radialPaging.page1.active === 1 &&
+                radialPaging.page1.items === 8 &&
+                radialPaging.page2.active === 2 &&
+                radialPaging.page2.items >= 7,
+            `Radial paging did not advance the active dot: ${JSON.stringify(radialPaging)}.`,
+        );
+        assert(
+            radialPaging.back.active === 0 &&
+                radialPaging.back.order.join(",") ===
+                    "compare,draw,stage,textselect,redact,ding,more",
+            `Radial did not wrap back to the primary page: ${JSON.stringify(radialPaging)}.`,
+        );
+        report.checks.push({ radialPaging });
         const drawTarget =
             await clip(`(() => { const node=document.querySelector('.radial_item[data-capture-action="draw"]');
             const rect=node.getBoundingClientRect(); return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2),animation:getComputedStyle(node).animationName}; })()`);

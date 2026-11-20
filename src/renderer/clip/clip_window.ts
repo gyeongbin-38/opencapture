@@ -3340,9 +3340,15 @@ function freeInit() {
 }
 
 function fabricDelete() {
-    for (const o of fabricCanvas.getActiveObjects()) {
+    const objects = fabricCanvas
+        .getActiveObjects()
+        .filter((o) => !(o as IText).isEditing);
+    if (!objects.length) return;
+    for (const o of objects) {
         fabricCanvas.remove(o);
     }
+    // 多选时仅移除成员不会解散选区，要手动清除，否则留下空的选框
+    fabricCanvas.discardActiveObject();
     getFObjectV();
     getFilters();
     hisPush();
@@ -4618,12 +4624,13 @@ for (const [key, desc] of [
     ["휠 클릭 드래그", t("도넛 빠른 동작 · 캔버스 팬")],
     ["우클릭", t("도넛 메뉴 · 가운데 놓기는 취소")],
     ["Enter", t("확인 · 저장")],
-    ["Esc", t("취소 · 닫기")],
-    ["Ctrl+A", t("전체 화면")],
+    ["Esc", t("취소 · 선택 해제 · 닫기")],
+    ["Ctrl+A", t("전체 화면 · 도형 모두 선택")],
     ["Ctrl+S", t("저장")],
     ["Ctrl+C", t("복사")],
     ["Ctrl+Z · Ctrl+Y / Ctrl+Shift+Z", t("실행 취소 · 다시 실행")],
-    ["Delete", t("도형 삭제")],
+    ["Ctrl+D", t("도형 복제")],
+    ["Delete · Backspace", t("도형 삭제")],
     ["?", t("이 도움말 표시")],
 ] as const) {
     captureHelp.add(
@@ -5630,6 +5637,26 @@ document.addEventListener(
             captureWorkspace.dismiss();
             return;
         }
+        if (e.key === "Escape" && drawBarOpen) {
+            const target = e.target as HTMLElement;
+            if (
+                target.isContentEditable ||
+                ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)
+            )
+                return;
+            if (
+                !radial.isOpen() &&
+                toolPopover.el.hidden &&
+                fabricCanvas.getActiveObject()
+            ) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                fabricCanvas.discardActiveObject();
+                fabricCanvas.requestRenderAll();
+                getFObjectV();
+                return;
+            }
+        }
         if (
             e.key === "Escape" &&
             (radial.isOpen() || !toolPopover.el.hidden || drawBarOpen)
@@ -5890,6 +5917,16 @@ const hotkeyTipX: { name: string; hotkey: hotkeyTip }[] = [
             { name: "自由选择", keys: ["F"] },
             { name: "창 선택", keys: ["W"] },
             { name: "匹配自动框选", keys: [`Shift ${t("框选")}`] },
+        ],
+    },
+    {
+        name: "标注",
+        hotkey: [
+            { name: "全选", keys: ["Control+A"] },
+            { name: "复制", keys: ["Control+D"] },
+            { name: "删除", keys: ["Delete", "Backspace"] },
+            { name: "撤回", keys: ["Control+Z"] },
+            { name: "重做", keys: ["Control+Y", "Control+Shift+Z"] },
         ],
     },
     {
@@ -7039,6 +7076,22 @@ for (const xel of whL) {
 
 // 快捷键全屏选择
 hotkeys("ctrl+a, command+a", () => {
+    if (drawBarOpen) {
+        const objects = fabricCanvas
+            .getObjects()
+            .filter((o) => !(o as IText).isEditing);
+        if (objects.length) {
+            fabricCanvas.discardActiveObject();
+            fabricCanvas.setActiveObject(
+                objects.length > 1
+                    ? new ActiveSelection(objects, { canvas: fabricCanvas })
+                    : objects[0],
+            );
+            fabricCanvas.requestRenderAll();
+            getFObjectV();
+            return;
+        }
+    }
     if (captureSelectionMode === "window") {
         captureWorkspace?.showStatus(
             "창 캡처에서는 시스템 창을 선택해 주세요.",
@@ -7178,12 +7231,15 @@ drawSideSelect.draw.on("click", () => {
 });
 
 hotkeys("ctrl+z", () => {
+    if (longRunning) return;
     undo(true);
 });
 hotkeys("ctrl+y", () => {
+    if (longRunning) return;
     undo(false);
 });
 hotkeys("ctrl+shift+z", () => {
+    if (longRunning) return;
     undo(false);
 });
 
@@ -7295,7 +7351,14 @@ drawSidePosition.back.on("click", () => {
 });
 
 // 删除快捷键
-hotkeys("delete", fabricDelete);
+hotkeys("delete, backspace", () => {
+    if (longRunning || !drawBarOpen) return;
+    fabricDelete();
+});
+hotkeys("ctrl+d, command+d", () => {
+    if (longRunning || !drawBarOpen) return;
+    void fabricCopy();
+});
 
 fabricCanvas.on("mouse:down", (options) => {
     // 非常规状态下点击
@@ -7614,6 +7677,16 @@ Object.assign(window, {
     captureDraftBridge: {
         flush: () => captureWorkspace?.flush(),
         stage: () => captureWorkspace?.stage(),
+        debug: () => ({
+            activeObject: Boolean(fabricCanvas.getActiveObject()),
+            drawBarOpen,
+            direction,
+            radialOpen: radial.isOpen(),
+            popoverHidden: toolPopover.el.hidden,
+            undoIndex: undoStack.index,
+            undoLen: undoStack.list.length,
+            fabricObjects: fabricCanvas.getObjects().length,
+        }),
         info: () => ({
             id: captureWorkspace?.queue.current?.id,
             revision: captureWorkspace?.queue.current?.revision,

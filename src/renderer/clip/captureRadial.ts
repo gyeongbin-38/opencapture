@@ -128,6 +128,31 @@ export function createCaptureRadial<T extends RadialTool>(options: {
                 })
                 .on("click", close),
         );
+        if (pageCount() > 1) {
+            const dots = view("x")
+                .attr({ role: "presentation" })
+                .style({
+                    position: "fixed",
+                    left: `${layout.center.x}px`,
+                    top: `${layout.center.y + 24}px`,
+                    transform: "translate(-50%, -50%)",
+                    gap: "5px",
+                    zIndex: "121",
+                    pointerEvents: "none",
+                });
+            for (let i = 0; i < pageCount(); i++) {
+                const dot = view().style({
+                    width: "5px",
+                    height: "5px",
+                    borderRadius: "50%",
+                    background: i === page ? "#ffffff" : "#ffffff4d",
+                });
+                dot.el.dataset.radialPage = String(i);
+                if (i === page) dot.el.setAttribute("aria-current", "page");
+                dots.add(dot);
+            }
+            menu.add(dots);
+        }
         for (const [index, item] of items.entries()) {
             const pt = layout.points[index];
             const control = makeButton(item)

@@ -2421,5 +2421,10 @@
     "dd2f23": "La pantalla de Windows está bloqueada o hay otro escritorio activo. Desbloquéala e intenta capturar de nuevo.",
     "c30767": "Se necesita una ruta de archivo.",
     "d14057": "La ruta de ejecución de la aplicación no está disponible.",
-    "c649fa": "Error al capturar el fotograma; solo se unió hasta aquí"
+    "c649fa": "Error al capturar el fotograma; solo se unió hasta aquí",
+    "60a329": "Duplicate shape",
+    "bb5054": "Full screen · select all shapes",
+    "57e66f": "Cancel · deselect · close",
+    "e31bf1": "Decrease remaining time by 1 second",
+    "df3cba": "Increase remaining time by 1 second"
 }
