@@ -541,6 +541,7 @@ const setNewDing = (
         pinGrayEl.el.setAttribute("aria-pressed", String(pinFx.gray));
     };
 
+    let stepStackFn: ((d: number) => void) | null = null;
     const stackUrls = dingData.get(wid)?.urls;
     if (stackUrls && stackUrls.length > 1) {
         let stackIdx = 0;
@@ -554,6 +555,7 @@ const setNewDing = (
             if (data) data.url = stackUrls[stackIdx];
             markSessionDirty();
         };
+        stepStackFn = stepStack;
         const stackPreview = ele("img")
             .class("stack-preview")
             .attr({ alt: "", ariaHidden: "true" })
@@ -585,8 +587,12 @@ const setNewDing = (
                 el.el.setAttribute("aria-pressed", String(playing));
             });
         disposers.add(() => clearInterval(stackTimer));
-        const prevBtn = stackBtn("left", t("이전 이미지"), () => stepStack(-1));
-        const nextBtn = stackBtn("right", t("다음 이미지"), () => stepStack(1));
+        const prevBtn = stackBtn("left", `${t("이전 이미지")}  [`, () =>
+            stepStack(-1),
+        );
+        const nextBtn = stackBtn("right", `${t("다음 이미지")}  ]`, () =>
+            stepStack(1),
+        );
         for (const [b, d] of [
             [prevBtn, -1],
             [nextBtn, 1],
@@ -1422,6 +1428,10 @@ const setNewDing = (
         }
         if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "u") {
             undoCutout();
+        }
+        if (!e.ctrlKey && !e.metaKey && (e.key === "[" || e.key === "]")) {
+            e.preventDefault();
+            stepStackFn?.(e.key === "[" ? -1 : 1);
         }
         if (e.key.startsWith("Arrow")) {
             e.preventDefault();
