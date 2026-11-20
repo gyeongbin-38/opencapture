@@ -573,6 +573,52 @@ app.whenReady().then(async () => {
             `Dimensions bar reset failed: ${JSON.stringify({ whAfter, whReset })}`,
         );
         report.checks.push({ whBarPin: { whBefore, whAfter, whReset } });
+        // Ctrl+wheel zoom re-runs whBar; the bar must stay clamped inside
+        // the viewport while the inputs keep canvas coordinates.
+        const preZoomValues = await clip(
+            '[...document.querySelectorAll(".capture-dimensions input")].map(i=>i.value)',
+        );
+        await clip(
+            'document.dispatchEvent(new MouseEvent("mousemove",{clientX:400,clientY:300,bubbles:true})); document.body.dispatchEvent(new WheelEvent("wheel",{ctrlKey:true,deltaY:-600,bubbles:true}));',
+        );
+        await pause(200);
+        const zoomDim = await clip(
+            '(() => { const wh=document.querySelector("#clip_wh").getBoundingClientRect(); return { inside: wh.left >= -1 && wh.top >= -1 && wh.right <= innerWidth + 1 && wh.bottom <= innerHeight + 1, values:[...document.querySelectorAll(".capture-dimensions input")].map(i=>i.value), transform:document.getElementById("editor")?.style.transform ?? "" }; })()',
+        );
+        assert(
+            zoomDim.transform.includes("scale"),
+            `Ctrl+wheel did not zoom the canvas: ${JSON.stringify(zoomDim)}`,
+        );
+        assert(
+            zoomDim.inside,
+            `Dimensions bar left viewport after zoom: ${JSON.stringify(zoomDim)}`,
+        );
+        assert(
+            JSON.stringify(zoomDim.values) === JSON.stringify(preZoomValues),
+            `Zoom changed canvas coordinates: ${JSON.stringify({ preZoomValues, zoomed: zoomDim.values })}`,
+        );
+        await clip(
+            'for (const type of ["keydown","keyup"]) document.dispatchEvent(new KeyboardEvent(type,{key:"0",keyCode:48,which:48,ctrlKey:true,bubbles:true}));',
+        );
+        await pause(150);
+        const zoomReset = await clip(
+            'document.getElementById("editor")?.style.transform ?? ""',
+        );
+        report.checks.push({ zoomDimBar: { zoomDim, zoomReset } });
+        // A selection hugging the bottom-right edge keeps the bar inside
+        // the viewport and clear of the toolbar.
+        await clip(
+            '(() => { const inputs=document.querySelectorAll(".capture-dimensions input"); for (const [i,v] of [[0,String(innerWidth-60)],[1,String(innerHeight-40)]]) { inputs[i].value=v; inputs[i].dispatchEvent(new Event("change",{bubbles:true})); } })()',
+        );
+        await pause(150);
+        const edgeDim = await clip(
+            '(() => { const wh=document.querySelector("#clip_wh").getBoundingClientRect(); const tb=document.querySelector("#quick_toolbar").getBoundingClientRect(); return { wh:JSON.parse(JSON.stringify(wh)), intersectsToolbar: wh.left < tb.right && wh.right > tb.left && wh.top < tb.bottom && wh.bottom > tb.top, inside: wh.left >= -1 && wh.top >= -1 && wh.right <= innerWidth + 1 && wh.bottom <= innerHeight + 1 }; })()',
+        );
+        assert(
+            edgeDim.inside && !edgeDim.intersectsToolbar,
+            `Dimensions bar misplaced at screen edge: ${JSON.stringify(edgeDim)}`,
+        );
+        report.checks.push({ edgeDimBar: edgeDim });
         // F toggles rect/free selection mode with visible feedback.
         await pressKey("f", 70);
         await until(
