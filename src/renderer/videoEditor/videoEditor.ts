@@ -2343,7 +2343,6 @@ async function saveGif(op?: {
     const exportPath = getSavePath("gif");
     if (!exportPath) return;
 
-    // @ts-expect-error gifenc has no types
     const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
     const gif = GIFEncoder();
 

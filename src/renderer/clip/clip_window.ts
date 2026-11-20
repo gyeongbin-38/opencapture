@@ -1450,6 +1450,33 @@ async function save(message: string) {
             nc.width,
             nc.height,
         );
+    } else if (_type === "ico") {
+        const nc = getClipPhoto();
+        const pngs: { size: number; png: Buffer }[] = [];
+        for (const dim of [16, 32, 48]) {
+            const iconCanvas = document.createElement("canvas");
+            iconCanvas.width = dim;
+            iconCanvas.height = dim;
+            iconCanvas.getContext("2d")!.drawImage(nc, 0, 0, dim, dim);
+            const f = await getBlob(iconCanvas, "image/png");
+            if (!f) return;
+            pngs.push({
+                size: dim,
+                png: Buffer.from(await f.arrayBuffer()),
+            });
+        }
+        dataBuffer = packIco(pngs);
+    } else if (_type === "gif") {
+        const nc = getClipPhoto();
+        const ctx = nc.getContext("2d")!;
+        const data = ctx.getImageData(0, 0, nc.width, nc.height);
+        const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
+        const palette = quantize(data.data, 256);
+        const index = applyPalette(data.data, palette);
+        const gif = GIFEncoder();
+        gif.writeFrame(index, nc.width, nc.height, { palette });
+        gif.finish();
+        dataBuffer = Buffer.from(gif.bytes());
     } else {
         let f: Blob | null = null;
         const nc = getClipPhoto();
@@ -1479,6 +1506,27 @@ async function save(message: string) {
             // todo error
         }
     });
+}
+
+function packIco(entries: { size: number; png: Buffer }[]) {
+    const header = Buffer.alloc(6);
+    header.writeUInt16LE(0, 0);
+    header.writeUInt16LE(1, 2);
+    header.writeUInt16LE(entries.length, 4);
+    const dir = Buffer.alloc(16 * entries.length);
+    let offset = 6 + dir.length;
+    for (const [index, entry] of entries.entries()) {
+        const at = index * 16;
+        const dim = entry.size >= 256 ? 0 : entry.size;
+        dir.writeUInt8(dim, at);
+        dir.writeUInt8(dim, at + 1);
+        dir.writeUInt16LE(1, at + 4);
+        dir.writeUInt16LE(32, at + 6);
+        dir.writeUInt32LE(entry.png.length, at + 8);
+        dir.writeUInt32LE(offset, at + 12);
+        offset += entry.png.length;
+    }
+    return Buffer.concat([header, dir, ...entries.map((e) => e.png)]);
 }
 
 /** 이미지 한 장을 담은 최소 PDF (JPEG DCTDecode) */
@@ -4714,6 +4762,8 @@ const saveTypeList: SaveFileType[] = [
     "jpg",
     "webp",
     "bmp",
+    "ico",
+    "gif",
     "svg",
     "pdf",
     "ocap",

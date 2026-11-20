@@ -972,6 +972,8 @@ const s: Partial<settingItem<SettingPath>> = {
                     { value: "jpg", name: "JPG" },
                     { value: "webp", name: "WebP" },
                     { value: "bmp", name: "BMP" },
+                    { value: "ico", name: "ICO" },
+                    { value: "gif", name: "GIF" },
                     { value: "pdf", name: "PDF" },
                 ],
                 "截屏默认格式",

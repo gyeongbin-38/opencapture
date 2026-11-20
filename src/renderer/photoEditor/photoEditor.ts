@@ -178,8 +178,12 @@ const els = {
     ]).sv(
         (() => {
             const format = store.get("保存.默认格式");
-            if (format === "svg" || format === "pdf") return "png";
-            return format;
+            return format === "png" ||
+                format === "jpg" ||
+                format === "webp" ||
+                format === "bmp"
+                ? format
+                : "png";
         })(),
     ),
     quality: input("number").attr({ max: "1", min: "0", step: "0.1" }).sv("1"),
