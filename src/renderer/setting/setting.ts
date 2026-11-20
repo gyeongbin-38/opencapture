@@ -649,7 +649,6 @@ const s: Partial<settingItem<SettingPath>> = {
                             if (error) {
                                 console.error(error);
                             } else {
-                                console.log(r);
                             }
                         },
                     );
@@ -2083,7 +2082,6 @@ const xs: Record<
             portableConfigBtn.on("click", async () => {
                 const c = await confirm("将转为便携版，并迁移数据，重启软件");
                 if (!c) return;
-                console.log(portablePath);
                 try {
                     fs.mkdirSync(portablePath, { recursive: true });
                     renderSendSync("move_user_data", [portablePath]);
@@ -2642,8 +2640,6 @@ for (const p of main) {
         }
 }
 
-console.log("s-m", sKeys.difference(mKeys), "m-s", mKeys.difference(sKeys));
-
 const bind: { [k in KeyPath]?: KeyPath[] } = {
     离线OCR: ["OCR.类型"],
     "AI.在线模型": ["OCR.类型"],
@@ -2685,7 +2681,6 @@ const bindF: { [k in SettingPath]?: (v: GetValue<setting, k>) => void } = {
 const bindF2: { f: (has: boolean) => void; keys: SettingPath[] }[] = [
     {
         f: (h) => {
-            console.log("截屏更新");
             reloadScreenShot.clear();
             if (h)
                 reloadScreenShot
@@ -2724,7 +2719,6 @@ const bindF2: { f: (has: boolean) => void; keys: SettingPath[] }[] = [
     },
     {
         f: (h) => {
-            console.log("应用重启");
             reloadEl.clear();
             if (h)
                 reloadEl
@@ -2990,10 +2984,6 @@ function renderSetting(settingPath: KeyPath) {
                     const value = el.gv;
                     if (value !== null && value !== undefined) {
                         setSet(sp, value);
-                        console.log(
-                            `Setting ${settingPath} updated to`,
-                            structuredClone(value),
-                        );
                         for (const p of bind[settingPath] ?? []) {
                             reRenderSetting(p);
                         }
@@ -3068,7 +3058,6 @@ function reRenderSetting(settingPath: KeyPath) {
     const el = document.querySelector(`[data-name="${settingPath}"]`);
     if (!el) return;
     // todo sv
-    console.log("rerender", settingPath);
     const nel = renderSetting(settingPath);
     if (nel) el.replaceWith(nel.el);
 }
@@ -3320,7 +3309,6 @@ function xPath(dir: boolean) {
         .on("dragleave", () => {})
         .on("drop", (e) => {
             e.preventDefault();
-            console.log(e);
             const fs = Array.from(e.dataTransfer?.files || [])[0];
             i.sv(webUtils.getPathForFile(fs));
             el.el.dispatchEvent(new CustomEvent("input"));
@@ -3457,7 +3445,6 @@ function pathEl(path: string) {
 
 function sortable() {
     const groupId = `sortable-${crypto.randomUUID()}`;
-    console.log(groupId);
 
     return (
         pel: ElType<HTMLElement>,
@@ -3611,7 +3598,6 @@ function sortTool() {
         return v.flatMap((i) => {
             const x = tools.find((x) => x.key === i);
             if (!x) {
-                console.log(`${i} is udf`);
                 return [];
             }
             return view().data({ n: i }).add(tIconEl(x.icon));
@@ -4024,7 +4010,6 @@ function translatorD(
                 await translator.e[
                     v.type === "llm" ? "chatgpt" : v.type
                 ].test();
-            console.log(r);
             if (r) testR.el.innerText = t("测试成功");
         } catch (error) {
             testR.el.innerText = `${t("测试失败")} ${String(error)}`;
@@ -4743,7 +4728,6 @@ function ocrEl() {
                                                 const percent =
                                                     downloadedBytes /
                                                     totalBytes;
-                                                console.log(percent);
                                                 pro.sv(percent);
                                             }
                                         }
@@ -4755,7 +4739,6 @@ function ocrEl() {
                                     ).arrayBuffer();
                                     const b = Buffer.from(buffer);
                                     await unzip(b, p);
-                                    console.log("end");
                                     downloadEl.clear();
                                     setValue(p);
                                 });
@@ -5107,7 +5090,6 @@ function about() {
             })
                 .then((response) => response.json())
                 .then((re) => {
-                    console.log(re);
                     const l: {
                         html_url: string;
                         name: string;
@@ -5203,7 +5185,7 @@ function about() {
                         );
                     }
                 })
-                .catch((error) => console.log("error", error));
+                .catch((error) => console.error("error", error));
         });
     const update = view("y").style({ gap: "16px" });
     const desc = p(packageJson.description);

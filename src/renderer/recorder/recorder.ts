@@ -144,7 +144,6 @@ start.on("error", () => {
         },
     ]);
 });
-console.log(pathToFfmpeg);
 
 /** 自动分段 */
 function c() {
@@ -173,7 +172,6 @@ function resize() {
     const k0 = p.h / p.w;
     const k1 = c.h / c.w;
     if (k0 >= k1) {
-        console.log(p.w, c.w);
         // @ts-ignore
         vpEl.el.style.zoom = p.w / c.w;
     } else {
@@ -565,12 +563,10 @@ function runFfmpeg(type: "ts" | "clip" | "join", n: number, args: string[]) {
             if (code === 0) {
                 setFFState(type, n, "ok");
                 updataPrEl(ffprocess);
-                console.log(ffprocess);
                 re(true);
             } else {
                 setFFState(type, n, "err");
                 updataPrEl(ffprocess);
-                console.log(ffprocess);
                 if (type === "ts") {
                     retryAction = () => {
                         void runFfmpeg(type, n, args).catch(() => {});
@@ -585,11 +581,9 @@ function runFfmpeg(type: "ts" | "clip" | "join", n: number, args: string[]) {
         });
         ffmpeg.stdout.on("data", (data: Uint8Array) => {
             ffprocess[type][n].logs.push({ text: data.toString() });
-            console.log(data.toString());
         });
         ffmpeg.stderr.on("data", (data: Uint8Array) => {
             ffprocess[type][n].logs.push({ text: data.toString() });
-            console.log(data.toString());
         });
     });
 }
@@ -1282,7 +1276,6 @@ renderOn("recordInit", async ([sourceId, r, screen_w, screen_h]) => {
     let clipName = 0;
     function save(f: () => void) {
         const b = new Blob(chunks, { type: "video/webm" });
-        console.log(chunks, b);
         const reader = new FileReader();
         reader.readAsArrayBuffer(b);
         reader.onloadend = (_e) => {
@@ -1314,7 +1307,6 @@ renderOn("recordInit", async ([sourceId, r, screen_w, screen_h]) => {
                 } catch {}
                 showControl();
             });
-            console.log(nameT);
         } else {
             save(() => {});
             crashReset = true;

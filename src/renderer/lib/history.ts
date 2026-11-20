@@ -179,7 +179,6 @@ if (getTestState()) {
 
     function logList() {
         const l = structuredClone(history.history);
-        console.log(l);
         return l;
     }
 
@@ -243,7 +242,6 @@ if (getTestState()) {
 
     function logList() {
         const l = structuredClone(history.history);
-        console.log(l);
         return l;
     }
 

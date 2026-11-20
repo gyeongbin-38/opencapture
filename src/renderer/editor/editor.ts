@@ -1043,7 +1043,6 @@ function runSpellcheck(now = false) {
             await spellcheckDiff.spellcheckLocal();
             const list = spellcheckDiff.updateDiffState();
 
-            console.log(list);
             renderSpellcheck(list);
         },
         now ? 0 : 1000,
@@ -1487,13 +1486,11 @@ class spellcheckGen {
 
         ai.stream((te, e) => {
             const p = e ? 1 : te.length / text.length;
-            console.log(p);
             stopEl.sv(p);
         });
 
         const newT = await ai.text;
         this.aiSuggestText = newT;
-        console.log(newT);
     }
 
     // 应用建议或文本更新，但不重新检查计算
@@ -1516,7 +1513,6 @@ class spellcheckGen {
 
         // @ts-ignore
         const diff = dmp.diff_wordMode(t, this.aiSuggestText);
-        console.log(diff);
         let i = 0;
         let zI = 0;
         const last = { src: "", ai: "" };
@@ -1623,7 +1619,6 @@ function renderSpellcheck(list: SpellItem[]) {
                     view()
                         .add(getClip(x))
                         .on("click", () => {
-                            console.log(i);
                             const t = editor.get();
                             const newT =
                                 t.slice(0, i.index) +
@@ -1902,8 +1897,6 @@ renderOn("editorInit", ([name, list]) => {
             spellcheckDiff.clear();
 
             if (text) {
-                console.log(text);
-
                 stackAdd(r.raw.map((i) => i.text).join("\n"));
 
                 editor.push(text);
@@ -1968,7 +1961,7 @@ function editOnOther(editingOnOther: boolean) {
             shell.openPath(tmpTextPath);
             fileWatcher = fs.watch(tmpTextPath, () => {
                 fs.readFile(tmpTextPath, "utf8", (e, data) => {
-                    if (e) console.log(e);
+                    if (e) console.error(e);
                     editor.push(data, true);
                 });
             });
@@ -2162,7 +2155,6 @@ function showTabs(b: "home" | "tab" | "hometab") {
     }
     function smallTab(b: boolean) {
         const l = Array.from(tabs.values()).map((i) => i.el.el);
-        console.log(l);
 
         if (b) {
             for (const el of l) el.classList.add("tab_small");
@@ -2265,7 +2257,7 @@ function newTab(id: number, url: string) {
 function getTab(id: number): TabItem {
     const t = tabs.get(id);
     if (!t) {
-        console.log("not tab", id);
+        console.error("not tab", id);
         return {
             el: view(),
             icon: "",
@@ -2424,11 +2416,9 @@ function post(
 ) {
     fetch(url, Object.assign(options, { method: "POST" }))
         .then((r) => {
-            console.log(r);
             return r.json();
         })
         .then((r) => {
-            console.log(r);
             cb(null, r);
         })
         .catch((e) => {
@@ -2458,7 +2448,6 @@ function baidu(
             callback(new Error(JSON.stringify(err)), null);
             return;
         }
-        console.log(result.data.url);
         callback(null, result.data.url);
     });
 }
@@ -2472,7 +2461,6 @@ function yandex(
         "https://yandex.com/images-apphost/image-download?cbird=111&images_avatars_size=preview&images_avatars_namespace=images-cbir";
     post(url, { body: b }, (err, result: { url: string }) => {
         if (err) return callback(err, null);
-        console.log(result);
         const img_url = result.url;
         if (img_url) {
             const b_url = `https://yandex.com/images/search?family=yes&rpt=imageview&url=${encodeURIComponent(
@@ -2613,7 +2601,6 @@ async function localOcr(
         locr.runner
             .ocr(arg)
             .then((l) => {
-                console.log(l);
                 let t = "";
                 if (store.get("OCR.识别段落")) {
                     for (const i of l.parragraphs) {
@@ -2921,7 +2908,6 @@ function addOcrSelect(div: HTMLDivElement) {
         allTextNodes.push(currentNode);
         currentNode = treeWalker.nextNode();
     }
-    console.log(allTextNodes);
     ocrTextNodes.set(div, allTextNodes);
 }
 
@@ -2953,7 +2939,6 @@ ocrImageView.el.onpointermove = () => {
 function getImgSelect() {
     const range = document.getSelection()?.getRangeAt(0);
     if (!range) return null;
-    console.log(range);
     const div = (
         range.commonAncestorContainer.nodeName === "DIV"
             ? range.commonAncestorContainer
@@ -2994,7 +2979,6 @@ function getImgSelect() {
         sourceText += node.textContent;
     }
     if (start > end) [start, end] = [end, start];
-    console.log(start, end);
     if (start === end) return null;
 
     return getDiff(sourceText, editor.get(), start, end);
@@ -3002,7 +2986,6 @@ function getImgSelect() {
 
 function getDiff(text0: string, text1: string, start: number, end: number) {
     const diff = dmp.diff_main(text0, text1);
-    console.log(diff);
     const source: number[] = [0];
     const map: number[] = [0];
     if (diff.at(-1)?.[0] === 1) diff.push([0, ""]);
@@ -3035,7 +3018,6 @@ function getDiff(text0: string, text1: string, start: number, end: number) {
         }
     }
     map.push(editor.get().length);
-    console.log(source, map);
     let editorStart = 0;
     let editorEnd = 0;
     for (let i = 0; i < source.length; i++) {
@@ -3090,7 +3072,6 @@ function editorS2ImgS(s: selection) {
 function setImgSelect(s: selection) {
     if (ocrTextNodes.size === 0) return undefined;
     const sss = editorS2ImgS(s);
-    console.log(sss);
 
     if (!sss.start.node || !sss.end.node) {
         CSS.highlights.clear();
@@ -3112,9 +3093,7 @@ function setImgSelect(s: selection) {
 
 function jumpToImgByRange(range: Range | undefined) {
     if (!range) return;
-    console.log(range);
     const rect = range.getBoundingClientRect();
-    console.log(rect);
     const outRect = ocrImageView.el.getBoundingClientRect();
     const dy = rect.top - outRect.top - outRect.height / 2;
     ocrImageView.el.scrollTop += dy;

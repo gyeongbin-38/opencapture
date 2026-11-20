@@ -56,7 +56,6 @@ function loadOCR(
     const recp = ocrPath(l.recPath) || ocrPath(defaultPaths.rec);
     const 字典 = ocrPath(l.dicPath) || ocrPath(defaultPaths.dic);
     const docCls = op?.docCls ? ocrPath(defaultPaths.docCls) : undefined;
-    console.log(detp, recp, 字典);
     if (!detp || !recp || !字典) {
         console.error("OCR路径错误");
         return null;
@@ -65,7 +64,6 @@ function loadOCR(
     const localOCR = require("esearch-ocr") as typeof import("esearch-ocr");
     const ort = require("onnxruntime-node");
     const provider = store.get("AI.运行后端") || "cpu";
-    console.log("ocr provider", provider);
 
     return {
         ocr: localOCR,

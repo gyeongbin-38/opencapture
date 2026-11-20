@@ -421,8 +421,6 @@ function gColors() {
     const add = button(noI18n("+"));
 
     function createI(color: string, offset: number) {
-        console.log(color, offset);
-
         const el = view("x").add([
             input().sv(color).on("input", binput).style({ width: "100%" }),
             input("number")
@@ -679,7 +677,6 @@ async function magicPen() {
     maskCtx.lineCap = "round";
     maskCtx.lineJoin = "round";
     maskCtx.strokeStyle = "#000";
-    console.log("magicPen", maskPens);
 
     for (const x of maskPens.values()) {
         maskCtx.lineWidth = x.w;

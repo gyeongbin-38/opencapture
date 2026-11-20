@@ -89,7 +89,6 @@ function baiduOcr(
             .then((t) => t.json())
             .then((result) => {
                 const access_token = result?.access_token;
-                console.log(access_token);
                 if (!access_token) {
                     if (result.error) {
                         if (result.error_description === "unknown client id") {
@@ -203,7 +202,6 @@ function baiduOcr(
             }
         }
         const output = outputL.join("\n");
-        console.log(output);
         const r: ocrResult = [];
         if (result.words_result[0]?.location)
             for (const i of result.words_result) {
@@ -309,7 +307,6 @@ function youdaoOcr(
             textL.push(t);
         }
         const text = textL.join("\n");
-        console.log(text);
         return callback(null, { raw: r, text });
     }
 }

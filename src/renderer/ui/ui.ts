@@ -3,8 +3,6 @@ import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
 import { Class, getImgUrl } from "../root/root";
 
-console.log("hi");
-
 function iconBEl(src: IconType) {
     return button().add(image(getImgUrl(`${src}.svg`), "icon").class("icon"));
 }

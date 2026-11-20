@@ -38,7 +38,6 @@ async function removeObj(op: {
         [maskOrt.inputNames[0]]: input,
         [maskOrt.inputNames[1]]: maskInput,
     });
-    console.log(output);
     const outputData0 = output[maskOrt.outputNames[0]].data as Uint8Array;
     const outputData = new ImageData(w, h);
     const wh = w * h;

@@ -211,11 +211,11 @@ class frameGetter<Id extends number> {
      * InvalidStateError 捕获时触发）。挂起请求 resolve(null) 由
      * fetchFrame 按最新状态重试，新序列从 k 帧干净重建 */
     #rebuildDecoder() {
-        console.log("decoder rebuild");
+        console.error("decoder rebuild");
         try {
             this.decoder.close();
         } catch (e) {
-            console.log(e);
+            console.error(e);
         }
         this.#resetPending();
         this.lastAddDecodeI = -1;
@@ -230,7 +230,7 @@ class frameGetter<Id extends number> {
             try {
                 this.sink(frame);
             } catch (e) {
-                console.log(e);
+                console.error(e);
             }
             frame.close();
             return;
@@ -266,7 +266,7 @@ class frameGetter<Id extends number> {
         this.frameCache.clear();
         this.frameCacheSize = 0;
         // flush 失败（解码器异常）不应让转换流程抛错
-        await this.decoder.flush().catch((e) => console.log(e));
+        await this.decoder.flush().catch((e) => console.error(e));
         // flush 期间残留的旧列表输出仍可能写入缓存，需再清一次
         this.frameCache.clear();
         this.frameCacheSize = 0;
@@ -287,13 +287,13 @@ class frameGetter<Id extends number> {
             } catch (e) {
                 // codec 已关闭（closed codec）：重建自愈，
                 // 本批 flush 放弃——调用方的重试会用新 decoder 重新排入
-                console.log(e);
+                console.error(e);
                 this.#rebuildDecoder();
                 return;
             }
             // flush 之后必须以 k 帧开头，后续请求从 k 帧重排
             this.lastAddDecodeI = -1;
-            await f.catch((e) => console.log(e));
+            await f.catch((e) => console.error(e));
         })();
         this.flushScheduled = p;
         return p;
@@ -319,13 +319,13 @@ class frameGetter<Id extends number> {
             // 占位帧（待渲染的空数据）混入解码序列——正常场景它必在脏区、
             // 请求会先等待渲染完成；走到这里说明序列依赖越过脏区边界，
             // 放弃该序列（有限丢帧）而不是打死 codec 造成全局丢帧
-            console.log("placeholder in decode sequence", j);
+            console.error("placeholder in decode sequence", j);
             return false;
         }
         try {
             this.decoder.decode(c);
         } catch (e) {
-            console.log("decode", e);
+            console.error("decode", e);
             if (e instanceof DOMException && e.name === "InvalidStateError") {
                 // codec 已关闭：重建后由调用方重试
                 this.#rebuildDecoder();
@@ -384,7 +384,7 @@ class frameGetter<Id extends number> {
             this.decoder.reset();
             this.decoder.configure(decoderVideoConfig);
         } catch (e) {
-            console.log(e);
+            console.error(e);
         }
     }
     /** 设置连续播放的输出直通回调（null = 关闭，迟到输出直接作废） */
@@ -448,7 +448,7 @@ class frameGetter<Id extends number> {
                 ]);
                 return r !== a;
             }
-            await flushP.catch((e) => console.log(e));
+            await flushP.catch((e) => console.error(e));
             return true;
         };
         if (!(await waitFlush())) return promise;
@@ -457,7 +457,7 @@ class frameGetter<Id extends number> {
         //（decode 了但目标帧未输出），未到达则从 k 帧重排并多解码几帧重试
         for (let n = 1; n <= 3 && !done; n++) {
             if (signal?.aborted) return promise;
-            console.log("decode incomplete, retry", index, n);
+            console.error("decode incomplete, retry", index, n);
             this.#decodeTo(Math.min(index + n * 4, this.chunk.length - 1));
             flushP = this.#queueFlush();
             if (!(await waitFlush())) return promise;
@@ -519,11 +519,6 @@ class videoChunk<Id extends number> {
         }
         // 列表已换：各序列作废旧请求、清缓存并排空解码队列，避免残留状态挂起
         await Promise.all([...this.getters].map((g) => g.reset()));
-
-        console.log(
-            "size",
-            `${this.#byte2mb(this.#sumChunckSize(this.list))}mb`,
-        );
     }
     /** 新建一路独立的帧获取序列（独立解码器），供不同 UI 层互不干扰 */
     getGetter() {
@@ -644,7 +639,6 @@ function initKeys(push: (x: Omit<superRecording[0], "time" | "posi">) => void) {
     });
 
     uIOhook.on("wheel", (e) => {
-        console.log(e.direction, e.rotation);
         push({ wheel: true });
     });
 
@@ -775,7 +769,6 @@ function tipTime(t: number) {
 function mapKeysOnFrames(chunks: EncodedVideoChunk[], keys: superRecording) {
     const startTime = keys.find((k) => k.isStart)?.time;
     if (!startTime) {
-        console.log(keys);
         throw new Error("no start key");
     }
     const newKeys = keys
@@ -832,8 +825,6 @@ function mapKeysOnFrames(chunks: EncodedVideoChunk[], keys: superRecording) {
         nk2.at(-1)?.push(k);
         lastK = k;
     }
-
-    console.log(nk2);
 
     for (const k of nk2) {
         const chunk = time2Id.get(k[0].time);
@@ -898,7 +889,6 @@ function mapKeysOnFrames(chunks: EncodedVideoChunk[], keys: superRecording) {
         const end = Math.max(...ks.map((i) => i.end));
         nCtrlKeys.push({ key: l, start, end });
     }
-    console.log(keyL, ctrlKeys, nCtrlKeys, normalKeys);
 
     const speedList: uiData["speed"] = [];
 
@@ -964,7 +954,6 @@ function getFrameXs(_data: uiData | null) {
         eventList: _data.eventList.toSorted((a, b) => a.start - b.start),
         remove: _data.remove.toSorted((a, b) => a.start - b.start),
     };
-    console.log(data);
 
     const frameList: FrameX[] = [];
 
@@ -1052,8 +1041,6 @@ function getFrameXs(_data: uiData | null) {
             }
         }
     }
-
-    console.log(frameList);
 
     return frameList;
 }
@@ -1202,7 +1189,7 @@ async function transform(op?: Partial<typeof lastTransOpt>) {
             for (const task of waiters) task(true);
         })
         .catch((e) => {
-            console.log(e);
+            console.error(e);
             // 编辑失败：放行脏区等待者，避免跳转/预览永久挂起
             clearDirty();
             // 出错时也要结算，避免调用方永远等待
@@ -1389,7 +1376,7 @@ async function runTransform(
                 const frameX = frameXs.at(id);
                 if (!frameX || frameX?.isRemoved) {
                     if (!frameX) {
-                        console.log(
+                        console.error(
                             `frame ${frame.timestamp} ${id} not found in uiData`,
                         );
                     }
@@ -1407,7 +1394,7 @@ async function runTransform(
             output: (c: EncodedVideoChunk) => {
                 const id = srcCs.timestamp2Id(c.timestamp);
                 if (id === -1) {
-                    console.log("no id", c.timestamp);
+                    console.error("no id", c.timestamp);
                     return;
                 }
                 // 坐标统一：列表基底与尾部 copyTo 都是“播放时间”坐标
@@ -1471,12 +1458,11 @@ async function runTransform(
         function abort() {
             if (aborted) return;
             aborted = true;
-            console.log("transform abort");
             try {
                 decoder.close();
                 encoder.close();
             } catch (e) {
-                console.log(e);
+                console.error(e);
             }
         }
 
@@ -1511,7 +1497,6 @@ async function runTransform(
 
     for (const [i, v] of typedEntries(joinOp)) if (v) lastTransOpt[i] = v;
     lastUiData = nowUi;
-    console.log(trans2srcM, src2transM);
 
     lastEncodedChunks = transformed.map((chunk, i) => {
         if (chunk === null) return null;
@@ -1591,7 +1576,6 @@ function diffFrameXs(old: FrameX[], now: FrameX[]) {
         const sI = keys.findLastIndex((i) => i <= x);
         for (let i = keys[sI]; i < keys[sI + 1]; i++) needEncode.add(i);
     }
-    console.log(needReRender, needEncode);
 
     return needEncode;
 }
@@ -1669,7 +1653,7 @@ async function playId(i: TransId, force = false) {
 
     const c = transformCs.at(i);
     if (!c) {
-        console.log("no chunk", i);
+        console.error("no chunk", i);
         return;
     }
     // 播放意图回退（循环到头、编辑后重开）时重置迟到帧过滤基线
@@ -1771,7 +1755,7 @@ async function jump2id(id: TransId, signal?: AbortSignal) {
     // 内容层异步：不变帧立即加载，渲染中的帧等完成（可被新跳转抛弃）
     const fcanvas = await fetchFrame(mainFrameGet, id, signal);
     if (!fcanvas) {
-        if (!signal?.aborted) console.log("no frame", id);
+        if (!signal?.aborted) console.error("no frame", id);
         return;
     }
     // 已有更新的跳转，抛弃过期画面
@@ -1884,7 +1868,7 @@ async function showThumbnails() {
         fills.push(async () => {
             const canvas = await p;
             if (!canvas) {
-                console.log("no frame", id);
+                console.error("no frame", id);
                 return;
             }
             canvasEl.el
@@ -2011,14 +1995,14 @@ async function showNowFrames(
         prefetch.push(load(i as TransId));
     }
     // 预取不阻塞显示，失败静默（下一轮刷新自然重试）
-    Promise.all(prefetch).catch((e) => console.log(e));
+    Promise.all(prefetch).catch((e) => console.error(e));
 
     // 各格独立并行填充：单格失败或较慢不影响其他格显示
     await Promise.all(
         pending.map(async ({ i, p }) => {
             const canvas = await p;
             if (!canvas) {
-                console.log("no frame", i);
+                console.error("no frame", i);
                 return;
             }
             const cell = timeLineFrame.query(`[data-i="${i}"]`);
@@ -2348,8 +2332,6 @@ async function saveImages() {
     renderSend("ok_save", [exportPath]);
 
     decoder.close();
-
-    console.log("decoded");
 }
 
 async function saveGif(op?: {
@@ -2407,8 +2389,6 @@ async function saveGif(op?: {
             }
         }
     }
-
-    console.log(delayMap);
 
     let palette: [number, number, number][];
     const decoder = new VideoDecoder({
@@ -2514,8 +2494,6 @@ async function saveApng() {
         }
     }
 
-    console.log(delayMap);
-
     const images: ArrayBuffer[] = [];
     const dels: number[] = [];
     const decoder = new VideoDecoder({
@@ -2605,7 +2583,6 @@ async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
     const { buffer } = output.target;
     if (buffer) {
         fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-        console.log("saved webm");
         renderSend("ok_save", [exportPath, true]);
     } else {
         // todo
@@ -2658,7 +2635,6 @@ async function saveMp4(op: { codec: "avc" | "vp9" | "av1" }) {
     const { buffer } = output.target;
     if (buffer) {
         fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-        console.log("saved mp4");
         renderSend("ok_save", [exportPath, true]);
     } else {
         // todo
@@ -2784,7 +2760,6 @@ const encoderVideoConfig = {
 } as const;
 const baseCodec =
     Array.from(codecMap).find(([c, v]) => v.codec === codec)?.[0] || "vp8";
-console.log("codec", codecMap, decoderVideoConfig, encoderVideoConfig);
 
 const transformCs = new videoChunk<TransId>([]);
 const srcCs = new videoChunk<SrcId>([]);
@@ -3158,7 +3133,6 @@ const actionUnundo = iconBEl("right", t("重做")).on("click", async () => {
 });
 
 history.on("change", () => {
-    console.log("h", history.getData());
     actionList.setList(
         history.list.map((h, i) => ({ value: String(i), name: h })),
     );
@@ -4075,8 +4049,6 @@ pack(document.body).style({
 
         stopPEl.remove();
 
-        console.log("stop");
-
         if (hookStarted) uIOhook.stop();
         lisenerS.abort();
 
@@ -4108,9 +4080,6 @@ pack(document.body).style({
         const afterCuncks = await afterRecord(encodedChunks);
         // @ts-ignore
         encodedChunks = null;
-
-        console.log(afterCuncks);
-        console.log(keys);
 
         srcCs.setList(afterCuncks);
 
@@ -4225,19 +4194,15 @@ if (testMode === "getFrame") {
     // 性能测试
     const t0 = performance.now();
     for (let i = 140; i < 160; i++) {
-        console.log("test", String(i));
         await x.getFrame(i);
     }
     const t1 = performance.now();
-    console.log("顺序解码", (t1 - t0) / 20);
     const t2 = performance.now();
     for (let i = 0; i < 20; i++) {
-        console.log("test", String(i));
         const index = Math.floor(Math.random() * x.length);
         await x.getFrame(index);
     }
     const t3 = performance.now();
-    console.log("随机解码", (t3 - t2) / 20);
     // 正确解码
     const show = view().addInto();
     for (let i = 0; i < 10; i++) {

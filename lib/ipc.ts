@@ -351,7 +351,7 @@ ipcRenderer?.on(name, (event, key, data) => {
             callback(data);
         }
     } else {
-        console.log(`ipcRenderer.on: ${key} not found`);
+        console.warn(`ipcRenderer.on: ${key} not found`);
     }
 });
 
@@ -372,7 +372,7 @@ ipcMain?.on(name, async (event, key, data) => {
             event.returnValue = null;
         }
     } else {
-        console.log(`ipcMain.on: ${key} not found`);
+        console.warn(`ipcMain.on: ${key} not found`);
     }
 });
 
