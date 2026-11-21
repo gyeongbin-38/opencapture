@@ -1918,19 +1918,20 @@ function splitText(
     ctx: CanvasRenderingContext2D,
     maxWidth: number,
 ) {
-    // todo 性能
+    // 每段只测一次宽，边界处的kerning差异可接受
     let line = "";
+    let lineW = 0;
     const lines: string[] = [];
     for (let i = 0; i < text.length; i++) {
         const t = text[i].segment;
-        if (
-            ctx.measureText(line + t).width < maxWidth ||
-            (line !== "" && noLineStartRe.test(t))
-        ) {
+        const w = ctx.measureText(t).width;
+        if (lineW + w < maxWidth || (line !== "" && noLineStartRe.test(t))) {
             line += t;
+            lineW += w;
         } else {
             if (line !== "") lines.push(line);
             line = t;
+            lineW = w;
         }
     }
     if (line) {

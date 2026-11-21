@@ -2999,13 +2999,13 @@ const codecMap = new Map<
 >();
 
 await (async () => {
-    const codecM = new Map([
-        ["av1", "av01.1.04M.08"],
-        ["vp9", "vp09.00.10.08"],
-        ["avc", "avc1.42001F"],
-        ["vp8", "vp8"],
+    // 每个编码按候选串顺序探测，取第一个受支持的具体描述
+    const codecM = new Map<string, string[]>([
+        ["av1", ["av01.1.04M.08", "av01.0.05M.08", "av1"]],
+        ["vp9", ["vp09.00.10.08", "vp09.00.40.08", "vp9"]],
+        ["avc", ["avc1.42001F", "avc1.4d0028", "avc1.640028", "avc1"]],
+        ["vp8", ["vp8"]],
     ]);
-    // todo 找到能用的具体编码
     async function deSupported(mc: string): Promise<0 | 2 | 1> {
         const soft = (
             await VideoDecoder.isConfigSupported({
@@ -3042,35 +3042,48 @@ await (async () => {
         ).supported;
         return acc ? 2 : 1;
     }
-    for (const [k, c] of codecM.entries()) {
-        const de = await deSupported(c);
-        const en = await enSupported(c);
-        if (de >= 1 || en >= 1)
-            codecMap.set(k, { codec: c, isDeAcc: de === 2, isEnAcc: en === 2 });
+    for (const [k, candidates] of codecM.entries()) {
+        for (const c of candidates) {
+            const de = await deSupported(c);
+            const en = await enSupported(c);
+            if (de >= 1 || en >= 1) {
+                codecMap.set(k, {
+                    codec: c,
+                    isDeAcc: de === 2,
+                    isEnAcc: en === 2,
+                });
+                break;
+            }
+        }
     }
 })();
 
-const [codec, isDeAcc, isEnAcc] = (() => {
-    // todo use codecMap key instead
-    const l = Array.from(codecMap.values());
+const [codec, isDeAcc, isEnAcc, baseCodec] = (() => {
+    const l = Array.from(codecMap.entries());
     if (!l.length) {
         console.error("超级录屏：没有可用的视频编解码器");
-        return ["vp8", false, false];
+        return ["vp8", false, false, "vp8"];
     }
     if (store.get("录屏.超级录屏.编码选择") === "性能优先") {
         const sorted = l.toSorted(
-            (a, b) =>
+            ([, a], [, b]) =>
                 Number(b.isDeAcc) +
                 Number(b.isEnAcc) -
                 Number(a.isDeAcc) -
                 Number(a.isEnAcc),
         );
-        return [sorted[0].codec, sorted[0].isDeAcc, sorted[0].isEnAcc];
+        return [
+            sorted[0][1].codec,
+            sorted[0][1].isDeAcc,
+            sorted[0][1].isEnAcc,
+            sorted[0][0],
+        ];
     }
-    for (const c of codecMap.values()) {
-        if (c.isDeAcc || c.isEnAcc) return [c.codec, c.isDeAcc, c.isEnAcc];
+    for (const [k, c] of codecMap.entries()) {
+        if (c.isDeAcc || c.isEnAcc) return [c.codec, c.isDeAcc, c.isEnAcc, k];
     }
-    return ["vp8", false, false];
+    const [k, c] = l[0];
+    return [c.codec, c.isDeAcc, c.isEnAcc, k];
 })();
 const decoderVideoConfig = {
     codec: codec,
@@ -3080,8 +3093,6 @@ const encoderVideoConfig = {
     codec: codec,
     hardwareAcceleration: isEnAcc ? "prefer-hardware" : "no-preference",
 } as const;
-const baseCodec =
-    Array.from(codecMap).find(([c, v]) => v.codec === codec)?.[0] || "vp8";
 
 const transformCs = new videoChunk<TransId>([]);
 const srcCs = new videoChunk<SrcId>([]);

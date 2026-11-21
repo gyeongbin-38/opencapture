@@ -1627,15 +1627,11 @@ function renderSpellcheck(list: SpellItem[]) {
                     view()
                         .add(getClip(x))
                         .on("click", () => {
-                            const t = editor.get();
-                            const newT =
-                                t.slice(0, i.index) +
-                                x +
-                                t.slice(i.index + i.word.length);
-                            editor.push(newT);
-                            // todo 使用api
-                            stackAdd();
-                            renderSpellcheck(spellcheckDiff.updateDiffState());
+                            editor.selections.replace(x, {
+                                start: i.index,
+                                end: i.index + i.word.length,
+                            });
+                            editorChange();
                         })
                         .style({
                             paddingInlineStart: cssVar("o-padding"),
