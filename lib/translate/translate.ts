@@ -75,7 +75,7 @@ function st(_text: string, map: typeof l) {
     if (!t) {
         console.log(
             `%c${id}%c: ${text}`,
-            "color:bluecolor:#00f;background:#ddf",
+            "color:#00f;background:#ddf",
             "",
         );
         return null;
