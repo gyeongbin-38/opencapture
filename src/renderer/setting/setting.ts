@@ -5138,8 +5138,35 @@ function about() {
                             })
                                 .then((r) => r.text())
                                 .then((data) => {
-                                    p.innerHTML = data;
-                                });
+                                    const doc = new DOMParser().parseFromString(
+                                        data,
+                                        "text/html",
+                                    );
+                                    for (const el of doc.querySelectorAll(
+                                        "script,style,iframe,object,embed,link,meta,base,form,input,button,select,textarea",
+                                    ))
+                                        el.remove();
+                                    for (const el of doc.querySelectorAll("*"))
+                                        for (const a of [...el.attributes])
+                                            if (a.name.startsWith("on"))
+                                                el.removeAttribute(a.name);
+                                            else if (
+                                                (a.name === "href" ||
+                                                    a.name === "src" ||
+                                                    a.name === "xlink:href") &&
+                                                !/^(https?:|mailto:|#|\/)/i.test(
+                                                    a.value.trim(),
+                                                )
+                                            )
+                                                el.removeAttribute(a.name);
+                                    p.replaceChildren(...doc.body.childNodes);
+                                })
+                                .catch((e) =>
+                                    console.error(
+                                        "release notes render failed:",
+                                        e,
+                                    ),
+                                );
                         }
                         md(b);
                         const trans = button(t("翻译")).on(

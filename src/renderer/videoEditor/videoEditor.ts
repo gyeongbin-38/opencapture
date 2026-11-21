@@ -2258,6 +2258,13 @@ function exportCanceled(signal: AbortSignal) {
     return true;
 }
 
+function abortedPromise(signal: AbortSignal) {
+    return new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+    });
+}
+
 async function save() {
     if (exportAbort) return;
     const abort = new AbortController();
@@ -2283,6 +2290,11 @@ async function save() {
         else if (type === "mp4")
             await saveMp4({ codec: exportConfigEls.mp4.gv.codec }, signal);
         else await saveGif(gifOp(), signal);
+    } catch (error) {
+        if (!signal.aborted) {
+            tipLog(t("파일을 저장하지 못했습니다."));
+            console.error("Export failed:", error);
+        }
     } finally {
         cancelB.remove();
         exportAbort = null;
@@ -2373,7 +2385,7 @@ async function saveImages(signal: AbortSignal) {
     if (estBytes > 1024 ** 3)
         tipLog(`${t("예상 내보내기 크기")} ≈ ${formatBytes(estBytes)}`);
 
-    await waitProcessing();
+    await Promise.race([waitProcessing(), abortedPromise(signal)]);
     if (exportCanceled(signal)) return;
 
     const pendingWrites: Promise<void>[] = [];
@@ -2453,7 +2465,7 @@ async function saveGif(
     const { GIFEncoder, applyPalette, quantize } = await import("gifenc");
     const gif = GIFEncoder();
 
-    await waitProcessing();
+    await Promise.race([waitProcessing(), abortedPromise(signal)]);
     if (exportCanceled(signal)) return;
 
     let i = 0;
@@ -2586,7 +2598,7 @@ async function saveApng(op: { fps?: number }, signal: AbortSignal) {
     const exportPath = getSavePath("apng");
     if (!exportPath) return;
 
-    await waitProcessing();
+    await Promise.race([waitProcessing(), abortedPromise(signal)]);
     if (exportCanceled(signal)) return;
 
     let i = 0;
@@ -2684,7 +2696,7 @@ async function saveAnimatedImage(
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-anim-"));
     try {
-        await waitProcessing();
+        await Promise.race([waitProcessing(), abortedPromise(signal)]);
         if (exportCanceled(signal)) return;
 
         const maxFps = op.fps && op.fps > 0 ? Math.min(op.fps, srcRate) : 0;
@@ -2838,7 +2850,10 @@ async function saveWebm(
     const exportPath = getSavePath("webm");
     if (!exportPath) return;
 
-    await waitProcessing({ codec: op.codec });
+    await Promise.race([
+        waitProcessing({ codec: op.codec }),
+        abortedPromise(signal),
+    ]);
     if (exportCanceled(signal)) return;
 
     const { WebMOutputFormat } = await loadMediabunny();
@@ -2857,7 +2872,10 @@ async function saveMp4(
     const exportPath = getSavePath("mp4");
     if (!exportPath) return;
 
-    await waitProcessing({ codec: op.codec });
+    await Promise.race([
+        waitProcessing({ codec: op.codec }),
+        abortedPromise(signal),
+    ]);
     if (exportCanceled(signal)) return;
 
     const { Mp4OutputFormat } = await loadMediabunny();
