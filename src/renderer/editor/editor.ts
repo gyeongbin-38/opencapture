@@ -638,6 +638,7 @@ function undo() {
     }
 }
 function redo() {
+    undoStack.unundo();
     editor.push(undoStack.getData());
     if (findSwitch.gv) {
         exitFind();
