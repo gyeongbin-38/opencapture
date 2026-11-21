@@ -2634,7 +2634,7 @@ const main: {
 ];
 
 const sKeys = new Set([...Object.keys(s), ...Object.keys(xs)]);
-const mKeys = new Set();
+const mKeys = new Set<KeyPath>();
 
 const getTitles = new Map<string, string[]>();
 for (const p of main) {
@@ -2650,6 +2650,13 @@ for (const p of main) {
             getTitles.set(s, [p.pageName]);
             mKeys.add(s);
         }
+}
+for (const key of mKeys) {
+    if (!sKeys.has(key)) {
+        console.error(
+            new Error(`Setting ${key} listed in menu has no element`),
+        );
+    }
 }
 
 const bind: { [k in KeyPath]?: KeyPath[] } = {
