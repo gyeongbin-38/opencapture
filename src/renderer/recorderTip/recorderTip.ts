@@ -47,7 +47,7 @@ function initRecord() {
             CtrlRight: "ControlRight",
         };
 
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 26; i++) {
             const k = String.fromCharCode(65 + i);
             map[k] = `Key${k}`;
         }

@@ -142,7 +142,7 @@ const _map: {
     BracketLeft: { primary: "[", secondary: "{" },
     Backslash: { primary: "\\", secondary: "|" },
     BracketRight: { primary: "]", secondary: "}" },
-    Quote: { primary: '"', secondary: "'" },
+    Quote: { primary: "'", secondary: '"' },
 
     1: { secondary: "!" },
     2: { secondary: "@" },
@@ -179,7 +179,7 @@ for (const [k, v] of Object.entries(_map)) {
     };
 }
 
-for (let i = 0; i < 25; i++) {
+for (let i = 0; i < 26; i++) {
     const k = String.fromCharCode(65 + i);
     map[`Key${k}`] = { primary: k };
 }
@@ -239,6 +239,7 @@ const jsKeyCodeDisplay = (k: string) => {
 };
 
 const ele2jsKeyCode = (k: string) => {
+    const macMod = process.platform === "darwin" ? "Meta" : "Control";
     const m: { [key: string]: string } = {
         Up: "ArrowUp",
         Down: "ArrowDown",
@@ -250,9 +251,11 @@ const ele2jsKeyCode = (k: string) => {
         nummult: "NumpadMultiply",
         numdiv: "NumpadDivide",
         Command: "Meta",
-        CommandOrControl: "Meta",
-        CmdOrCtrl: "Meta",
+        CommandOrControl: macMod,
+        CmdOrCtrl: macMod,
+        Ctrl: "Control",
         Option: "Alt",
+        Super: "Meta",
     };
     for (let i = 0; i <= 9; i++) {
         m[`num${i}`] = `Numpad${i}`;
