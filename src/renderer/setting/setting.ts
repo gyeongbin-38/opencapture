@@ -5259,7 +5259,7 @@ function about() {
                 .catch((error) => console.error("error", error));
         });
     const update = view("y").style({ gap: "16px" });
-    const desc = p(packageJson.description);
+    const desc = p(packageJson.description, true);
 
     const infoEl = view("y").style({ alignItems: "center" });
 
@@ -5285,7 +5285,7 @@ function about() {
                 ]),
             ).add("提供建议"),
             " ",
-            txt("QQ:1057170038"),
+            txt("QQ:1057170038", true),
         ]),
         view().add(
             a(

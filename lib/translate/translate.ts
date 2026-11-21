@@ -30,6 +30,9 @@ function loadJson<T>(file: string, fallback: T): T {
 const ignore = loadJson("./ignore.json", [] as string[]);
 
 let language = "";
+// Values already translated into the active language; lets t() stay
+// idempotent when callers pass translated text (dkh translates on add).
+let translatedValues: Set<string> | undefined;
 
 /**
  * 获取可用语言
@@ -49,6 +52,9 @@ function lan(lan: string | undefined) {
     language = parseLan(lan ?? "");
     if (language !== "zh-HANS") {
         l = loadJson(`./${language}.json`, {});
+        translatedValues = new Set(Object.values(l));
+    } else {
+        translatedValues = undefined;
     }
 }
 
@@ -68,6 +74,7 @@ function st(_text: string, map: typeof l) {
     const text = _text.trim();
     const id = source[text];
     if (!id) {
+        if (translatedValues?.has(text)) return text;
         console.log(`%c"${text}":"",`, "color:#f00;background:#fdd");
         return null;
     }
