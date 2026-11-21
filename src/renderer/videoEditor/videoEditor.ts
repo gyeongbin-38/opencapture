@@ -29,9 +29,14 @@ import {
 // biome-ignore format:
 const { uIOhook, UiohookKey } = require("uiohook-napi") as typeof import("uiohook-napi");
 type KeyCode = `${keyof typeof UiohookKey}`;
+// biome-ignore format:
 const fs = require("node:fs") as typeof import("fs");
+const path = require("node:path") as typeof import("path");
+const os = require("node:os") as typeof import("os");
+const { spawn } = require("node:child_process") as typeof ChildProcess;
 
 // 인코딩 의존성은보내기 실행 시에만 로드 — 초기 번들/파싱 비용 절감
+import type * as ChildProcess from "node:child_process";
 import type { AudioCodec, OutputFormat } from "mediabunny";
 const loadMediabunny = () => import("mediabunny");
 
@@ -142,11 +147,23 @@ const frameLength = store.get("录屏.超级录屏.关键帧间隔");
 const srcRate = store.get("录屏.转换.帧率");
 const bitrate = store.get("录屏.转换.码率") * 1024 * 1024;
 
+let pathToFfmpeg = "ffmpeg";
+if (process.platform === "win32" || process.platform === "darwin") {
+    pathToFfmpeg = path.join(
+        __dirname,
+        "..",
+        "..",
+        "lib",
+        "ffmpeg",
+        process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg",
+    );
+}
+
 const outputType = [
     { type: "gif", name: "gif" },
-    // { type: "webp", name: "webp" }, // todo
+    { type: "webp", name: "webp" },
     { type: "apng", name: "apng" },
-    // { type: "avif", name: "avif" }, // todo
+    { type: "avif", name: "avif" },
     { type: "webm", name: "webm" },
     { type: "mp4", name: "mp4" },
     // { type: "mkv", name: "mkv" },
@@ -2236,6 +2253,8 @@ async function save() {
     if (exportEls.type.gv === "png") await saveImages();
     else if (exportEls.type.gv === "gif") await saveGif(gifOp());
     else if (exportEls.type.gv === "apng") await saveApng();
+    else if (exportEls.type.gv === "webp" || exportEls.type.gv === "avif")
+        await saveAnimatedImage(exportEls.type.gv);
     else if (exportEls.type.gv === "webm")
         await saveWebm({ codec: exportConfigEls.webm.gv.codec });
     else if (exportEls.type.gv === "mp4")
@@ -2579,6 +2598,137 @@ async function saveApng() {
     apngProgress.remove();
 
     renderSend("ok_save", [exportPath]);
+}
+
+async function saveAnimatedImage(format: "webp" | "avif") {
+    const exportPath = getSavePath(format);
+    if (!exportPath) return;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-anim-"));
+    try {
+        await waitProcessing();
+
+        let i = 0;
+        let writeFailed = false;
+        const pendingWrites: Promise<void>[] = [];
+        const decoder = new VideoDecoder({
+            output: (frame: VideoFrame) => {
+                const name = `${dir}/${String(frame.timestamp).padStart(16, "0")}.png`;
+                pendingWrites.push(
+                    frameTrans2Canvas(frame)
+                        .convertToBlob({ type: "image/png" })
+                        .then(async (blob) => {
+                            await fs.promises.writeFile(
+                                name,
+                                Buffer.from(await blob.arrayBuffer()),
+                            );
+                        })
+                        .catch((e) => {
+                            writeFailed = true;
+                            console.error("Frame write failed:", e);
+                        }),
+                );
+                frame.close();
+                i++;
+                animProgress.sv(i / transformCs.length);
+            },
+            error: (e) => console.error("Decode error:", e),
+        });
+        const animProgress = progressEl().addInto(transformLogEl);
+
+        decoder.configure(decoderVideoConfig);
+        for (const [_, chunk] of transformCs.entries()) {
+            if (chunk.type === "key") await decoder.flush();
+            decoder.decode(chunk);
+        }
+        await decoder.flush();
+        await Promise.all(pendingWrites);
+        animProgress.remove();
+        decoder.close();
+
+        if (writeFailed || i === 0) {
+            tipLog(t("파일을 저장하지 못했습니다."));
+            return;
+        }
+
+        const names = fs
+            .readdirSync(dir)
+            .filter((n) => n.endsWith(".png"))
+            .sort();
+        const listPath = path.join(dir, "frames.txt");
+        const lines: string[] = ["ffconcat version 1.0"];
+        for (const [idx, n] of names.entries()) {
+            const ts = Number(n.slice(0, -4));
+            const next = names[idx + 1]
+                ? Number(names[idx + 1].slice(0, -4))
+                : ts;
+            const duration = Math.max(0.001, (next - ts) / 1e6);
+            lines.push(`file '${path.join(dir, n)}'`);
+            lines.push(`duration ${duration.toFixed(3)}`);
+        }
+        lines.push(`file '${path.join(dir, names[names.length - 1])}'`);
+        fs.writeFileSync(listPath, lines.join("\n"));
+
+        const args =
+            format === "webp"
+                ? [
+                      "-hide_banner",
+                      "-loglevel",
+                      "error",
+                      "-y",
+                      "-f",
+                      "concat",
+                      "-safe",
+                      "0",
+                      "-i",
+                      listPath,
+                      "-c:v",
+                      "libwebp_anim",
+                      "-loop",
+                      "0",
+                      "-lossless",
+                      "0",
+                      "-q:v",
+                      "85",
+                      exportPath,
+                  ]
+                : [
+                      "-hide_banner",
+                      "-loglevel",
+                      "error",
+                      "-y",
+                      "-f",
+                      "concat",
+                      "-safe",
+                      "0",
+                      "-i",
+                      listPath,
+                      "-c:v",
+                      "libaom-av1",
+                      "-cpu-used",
+                      "8",
+                      "-crf",
+                      "30",
+                      "-f",
+                      "avif",
+                      exportPath,
+                  ];
+        const code = await new Promise<number | null>((resolve) => {
+            const p = spawn(pathToFfmpeg, args);
+            p.stderr.on("data", (d) => console.error(String(d)));
+            p.on("error", () => resolve(null));
+            p.on("close", (c) => resolve(c));
+        });
+        if (code === 0 && fs.existsSync(exportPath)) {
+            renderSend("ok_save", [exportPath]);
+        } else {
+            tipLog(t("동영상 인코딩에 실패했습니다."));
+        }
+    } finally {
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+        } catch {}
+    }
 }
 
 async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
@@ -3862,6 +4012,8 @@ const exportConfigEls = {
             );
     })(),
     apng: view(),
+    webp: view(),
+    avif: view(),
     mp4: (() => {
         const el = view("x").style({ paddingInline: "8px" });
         const codec = label(
