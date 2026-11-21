@@ -3,7 +3,6 @@ const fs = require("node:fs") as typeof import("fs");
 import { xget, xset } from "./parse";
 
 import type { setting } from "../../src/ShareTypes";
-import { safeJSONParse } from "../utils";
 import type { GetValue, SettingPath } from "./renderStore";
 
 type data = {
@@ -25,6 +24,8 @@ function deepMerge(target: data, source: data): data {
     return result;
 }
 
+const waitCell = new Int32Array(new SharedArrayBuffer(4));
+
 class Store {
     private configPath: string;
     private data: data | undefined;
@@ -44,7 +45,7 @@ class Store {
     }
 
     private init() {
-        fs.writeFileSync(this.configPath, "{}");
+        this.writeAtomic("{}");
         this.data = {};
     }
 
@@ -56,12 +57,53 @@ class Store {
         } catch (error) {
             this.init();
         }
-        return safeJSONParse<data>(str, {});
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(str);
+        } catch {
+            parsed = undefined;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            if (str.trim() && str.trim() !== "{}")
+                try {
+                    fs.copyFileSync(
+                        this.configPath,
+                        `${this.configPath}.corrupt`,
+                    );
+                } catch {}
+            return {};
+        }
+        return parsed as data;
+    }
+
+    /** tmp + rename keeps config.json whole even if the process dies mid-write */
+    private writeAtomic(text: string) {
+        const tmp = `${this.configPath}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, text);
+        for (let attempt = 0; ; attempt++) {
+            try {
+                fs.renameSync(tmp, this.configPath);
+                return;
+            } catch (error) {
+                const code = (error as NodeJS.ErrnoException)?.code ?? "";
+                if (
+                    !["EPERM", "EACCES", "EBUSY"].includes(code) ||
+                    attempt >= 9
+                ) {
+                    try {
+                        fs.rmSync(tmp, { force: true });
+                    } catch {}
+                    fs.writeFileSync(this.configPath, text);
+                    return;
+                }
+                Atomics.wait(waitCell, 0, 0, 8);
+            }
+        }
     }
 
     private setStore(data: data) {
         this.data = data;
-        fs.writeFileSync(this.configPath, JSON.stringify(data, null, 2));
+        this.writeAtomic(JSON.stringify(data, null, 2));
     }
 
     path() {
