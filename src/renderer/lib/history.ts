@@ -80,9 +80,10 @@ class xhistory<Data, Diff = any> {
 
     apply(des = this.des) {
         let diff = this.tmpDiff;
-        if (!diff) {
+        if (diff === null) {
             const data = this.tmpData;
-            if (data) {
+            // ""等falsy值也是合法数据，用null判断
+            if (data !== null) {
                 const last = this.getDataByI(this.i);
                 const _diff = this.diffFun(last, structuredClone(data));
                 diff = _diff;
@@ -106,9 +107,8 @@ class xhistory<Data, Diff = any> {
                 time: Date.now(),
                 des: des || String(this.history.length),
             });
+            this.i = this.history.length - 1;
         }
-
-        this.i = this.history.length - 1;
 
         this.pushCache(this.i, this.tmpData ?? this.getData());
 
@@ -141,6 +141,8 @@ class xhistory<Data, Diff = any> {
                 ? h.data
                 : (this.cache.get(i) ??
                   this.applyFun(this.getDataByI(h.parentId), h.data));
+        // 重放结果入缓存，深链跳回不再整体重算
+        if (h.type === "delta" && !this.cache.has(i)) this.pushCache(i, data);
         return structuredClone(data);
     }
 
