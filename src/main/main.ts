@@ -11,6 +11,7 @@ import {
     Notification,
     Tray,
     type View,
+    type WebContents,
     WebContentsView,
     app,
     clipboard,
@@ -5254,6 +5255,11 @@ async function createHelpWindow() {
 }
 
 const searchWindowL: { [n: number]: WebContentsView } = {};
+/** 加载外部 URL 的视图内容——权限请求只对这些拒绝；会话是默认会话，
+ * 不区分的话应用内页面（录屏麦克风等）也会被连带拒绝 */
+const untrustedViewContents = new Set<WebContents>();
+const isTrustedContents = (wc: WebContents | null) =>
+    !wc || !untrustedViewContents.has(wc);
 mainOn("open_this_browser", ([window_name, url]) => {
     createBrowser(window_name, url);
 });
@@ -5283,6 +5289,14 @@ async function createBrowser(windowName: number, url: string) {
         webPreferences,
     });
     searchWindowL[view] = searchView;
+    const isRemote = !(
+        url.startsWith("translate") || url === "./aiVision.html"
+    );
+    if (isRemote) untrustedViewContents.add(searchView.webContents);
+    searchView.webContents.once("destroyed", () => {
+        untrustedViewContents.delete(searchView.webContents);
+        delete searchWindowL[view];
+    });
     await searchView.webContents.session.setProxy(store.get("代理"));
     mainWindow.contentView.addChildView(searchView);
 
@@ -5304,10 +5318,12 @@ async function createBrowser(windowName: number, url: string) {
     if (!mainWindow.isDestroyed())
         mainSend(mainWindow.webContents, "browserNew", [view, url]);
 
-    searchView.webContents.session.setPermissionRequestHandler((_, __, cb) =>
-        cb(false),
+    searchView.webContents.session.setPermissionRequestHandler(
+        (wc, _permission, cb) => cb(isTrustedContents(wc)),
     );
-    searchView.webContents.session.setPermissionCheckHandler(() => false);
+    searchView.webContents.session.setPermissionCheckHandler((wc) =>
+        isTrustedContents(wc),
+    );
 
     searchView.webContents.on("page-title-updated", (_event, title) => {
         if (!mainWindow.isDestroyed())
@@ -5387,7 +5403,7 @@ function viewEvents(
 mainOn("tabView", ([id, arg], e) => {
     const mainWindow = BrowserWindow.fromWebContents(e.sender);
     const searchWindow = searchWindowL[id];
-    if (!mainWindow) return;
+    if (!mainWindow || (!searchWindow && arg !== "home")) return;
     switch (arg) {
         case "close":
             mainWindow.contentView.removeChildView(searchWindow);
@@ -5423,6 +5439,8 @@ mainOn("tabView", ([id, arg], e) => {
 });
 
 mainOn("openUrl", ([url]) => {
+    // 렌더러가 보낸 URL은 file:/javascript: 같은 스킴을 포함할 수 있음 — 외부로 여는 것은 웹 계열만
+    if (!/^(https?|mailto):/i.test(url)) return;
     shell.openExternal(url);
 });
 
