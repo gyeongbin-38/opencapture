@@ -960,18 +960,21 @@ class find {
     find(text: string | RegExp | null) {
         if (!text) return [];
         if (!tmpText) tmpText = editor.get();
-        // 拆分
-        const matchL = tmpText.match(text) || [];
-        const textL = tmpText.split(text);
+        const source =
+            typeof text === "string"
+                ? text.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")
+                : text.source;
+        const flags =
+            typeof text === "string"
+                ? "g"
+                : text.flags.includes("g")
+                  ? text.flags
+                  : `${text.flags}g`;
+        const re = new RegExp(source, flags);
         const tL: selection[] = [];
-        let n = 0;
-        // 交替插入
-        for (const i in textL) {
-            if (textL[i]) n += textL[i].length;
-            if (matchL[i]) {
-                tL.push({ start: n, end: n + matchL[i].length });
-                n += matchL[i].length;
-            }
+        for (let match = re.exec(tmpText); match; match = re.exec(tmpText)) {
+            tL.push({ start: match.index, end: match.index + match[0].length });
+            if (match[0].length === 0) re.lastIndex++;
         }
         return tL;
     }
