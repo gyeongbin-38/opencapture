@@ -37,7 +37,7 @@ const { spawn } = require("node:child_process") as typeof ChildProcess;
 
 // 인코딩 의존성은보내기 실행 시에만 로드 — 초기 번들/파싱 비용 절감
 import type * as ChildProcess from "node:child_process";
-import type { AudioCodec, OutputFormat } from "mediabunny";
+import type { AudioCodec, OutputFormat, StreamTargetChunk } from "mediabunny";
 const loadMediabunny = () => import("mediabunny");
 
 import { renderOn, renderSend, renderSendSync } from "../../../lib/ipc";
@@ -2249,17 +2249,40 @@ const gifOp = () => ({
     endMs: exportConfigEls.gif.gv.endS * 1000,
 });
 
+/** 进行中的导出；同时只允许一个导出，点击导出时无视新请求 */
+let exportAbort: AbortController | null = null;
+
+function exportCanceled(signal: AbortSignal) {
+    if (!signal.aborted) return false;
+    tipLog(t("내보내기를 취소했습니다."));
+    return true;
+}
+
 async function save() {
-    if (exportEls.type.gv === "png") await saveImages();
-    else if (exportEls.type.gv === "gif") await saveGif(gifOp());
-    else if (exportEls.type.gv === "apng") await saveApng();
-    else if (exportEls.type.gv === "webp" || exportEls.type.gv === "avif")
-        await saveAnimatedImage(exportEls.type.gv);
-    else if (exportEls.type.gv === "webm")
-        await saveWebm({ codec: exportConfigEls.webm.gv.codec });
-    else if (exportEls.type.gv === "mp4")
-        await saveMp4({ codec: exportConfigEls.mp4.gv.codec });
-    else await saveGif(gifOp());
+    if (exportAbort) return;
+    const abort = new AbortController();
+    exportAbort = abort;
+    const signal = abort.signal;
+    const cancelB = button(t("취소"))
+        .on("click", () => abort.abort())
+        .addInto(transformLogEl);
+    try {
+        const type = exportEls.type.gv;
+        if (type === "png") await saveImages(signal);
+        else if (type === "gif") await saveGif(gifOp(), signal);
+        else if (type === "apng") await saveApng(signal);
+        else if (type === "webp" || type === "avif")
+            await saveAnimatedImage(type, signal);
+        else if (type === "webm")
+            await saveWebm({ codec: exportConfigEls.webm.gv.codec }, signal);
+        else if (type === "mp4")
+            await saveMp4({ codec: exportConfigEls.mp4.gv.codec }, signal);
+        else await saveGif(gifOp(), signal);
+    } finally {
+        cancelB.remove();
+        exportAbort = null;
+    }
+    if (signal.aborted) return;
     if (store.get("录屏.超级录屏.导出后关闭")) {
         renderSend("windowClose", []);
     }
@@ -2315,7 +2338,7 @@ function tipNoAudio() {
     tipLog(t("导出未包含音频"));
 }
 
-async function saveImages() {
+async function saveImages(signal: AbortSignal) {
     // todo 大小警告
     const exportPath = getSavePath("png");
     if (!exportPath) return;
@@ -2328,13 +2351,18 @@ async function saveImages() {
         return;
     }
 
-    await waitProcessing(); // todo 不可取消
+    await waitProcessing();
+    if (exportCanceled(signal)) return;
 
     const pendingWrites: Promise<void>[] = [];
     let writeFailed = false;
     let i = 0;
     const decoder = new VideoDecoder({
         output: (frame: VideoFrame) => {
+            if (signal.aborted) {
+                frame.close();
+                return;
+            }
             const t = frameTrans2Canvas(frame);
             pendingWrites.push(
                 t
@@ -2373,27 +2401,30 @@ async function saveImages() {
 
     decoder.configure(decoderVideoConfig);
     for (const [_, chunk] of transformCs.entries()) {
+        if (signal.aborted) break;
         if (chunk.type === "key") await decoder.flush();
         decoder.decode(chunk);
     }
 
     await decoder.flush();
     await Promise.all(pendingWrites);
-
+    decoder.close();
     imgProgress.remove();
 
+    if (exportCanceled(signal)) return;
     if (writeFailed) tipLog(t("파일을 저장하지 못했습니다."));
     else renderSend("ok_save", [exportPath]);
-
-    decoder.close();
 }
 
-async function saveGif(op?: {
-    dither: "floyd-steinberg" | "none";
-    fps?: number;
-    startMs?: number;
-    endMs?: number;
-}) {
+async function saveGif(
+    op?: {
+        dither: "floyd-steinberg" | "none";
+        fps?: number;
+        startMs?: number;
+        endMs?: number;
+    },
+    signal: AbortSignal = new AbortController().signal,
+) {
     const exportPath = getSavePath("gif");
     if (!exportPath) return;
 
@@ -2401,6 +2432,7 @@ async function saveGif(op?: {
     const gif = GIFEncoder();
 
     await waitProcessing();
+    if (exportCanceled(signal)) return;
 
     let i = 0;
 
@@ -2446,7 +2478,9 @@ async function saveGif(op?: {
     let palette: [number, number, number][];
     const decoder = new VideoDecoder({
         output: (frame: VideoFrame) => {
-            const delay = delayMap.get(frame.timestamp);
+            const delay = signal.aborted
+                ? undefined
+                : delayMap.get(frame.timestamp);
             if (delay === undefined) {
                 frame.close();
                 return;
@@ -2477,9 +2511,10 @@ async function saveGif(op?: {
     let top = 0;
     const d = Math.floor(transformCs.length / 10);
     for (const [id] of transformCs.entries()) {
+        if (signal.aborted) break;
         if (id % d === 0) {
             // 统一内容获取：渲染中的帧等完成（导出被新编辑取代时也安全）
-            const i = await fetchFrame(exportFrameGet, id);
+            const i = await fetchFrame(exportFrameGet, id, signal);
             if (i) {
                 const nC = new OffscreenCanvas(i.width, top + i.height);
                 if (paletteCanvas)
@@ -2501,32 +2536,35 @@ async function saveGif(op?: {
 
     decoder.configure(decoderVideoConfig);
     for (const [_, chunk] of transformCs.entries()) {
+        if (signal.aborted) break;
         if (chunk.type === "key") await decoder.flush();
         decoder.decode(chunk);
     }
 
     await decoder.flush();
     decoder.close();
+    gifProgress.remove();
+    if (exportCanceled(signal)) return;
+
     gif.finish();
     const bytes = gif.bytes();
     try {
-        fs.writeFileSync(exportPath, Buffer.from(bytes));
+        await fs.promises.writeFile(exportPath, Buffer.from(bytes));
     } catch (error) {
         tipLog(t("파일을 저장하지 못했습니다."));
         console.error("GIF write failed:", error);
         return;
     }
 
-    gifProgress.remove();
-
     renderSend("ok_save", [exportPath]);
 }
 
-async function saveApng() {
+async function saveApng(signal: AbortSignal) {
     const exportPath = getSavePath("apng");
     if (!exportPath) return;
 
     await waitProcessing();
+    if (exportCanceled(signal)) return;
 
     let i = 0;
 
@@ -2557,7 +2595,9 @@ async function saveApng() {
     const dels: number[] = [];
     const decoder = new VideoDecoder({
         output: (frame: VideoFrame) => {
-            const delay = delayMap.get(frame.timestamp);
+            const delay = signal.aborted
+                ? undefined
+                : delayMap.get(frame.timestamp);
             if (delay === undefined) {
                 frame.close();
                 return;
@@ -2577,42 +2617,48 @@ async function saveApng() {
 
     decoder.configure(decoderVideoConfig);
     for (const [_, chunk] of transformCs.entries()) {
+        if (signal.aborted) break;
         if (chunk.type === "key") await decoder.flush();
         decoder.decode(chunk);
     }
 
     await decoder.flush();
     decoder.close();
+    apngProgress.remove();
+    if (exportCanceled(signal)) return;
 
     const UPNG = (await import("@pdf-lib/upng")).default;
     const bytes = UPNG.encode(images, outputV.width, outputV.height, 0, dels);
 
     try {
-        fs.writeFileSync(exportPath, Buffer.from(bytes));
+        await fs.promises.writeFile(exportPath, Buffer.from(bytes));
     } catch (error) {
         tipLog(t("파일을 저장하지 못했습니다."));
         console.error("APNG write failed:", error);
         return;
     }
 
-    apngProgress.remove();
-
     renderSend("ok_save", [exportPath]);
 }
 
-async function saveAnimatedImage(format: "webp" | "avif") {
+async function saveAnimatedImage(format: "webp" | "avif", signal: AbortSignal) {
     const exportPath = getSavePath(format);
     if (!exportPath) return;
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-anim-"));
     try {
         await waitProcessing();
+        if (exportCanceled(signal)) return;
 
         let i = 0;
         let writeFailed = false;
         const pendingWrites: Promise<void>[] = [];
         const decoder = new VideoDecoder({
             output: (frame: VideoFrame) => {
+                if (signal.aborted) {
+                    frame.close();
+                    return;
+                }
                 const name = `${dir}/${String(frame.timestamp).padStart(16, "0")}.png`;
                 pendingWrites.push(
                     frameTrans2Canvas(frame)
@@ -2628,7 +2674,6 @@ async function saveAnimatedImage(format: "webp" | "avif") {
                             console.error("Frame write failed:", e);
                         }),
                 );
-                frame.close();
                 i++;
                 animProgress.sv(i / transformCs.length);
             },
@@ -2638,6 +2683,7 @@ async function saveAnimatedImage(format: "webp" | "avif") {
 
         decoder.configure(decoderVideoConfig);
         for (const [_, chunk] of transformCs.entries()) {
+            if (signal.aborted) break;
             if (chunk.type === "key") await decoder.flush();
             decoder.decode(chunk);
         }
@@ -2646,6 +2692,7 @@ async function saveAnimatedImage(format: "webp" | "avif") {
         animProgress.remove();
         decoder.close();
 
+        if (exportCanceled(signal)) return;
         if (writeFailed || i === 0) {
             tipLog(t("파일을 저장하지 못했습니다."));
             return;
@@ -2715,10 +2762,22 @@ async function saveAnimatedImage(format: "webp" | "avif") {
                   ];
         const code = await new Promise<number | null>((resolve) => {
             const p = spawn(pathToFfmpeg, args);
+            const onAbort = () => p.kill();
+            signal.addEventListener("abort", onAbort, { once: true });
             p.stderr.on("data", (d) => console.error(String(d)));
             p.on("error", () => resolve(null));
-            p.on("close", (c) => resolve(c));
+            p.on("close", (c) => {
+                signal.removeEventListener("abort", onAbort);
+                resolve(c);
+            });
         });
+        if (signal.aborted) {
+            try {
+                fs.rmSync(exportPath, { force: true });
+            } catch {}
+            exportCanceled(signal);
+            return;
+        }
         if (code === 0 && fs.existsSync(exportPath)) {
             renderSend("ok_save", [exportPath]);
         } else {
@@ -2731,120 +2790,114 @@ async function saveAnimatedImage(format: "webp" | "avif") {
     }
 }
 
-async function saveWebm(op: { codec: "vp8" | "vp9" | "av1" }) {
+async function saveWebm(
+    op: { codec: "vp8" | "vp9" | "av1" },
+    signal: AbortSignal,
+) {
     const exportPath = getSavePath("webm");
     if (!exportPath) return;
 
     await waitProcessing({ codec: op.codec });
+    if (exportCanceled(signal)) return;
 
-    const {
-        Output,
-        WebMOutputFormat,
-        BufferTarget,
-        EncodedVideoPacketSource,
-        EncodedPacket,
-    } = await loadMediabunny();
-    const output = new Output({
-        format: new WebMOutputFormat({
-            appendOnly: false,
-        }),
-        target: new BufferTarget(),
-    });
-
-    const videoSource = new EncodedVideoPacketSource(op.codec);
-    output.addVideoTrack(videoSource, {
-        frameRate: srcRate,
-    });
-
-    const audioSource = await createAudioSource(output.format);
-    if (audioSource) output.addAudioTrack(audioSource);
-
-    await output.start();
-
-    for (const [_, chunk] of transformCs.entries()) {
-        await videoSource.add(EncodedPacket.fromEncodedChunk(chunk), {
-            decoderConfig: {
-                ...decoderVideoConfig,
-                codedWidth: outputV.width,
-                codedHeight: outputV.height,
-            },
-        });
-    }
-    if (audioSource && transAudio) {
-        await audioSource.add(transAudio);
-    } else if (srcAudio) {
-        tipNoAudio();
-    }
-    await output.finalize();
-    const { buffer } = output.target;
-    if (buffer) {
-        try {
-            fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-            renderSend("ok_save", [exportPath, true]);
-        } catch (error) {
-            tipLog(t("파일을 저장하지 못했습니다."));
-            console.error("WebM write failed:", error);
-        }
-    } else {
-        tipLog(t("동영상 인코딩에 실패했습니다."));
-    }
+    const { WebMOutputFormat } = await loadMediabunny();
+    await saveContainer(
+        new WebMOutputFormat({ appendOnly: false }),
+        op.codec,
+        exportPath,
+        signal,
+    );
 }
 
-async function saveMp4(op: { codec: "avc" | "vp9" | "av1" }) {
+async function saveMp4(
+    op: { codec: "avc" | "vp9" | "av1" },
+    signal: AbortSignal,
+) {
     const exportPath = getSavePath("mp4");
     if (!exportPath) return;
 
     await waitProcessing({ codec: op.codec });
+    if (exportCanceled(signal)) return;
 
-    const {
-        Output,
-        Mp4OutputFormat,
-        BufferTarget,
-        EncodedVideoPacketSource,
-        EncodedPacket,
-    } = await loadMediabunny();
-    const output = new Output({
-        format: new Mp4OutputFormat(),
-        target: new BufferTarget(),
+    const { Mp4OutputFormat } = await loadMediabunny();
+    await saveContainer(new Mp4OutputFormat(), op.codec, exportPath, signal);
+}
+
+/** mediabunny 컨테이너 먹싱 — StreamTarget으로 위치 지정 쓰기를 스트리밍해
+ * 결과물 전체를 메모리에 들고 있지 않음(긴 녹화에서 렌더러 OOM/동기 쓰기 정지 방지) */
+async function saveContainer(
+    format: OutputFormat,
+    codec: "avc" | "vp9" | "av1" | "vp8",
+    exportPath: string,
+    signal: AbortSignal,
+) {
+    const { Output, StreamTarget, EncodedVideoPacketSource, EncodedPacket } =
+        await loadMediabunny();
+    const fh = await fs.promises.open(exportPath, "w").catch((e) => {
+        console.error("Export open failed:", e);
+        tipLog(t("파일을 저장하지 못했습니다."));
+        return null;
     });
+    if (!fh) return;
 
-    const videoSource = new EncodedVideoPacketSource(op.codec);
-    output.addVideoTrack(videoSource, {
-        frameRate: srcRate,
-    });
-
-    const audioSource = await createAudioSource(output.format);
-    if (audioSource) output.addAudioTrack(audioSource);
-
-    await output.start();
-
-    for (const [_, chunk] of transformCs.entries()) {
-        await videoSource.add(EncodedPacket.fromEncodedChunk(chunk), {
-            decoderConfig: {
-                ...decoderVideoConfig,
-                codedWidth: outputV.width,
-                codedHeight: outputV.height,
-            },
+    let done = false;
+    try {
+        const output = new Output({
+            format,
+            target: new StreamTarget(
+                new WritableStream<StreamTargetChunk>({
+                    write: async (chunk) => {
+                        await fh.write(
+                            chunk.data,
+                            0,
+                            chunk.data.length,
+                            chunk.position,
+                        );
+                    },
+                }),
+                { chunked: true },
+            ),
         });
-    }
-    if (audioSource && transAudio) {
-        await audioSource.add(transAudio);
-    } else if (srcAudio) {
-        tipNoAudio();
-    }
-    await output.finalize();
-    const { buffer } = output.target;
-    if (buffer) {
-        try {
-            fs.writeFileSync(exportPath, Buffer.from(buffer)); // todo stream
-            renderSend("ok_save", [exportPath, true]);
-        } catch (error) {
-            tipLog(t("파일을 저장하지 못했습니다."));
-            console.error("MP4 write failed:", error);
+        const videoSource = new EncodedVideoPacketSource(codec);
+        output.addVideoTrack(videoSource, {
+            frameRate: srcRate,
+        });
+        const audioSource = await createAudioSource(output.format);
+        if (audioSource) output.addAudioTrack(audioSource);
+
+        await output.start();
+
+        for (const [_, chunk] of transformCs.entries()) {
+            if (signal.aborted) break;
+            await videoSource.add(EncodedPacket.fromEncodedChunk(chunk), {
+                decoderConfig: {
+                    ...decoderVideoConfig,
+                    codedWidth: outputV.width,
+                    codedHeight: outputV.height,
+                },
+            });
         }
-    } else {
-        tipLog(t("동영상 인코딩에 실패했습니다."));
+        if (signal.aborted) {
+            await output.cancel();
+        } else {
+            if (audioSource && transAudio) {
+                await audioSource.add(transAudio);
+            } else if (srcAudio) {
+                tipNoAudio();
+            }
+            await output.finalize();
+            done = true;
+            renderSend("ok_save", [exportPath, true]);
+        }
+    } catch (error) {
+        if (!signal.aborted) tipLog(t("파일을 저장하지 못했습니다."));
+        console.error("Export failed:", error);
+    } finally {
+        await fh.close().catch((e) => console.error(e));
+        if (!done)
+            await fs.promises.rm(exportPath, { force: true }).catch(() => {});
     }
+    if (!done) exportCanceled(signal);
 }
 
 function iconEl(src: IconType) {
@@ -3295,6 +3348,7 @@ const playTimeEl = nowTimeEl(() => {
 const quickGifButton = button("GIF")
     .attr({ type: "button", title: "현재 설정으로 바로 GIF 내보내기" })
     .on("click", async () => {
+        if (exportAbort) return;
         quickGifButton.el.disabled = true;
         try {
             await saveGif(gifOp());
