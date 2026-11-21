@@ -815,7 +815,8 @@ const 快捷键函数: Record<keyof setting["快捷键"], () => void> = {
         lianPai();
     },
     结束广截屏: () => {
-        mainSend(clipWindow?.webContents, "clip_stop_long", []);
+        if (clipWindow && !clipWindow.isDestroyed())
+            mainSend(clipWindow.webContents, "clip_stop_long", []);
     },
     剪贴板贴图: () => dingFromClipBoard(),
     主页面: () => createMainWindow({ type: "text", content: "" }),
@@ -2449,7 +2450,7 @@ async function showCaptureShelf() {
         hideCaptureShelf(false, false);
         return;
     }
-    if (clipWindow?.isVisible()) {
+    if (clipWindow && !clipWindow.isDestroyed() && clipWindow.isVisible()) {
         shelfPendingReshow = true;
         // 클립에 가려 숨길 뿐이므로 대기 중인 복원 시퀀스를 무효화하지 않음
         hideCaptureShelf(false, false);
@@ -2520,7 +2521,11 @@ async function showCaptureShelf() {
         registerShelf();
         if (!win.isDestroyed()) {
             win.webContents.send("oc:library-updated");
-            if (clipWindow?.isVisible()) {
+            if (
+                clipWindow &&
+                !clipWindow.isDestroyed() &&
+                clipWindow.isVisible()
+            ) {
                 shelfPendingReshow = true;
                 win.hide();
             } else win.showInactive();
@@ -3490,6 +3495,7 @@ async function exitFullScreen() {
     const shelfSequence = pendingClipInit?.shelfSequence;
     clearCaptureInitWatchdog(pendingClipInit?.context.requestId);
     pendingClipInit = null;
+    if (clipWindow?.isDestroyed()) clipWindow = null;
     if (keepClip) {
         clipWindow?.setSimpleFullScreen(false);
         clipWindow?.hide();
@@ -3512,6 +3518,7 @@ async function hideClip() {
     const shelfSequence = pendingClipInit?.shelfSequence;
     clearCaptureInitWatchdog(pendingClipInit?.context.requestId);
     pendingClipInit = null;
+    if (clipWindow?.isDestroyed()) clipWindow = null;
     clipWindow?.setSimpleFullScreen(false);
     clipWindow?.hide();
     if (shelfSequence !== undefined) restoreCaptureShelf(shelfSequence);

@@ -159,7 +159,7 @@ const captureIconPaths: Record<string, string> = {
     draw: '<path d="m3 14 9-9 3 3-9 9-4 1 1-4Zm9-9 2-2a2 2 0 0 1 3 3l-2 2"/>',
     ding: '<path d="m7 2 6 0-1 5 3 3v2H5v-2l3-3-1-5Zm3 10v6"/>',
     ocrcopy:
-        '<path d="M4 3H2v4m14-4h2v4M2 13v4h4m12-4v4h-4M6 6h8M10 6v8m-3 0h6"/>',
+        '<path d="M4 3H2v4m14-4h2v4M2 13v4h4m12-4v4h-4"/><path d="m5.5 11.5 3 3 6-6"/>',
     ocr: '<path d="M4 3H2v4m14-4h2v4M2 13v4h4m12-4v4h-4M6 6h8M10 6v8m-3 0h6"/>',
     translate:
         '<path d="M2 4h9M7 2v2M4 4c0 5 6 8 6 8M10 4c0 4-4 7-7 8m8 5 3-8 3 8m-5-3h4"/>',
@@ -5613,7 +5613,9 @@ function runCaptureTool(id: CaptureTool, point = radial.origin()) {
     if (id === "trash") {
         void captureWorkspace
             ?.trash()
-            .then(() => closeWin())
+            .then((moved) => {
+                if (moved) void closeWin();
+            })
             .catch((error) => captureWorkspace?.showError(error));
         return;
     }

@@ -16,6 +16,7 @@ import {
 } from "../../../lib/referenceComparison";
 import "./referenceComparison.css";
 import { lt } from "../lib/labText";
+import { icon } from "./icons";
 
 export type ReferenceComparisonItem = {
     id: string;
@@ -118,7 +119,8 @@ export function createReferenceComparison(
     const header = element("header", "rc-header");
     const title = element("h2", "rc-title", t(lt("레퍼런스 비교")));
     const status = element("span", "rc-status", t(lt("이미지를 선택하세요")));
-    const closeButton = element("button", "rc-icon-button", "×");
+    const closeButton = element("button", "rc-icon-button");
+    closeButton.append(icon("×").el);
     closeButton.type = "button";
     closeButton.title = t(lt("닫기"));
     header.append(title, status, closeButton);
@@ -152,9 +154,11 @@ export function createReferenceComparison(
     const actualButton = element("button", "rc-segment", "1:1");
     fitButton.type = actualButton.type = "button";
     zoomModeGroup.append(fitButton, actualButton);
-    const zoomOut = element("button", "rc-icon-button", "−");
+    const zoomOut = element("button", "rc-icon-button");
+    zoomOut.append(icon("—").el);
     const zoomLabel = element("span", "rc-zoom-label", "100%");
-    const zoomIn = element("button", "rc-icon-button", "+");
+    const zoomIn = element("button", "rc-icon-button");
+    zoomIn.append(icon("＋").el);
     zoomOut.type = zoomIn.type = "button";
     toolbar.append(
         selectA,
@@ -509,7 +513,8 @@ export function createReferenceComparison(
             input.addEventListener("change", () => {
                 note.text = input.value.trim().slice(0, 500);
             });
-            const remove = element("button", "rc-note-remove", "×");
+            const remove = element("button", "rc-note-remove");
+            remove.append(icon("×").el);
             remove.type = "button";
             remove.addEventListener("click", () => {
                 notes = notes.filter((entry) => entry.id !== note.id);

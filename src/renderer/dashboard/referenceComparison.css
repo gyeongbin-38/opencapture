@@ -113,8 +113,16 @@
 .rc-icon-button {
     width: 30px;
     height: 30px;
+    padding: 0;
     border-radius: 8px;
-    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.rc-icon-button .icon svg,
+.rc-note-remove .icon svg {
+    width: 14px;
+    height: 14px;
 }
 .rc-zoom-label {
     min-width: 68px;
@@ -283,7 +291,11 @@
 .rc-note-remove {
     width: 24px;
     height: 24px;
+    padding: 0;
     border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .rc-footer {
     justify-content: flex-end;

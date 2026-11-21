@@ -71,9 +71,11 @@ button:focus-visible {
     height: 20px;
     padding: 0;
     border-radius: var(--r-sm);
-    font-size: 17px;
-    line-height: 1;
     transition: background 0.12s ease;
+}
+.shelf-close .icon svg {
+    width: 13px;
+    height: 13px;
 }
 .shelf-close:hover {
     background: var(--accent-soft);

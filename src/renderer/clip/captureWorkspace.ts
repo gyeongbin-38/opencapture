@@ -443,11 +443,12 @@ export function createCaptureWorkspace(options: {
     }
     async function trash() {
         const result = await stage();
-        if (!result) return;
+        if (!result) return false;
         await ipcRenderer.invoke("oc:items:trash", [result.id]);
         thumbnails.delete(result.id);
         renderStrip();
         showStatus(t("휴지통으로 이동됨"));
+        return true;
     }
     async function recognized() {
         const record = queue.current;

@@ -12,7 +12,7 @@ let request = 0;
 const panel = view().class("capture-shelf-panel").addInto();
 const header = view("x").class("shelf-header").addInto(panel);
 const title = txt(t("임시 캡처")).addInto(header);
-const closeButton = button("×")
+const closeButton = button(icon("×"))
     .class("shelf-close")
     .attr({ type: "button", ariaLabel: t("닫기") })
     .addInto(header);

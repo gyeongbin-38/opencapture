@@ -4,9 +4,9 @@ body {
     --accent: #d4d4d8;
     --surface-soft: #1a1a1d;
     --surface-hover: #232328;
-    --r-xs: 0px;
-    --r-sm: 0px;
-    --r-md: 0px;
+    --r-xs: 4px;
+    --r-sm: 6px;
+    --r-md: 9px;
     --capture-surface: rgba(16, 16, 18, 0.97);
     --capture-border: rgba(255, 255, 255, 0.14);
     --capture-text: var(--text);
@@ -126,7 +126,7 @@ body {
 #clip_wh[data-pinned] .capture-grip {
     opacity: 0.95;
 }
-/* capture chrome：玻璃面统一细边 + 与 quick_toolbar 一致的方角 */
+/* capture chrome：玻璃面统一细边 + 与 quick_toolbar 一致的圆角 */
 .bar {
     border: 1px solid var(--capture-border);
 }
