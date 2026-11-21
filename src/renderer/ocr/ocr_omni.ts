@@ -41,10 +41,21 @@ export function ocrOmniLoad(
     }
     const x = loadOCR(store, type);
     if (!x) throw new Error(t("不支持的 OCR 类型"));
-    const ocr = x.ocr.init(x.config);
+    let ocrPromise: ReturnType<typeof x.ocr.init> | null = null;
+    const getOcr = () => {
+        ocrPromise ??= x.ocr.init(x.config);
+        const p = ocrPromise;
+        return p.then(
+            (v) => v,
+            (e) => {
+                if (ocrPromise === p) ocrPromise = null;
+                throw e;
+            },
+        );
+    };
     return {
         ocr: async (img: string) => {
-            const res = await (await ocr).ocr(img);
+            const res = await (await getOcr()).ocr(img);
             return res.columns
                 .flatMap((c) => c.parragraphs)
                 .map((p) => p.parse.text);

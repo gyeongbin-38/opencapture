@@ -42,7 +42,13 @@ ipcRenderer.on(
                 const image = nativeImage.createFromPath(job.path);
                 if (!image.isEmpty()) {
                     ({ width, height } = image.getSize());
-                    ocrPromise ??= getOcr();
+                    ocrPromise ??= getOcr().then(
+                        (v) => v,
+                        (e) => {
+                            ocrPromise = null;
+                            throw e;
+                        },
+                    );
                     const ocr = await ocrPromise;
                     const result = await ocr.ocr(image.toDataURL());
                     lines = result.src
