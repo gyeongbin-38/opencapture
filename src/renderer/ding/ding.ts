@@ -1866,7 +1866,13 @@ function drawText(
 
     const gap =
         lineNum === 1 ? 0 : (boxHeight - lineHeight * lineNum) / (lineNum - 1);
-    const lines = splitText(textList, ctx, boxWidth); // todo 严格等于lineNum
+    // 换行数超过源行数时逐步缩小字号重排
+    let lines = splitText(textList, ctx, boxWidth);
+    for (let tries = 0; lines.length > lineNum && tries < 8; tries++) {
+        fontSize = Math.max(1, Math.floor((fontSize * lineNum) / lines.length));
+        ctx.font = `${fontSize}px serif`;
+        lines = splitText(textList, ctx, boxWidth);
+    }
 
     for (const b of boxSrc) {
         ctx.fillStyle = color2rgb(b.style.bg);
@@ -1904,21 +1910,26 @@ function color2rgb(color: number[]) {
     return `rgb(${color.join(",")})`;
 }
 
+// 行首禁止出现的收尾标点：超出宽度时也并入上一行
+const noLineStartRe = /^[。，、；：？！,.…?!\)\]｝》」』%‰℃'"”’]/;
+
 function splitText(
     text: Intl.SegmentData[],
     ctx: CanvasRenderingContext2D,
     maxWidth: number,
 ) {
     // todo 性能
-    // todo 符号不能在开头
     let line = "";
     const lines: string[] = [];
     for (let i = 0; i < text.length; i++) {
         const t = text[i].segment;
-        if (ctx.measureText(line + t).width < maxWidth) {
+        if (
+            ctx.measureText(line + t).width < maxWidth ||
+            (line !== "" && noLineStartRe.test(t))
+        ) {
             line += t;
         } else {
-            lines.push(line);
+            if (line !== "") lines.push(line);
             line = t;
         }
     }

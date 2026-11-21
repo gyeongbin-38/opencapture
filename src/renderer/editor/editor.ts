@@ -354,6 +354,10 @@ const ocrImageS = new Map<
         };
     }
 >();
+/** 本地OCR共享一个runner，det/rec回调无任务上下文；
+ *  靠串行执行+locrEntry定位当前任务对应哪张图 */
+let locrEntry: ReturnType<typeof ocrImageS.get>;
+let locrPending = 0;
 const ocrTextSelectionClass = addClass(
     {},
     {
@@ -1442,8 +1446,7 @@ class spellcheckGen {
     }
 
     private getWords(t: string) {
-        const spliter = new Intl.Segmenter("zh-CN", { granularity: "word" }); // todo
-        const segments = Array.from(spliter.segment(t)).filter(
+        const segments = Array.from(wordSeg.segment(t)).filter(
             (i) => i.isWordLike,
         );
         return segments;
@@ -2575,8 +2578,8 @@ async function localOcr(
                     [ocrImageViewWidthK]: "min(100%, 300px)",
                 });
 
-                const x = Array.from(ocrImageS.values())[0];
-                if (!x) return; // todo 获取准确的任务
+                const x = locrEntry;
+                if (!x) return;
                 const w = x.imgEl.el.naturalWidth;
                 const h = x.imgEl.el.naturalHeight;
                 const boxT = ocrBox2Style(w, h);
@@ -2592,26 +2595,29 @@ async function localOcr(
                 }
             };
             x.config.rec.on = (i, _, a) => {
-                const x = Array.from(ocrImageS.values())[0];
-                if (!x) return; // todo 获取准确的任务
+                const x = locrEntry;
+                if (!x) return;
                 x.maskEls.masks.get(i)?.remove();
 
                 if (i + 1 === a) {
                     x.maskEls.pel.clear();
-                    // todo 所有任务完成才执行
-                    baseEditorEl.style({ height: "100%" });
-                    ocrImageView.style({
-                        [ocrImageViewWidthK]: "100%",
-                    });
-                    setTimeout(() => {
-                        setOcrFontSize();
-                    }, 400);
+                    if (locrPending <= 1) {
+                        baseEditorEl.style({ height: "100%" });
+                        ocrImageView.style({
+                            [ocrImageViewWidthK]: "100%",
+                        });
+                        setTimeout(() => {
+                            setOcrFontSize();
+                        }, 400);
+                    }
                 }
             };
             locr.runner = await x.ocr.init(x.config);
             locr.type = type;
         }
         task.l("ocr_s");
+        locrEntry = [...ocrImageS.values()].find((e) => e.src === arg);
+        locrPending++;
         locr.runner
             .ocr(arg)
             .then((l) => {
@@ -2634,6 +2640,9 @@ async function localOcr(
             })
             .catch((e) => {
                 callback(e, null);
+            })
+            .finally(() => {
+                locrPending--;
             });
     } catch (error) {
         callback(error as Error, null);
@@ -2687,7 +2696,7 @@ function putDatatransfer(data: DataTransfer | null) {
     }
 }
 
-function runOcr() {
+async function runOcr() {
     const output: OCROutPut[] = [];
     const type = ocrImageEngine.el.gv;
     ocrTextNodes.clear();
@@ -2708,11 +2717,16 @@ function runOcr() {
                 },
             );
         } else {
-            localOcr(type, el.src, (_err, r) => {
-                if (r) {
-                    addOcrText(r.raw, i, r.rotate);
-                    addOcrToEditor(r, index);
-                }
+            // 本地OCR共享runner，串行以保证det/rec回调归属当前任务
+            await new Promise<void>((resolve) => {
+                localOcr(type, el.src, (err, r) => {
+                    if (err) console.error(err);
+                    if (r) {
+                        addOcrText(r.raw, i, r.rotate);
+                        addOcrToEditor(r, index);
+                    }
+                    resolve();
+                });
             });
         }
         count++;
