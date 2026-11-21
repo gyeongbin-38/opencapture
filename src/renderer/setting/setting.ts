@@ -1725,17 +1725,26 @@ const s: Partial<settingItem<SettingPath>> = {
     },
     "代理.pacScript": {
         name: "PAC URL",
-        el: () => input(), // todo 跟随上面设置
+        el: () => {
+            const el = input();
+            el.el.disabled = store.get("代理.mode") !== "pac_script";
+            return el;
+        },
     },
     "代理.proxyRules": {
         name: "规则",
         el: () => {
+            const enabled = store.get("代理.mode") === "fixed_servers";
             const els = {
                 http: xGroup("y").add([noI18n("HTTP"), input()]),
                 https: xGroup("y").add([noI18n("HTTPS"), input()]),
                 ftp: xGroup("y").add([noI18n("FTP"), input()]),
                 socks: xGroup("y").add([noI18n("SOCKS"), input()]),
             } as const;
+            for (const e of Object.values(els)) {
+                const inp = e.el.querySelector("input");
+                if (inp) inp.disabled = !enabled;
+            }
 
             const el = xGroup("y")
                 .class(blockSetting)
@@ -2671,6 +2680,7 @@ const bind: { [k in KeyPath]?: KeyPath[] } = {
     "保存名称.后缀": ["_filename"],
     "取色器.大小": ["_qsq"],
     "取色器.像素大小": ["_qsq"],
+    "代理.mode": ["代理.pacScript", "代理.proxyRules"],
 };
 
 const bindF: { [k in SettingPath]?: (v: GetValue<setting, k>) => void } = {
@@ -3672,17 +3682,18 @@ function sortList<t>(
             .style({ alignItems: "center" })
             .class(Class.group)
             .data({ id: id });
-        const nameEl = txt(newData.get(id)?.["sort-name"] ?? "", true).on(
-            "click",
-            async () => {
-                const nv = await getItem(id);
-                const oldData = newData.get(id);
-                if (!nv || !oldData) return;
-                oldData.data = nv;
-                nameEl.sv(name(nv));
-                onChange();
-            },
-        ); // todo 必须命名
+        const nameEl = txt(
+            newData.get(id)?.["sort-name"] || t("名称"),
+            true,
+        ).on("click", async () => {
+            const nv = await getItem(id);
+            const oldData = newData.get(id);
+            if (!nv || !oldData) return;
+            oldData.data = nv;
+            oldData["sort-name"] = name(nv) || t("名称");
+            nameEl.sv(oldData["sort-name"]);
+            onChange();
+        });
         const sortHandle = button().add(iconEl("handle")).class("sort_handle");
         const rm = button()
             .add(iconEl("delete"))
