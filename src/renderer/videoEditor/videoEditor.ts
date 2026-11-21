@@ -2273,7 +2273,11 @@ async function save() {
         else if (type === "apng")
             await saveApng({ fps: exportConfigEls.apng.gv.fps }, signal);
         else if (type === "webp" || type === "avif")
-            await saveAnimatedImage(type, signal);
+            await saveAnimatedImage(
+                type,
+                { fps: exportConfigEls[type].gv.fps },
+                signal,
+            );
         else if (type === "webm")
             await saveWebm({ codec: exportConfigEls.webm.gv.codec }, signal);
         else if (type === "mp4")
@@ -2527,7 +2531,8 @@ async function saveGif(
     // 取10帧生成调色板
     let paletteCanvas: OffscreenCanvas | undefined = undefined;
     let top = 0;
-    const d = Math.floor(transformCs.length / 10);
+    // len<10이면 d가 0이 돼 한 장도 샘플링하지 못하던 엣지 방지
+    const d = Math.max(1, Math.floor(transformCs.length / 10));
     for (const [id] of transformCs.entries()) {
         if (signal.aborted) break;
         if (id % d === 0) {
@@ -2669,7 +2674,11 @@ async function saveApng(op: { fps?: number }, signal: AbortSignal) {
     renderSend("ok_save", [exportPath]);
 }
 
-async function saveAnimatedImage(format: "webp" | "avif", signal: AbortSignal) {
+async function saveAnimatedImage(
+    format: "webp" | "avif",
+    op: { fps?: number },
+    signal: AbortSignal,
+) {
     const exportPath = getSavePath(format);
     if (!exportPath) return;
 
@@ -2678,15 +2687,19 @@ async function saveAnimatedImage(format: "webp" | "avif", signal: AbortSignal) {
         await waitProcessing();
         if (exportCanceled(signal)) return;
 
+        const maxFps = op.fps && op.fps > 0 ? Math.min(op.fps, srcRate) : 0;
+        const minDt = maxFps ? ms2timestamp(1000 / maxFps) : 0;
+        let lastT = -Number.MAX_VALUE;
         let i = 0;
         let writeFailed = false;
         const pendingWrites: Promise<void>[] = [];
         const decoder = new VideoDecoder({
             output: (frame: VideoFrame) => {
-                if (signal.aborted) {
+                if (signal.aborted || frame.timestamp - lastT < minDt) {
                     frame.close();
                     return;
                 }
+                lastT = frame.timestamp;
                 const name = `${dir}/${String(frame.timestamp).padStart(16, "0")}.png`;
                 pendingWrites.push(
                     frameTrans2Canvas(frame)
@@ -4036,6 +4049,24 @@ const timeLineFrameHl = addClass(
     {},
 );
 
+const fpsSelect = () =>
+    label(
+        [
+            select([
+                { value: "0", name: t("원본 속도") },
+                { value: "24" },
+                { value: "15" },
+                { value: "10" },
+                { value: "5" },
+            ] as const).class(Class.noDeco),
+            t("초당 프레임"),
+        ],
+        1,
+    ).style({
+        display: "flex",
+        alignItems: "center",
+    });
+
 const exportConfigEls = {
     gif: (() => {
         const el = view("x").style({ paddingInline: "8px" });
@@ -4043,22 +4074,7 @@ const exportConfigEls = {
             display: "flex",
             alignItems: "center",
         });
-        const fps = label(
-            [
-                select([
-                    { value: "0", name: t("원본 속도") },
-                    { value: "24" },
-                    { value: "15" },
-                    { value: "10" },
-                    { value: "5" },
-                ] as const).class(Class.noDeco),
-                t("초당 프레임"),
-            ],
-            1,
-        ).style({
-            display: "flex",
-            alignItems: "center",
-        });
+        const fps = fpsSelect();
         const startInput = input("number")
             .attr({ min: "0", step: "0.1", ariaLabel: t("시작(초)") })
             .style({ width: "56px" })
@@ -4095,22 +4111,7 @@ const exportConfigEls = {
     })(),
     apng: (() => {
         const el = view("x").style({ paddingInline: "8px" });
-        const fps = label(
-            [
-                select([
-                    { value: "0", name: t("원본 속도") },
-                    { value: "24" },
-                    { value: "15" },
-                    { value: "10" },
-                    { value: "5" },
-                ] as const).class(Class.noDeco),
-                t("초당 프레임"),
-            ],
-            1,
-        ).style({
-            display: "flex",
-            alignItems: "center",
-        });
+        const fps = fpsSelect();
         el.add(fps);
         return el
             .bindGet(() => ({
@@ -4120,8 +4121,30 @@ const exportConfigEls = {
                 fps.sv(String(v.fps ?? 0) as "0");
             });
     })(),
-    webp: view(),
-    avif: view(),
+    webp: (() => {
+        const el = view("x").style({ paddingInline: "8px" });
+        const fps = fpsSelect();
+        el.add(fps);
+        return el
+            .bindGet(() => ({
+                fps: Number(fps.gv) || 0,
+            }))
+            .bindSet((v: { fps?: number }) => {
+                fps.sv(String(v.fps ?? 0) as "0");
+            });
+    })(),
+    avif: (() => {
+        const el = view("x").style({ paddingInline: "8px" });
+        const fps = fpsSelect();
+        el.add(fps);
+        return el
+            .bindGet(() => ({
+                fps: Number(fps.gv) || 0,
+            }))
+            .bindSet((v: { fps?: number }) => {
+                fps.sv(String(v.fps ?? 0) as "0");
+            });
+    })(),
     mp4: (() => {
         const el = view("x").style({ paddingInline: "8px" });
         const codec = label(

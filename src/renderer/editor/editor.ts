@@ -2050,6 +2050,7 @@ async function edit(arg: EditToolsType) {
             a.href = URL.createObjectURL(blob);
             a.download = "OpenCapture.csv";
             a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href));
             break;
         }
         case "md_table": {
