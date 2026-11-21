@@ -349,7 +349,11 @@ ipcRenderer?.on(name, (event, key, data) => {
     const callbacks = renderOnData.get(key);
     if (callbacks) {
         for (const callback of callbacks) {
-            callback(data);
+            try {
+                callback(data);
+            } catch (error) {
+                console.error(`ipcRenderer.on: ${key} callback failed`, error);
+            }
         }
     } else {
         console.warn(`ipcRenderer.on: ${key} not found`);
@@ -360,9 +364,15 @@ ipcMain?.on(name, async (event, key, data) => {
     const callbacks = mainOnData.get(key);
     if (callbacks) {
         for (const callback of callbacks) {
-            const result = await callback(data, event);
-            if (result !== undefined) {
-                event.returnValue = result;
+            try {
+                const result = await callback(data, event);
+                if (result !== undefined) {
+                    event.returnValue = result;
+                }
+            } catch (error) {
+                // handler 抛错也要兜底 returnValue，否则 renderSendSync 永久阻塞
+                console.error(`ipcMain.on: ${key} handler failed`, error);
+                event.returnValue = null;
             }
         }
         // renderSendSync 的调用方在等 returnValue 才被唤醒。handler 返回 undefined
@@ -374,6 +384,7 @@ ipcMain?.on(name, async (event, key, data) => {
         }
     } else {
         console.warn(`ipcMain.on: ${key} not found`);
+        event.returnValue = null;
     }
 });
 
