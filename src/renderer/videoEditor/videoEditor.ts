@@ -2245,6 +2245,7 @@ const gifOp = () => ({
         ? ("floyd-steinberg" as const)
         : ("none" as const),
     fps: exportConfigEls.gif.gv.fps,
+    scale: exportConfigEls.gif.gv.scale,
     startMs: exportConfigEls.gif.gv.startS * 1000,
     endMs: exportConfigEls.gif.gv.endS * 1000,
 });
@@ -2275,16 +2276,13 @@ async function save() {
         .addInto(transformLogEl);
     try {
         const type = exportEls.type.gv;
-        if (type === "png") await saveImages(signal);
+        if (type === "png")
+            await saveImages({ scale: exportConfigEls.png.gv.scale }, signal);
         else if (type === "gif") await saveGif(gifOp(), signal);
         else if (type === "apng")
-            await saveApng({ fps: exportConfigEls.apng.gv.fps }, signal);
+            await saveApng(exportConfigEls.apng.gv, signal);
         else if (type === "webp" || type === "avif")
-            await saveAnimatedImage(
-                type,
-                { fps: exportConfigEls[type].gv.fps },
-                signal,
-            );
+            await saveAnimatedImage(type, exportConfigEls[type].gv, signal);
         else if (type === "webm")
             await saveWebm({ codec: exportConfigEls.webm.gv.codec }, signal);
         else if (type === "mp4")
@@ -2360,7 +2358,17 @@ const formatBytes = (bytes: number) =>
         ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
         : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 
-async function saveImages(signal: AbortSignal) {
+/** 导出缩放：scale<1 时把变换帧重绘到小尺寸canvas */
+function exportScaleCanvas(c: OffscreenCanvas, scale: number) {
+    if (!scale || scale >= 1) return c;
+    const w = Math.max(1, Math.round(c.width * scale));
+    const h = Math.max(1, Math.round(c.height * scale));
+    const s = new OffscreenCanvas(w, h);
+    s.getContext("2d")!.drawImage(c, 0, 0, w, h);
+    return s;
+}
+
+async function saveImages(op: { scale?: number }, signal: AbortSignal) {
     const exportPath = getSavePath("png");
     if (!exportPath) return;
 
@@ -2374,7 +2382,12 @@ async function saveImages(signal: AbortSignal) {
 
     // 帧序列 PNG 按经验约 3B/px 估算；可用空间不足时直接放弃，
     // 较大导出先给出预期提示
-    const estBytes = transformCs.length * outputV.width * outputV.height * 3;
+    const estBytes =
+        transformCs.length *
+        outputV.width *
+        outputV.height *
+        (op.scale ?? 1) ** 2 *
+        3;
     try {
         const st = fs.statfsSync(exportPath);
         if (st.bavail * st.bsize < estBytes) {
@@ -2397,7 +2410,10 @@ async function saveImages(signal: AbortSignal) {
                 frame.close();
                 return;
             }
-            const t = frameTrans2Canvas(frame);
+            const t = exportScaleCanvas(
+                frameTrans2Canvas(frame),
+                op.scale ?? 1,
+            );
             pendingWrites.push(
                 t
                     .convertToBlob({ type: "image/png" })
@@ -2454,6 +2470,7 @@ async function saveGif(
     op?: {
         dither: "floyd-steinberg" | "none";
         fps?: number;
+        scale?: number;
         startMs?: number;
         endMs?: number;
     },
@@ -2519,9 +2536,13 @@ async function saveGif(
                 frame.close();
                 return;
             }
-            const { data, width, height } = frameTrans2Canvas(frame)
+            const sc = exportScaleCanvas(
+                frameTrans2Canvas(frame),
+                op?.scale ?? 1,
+            );
+            const { data, width, height } = sc
                 .getContext("2d")!
-                .getImageData(0, 0, outputV.width, outputV.height); // todo 导出时缩放
+                .getImageData(0, 0, sc.width, sc.height);
             const _palette = palette || quantize(data, 256);
             const d =
                 op?.dither === "floyd-steinberg"
@@ -2594,12 +2615,19 @@ async function saveGif(
     renderSend("ok_save", [exportPath]);
 }
 
-async function saveApng(op: { fps?: number }, signal: AbortSignal) {
+async function saveApng(
+    op: { fps?: number; scale?: number },
+    signal: AbortSignal,
+) {
     const exportPath = getSavePath("apng");
     if (!exportPath) return;
 
     await Promise.race([waitProcessing(), abortedPromise(signal)]);
     if (exportCanceled(signal)) return;
+
+    const scale = op.scale ?? 1;
+    const eW = Math.max(1, Math.round(outputV.width * scale));
+    const eH = Math.max(1, Math.round(outputV.height * scale));
 
     let i = 0;
 
@@ -2647,9 +2675,10 @@ async function saveApng(op: { fps?: number }, signal: AbortSignal) {
                 frame.close();
                 return;
             }
-            const { data } = frameTrans2Canvas(frame)
+            const sc = exportScaleCanvas(frameTrans2Canvas(frame), scale);
+            const { data } = sc
                 .getContext("2d")!
-                .getImageData(0, 0, outputV.width, outputV.height); // todo 导出时缩放
+                .getImageData(0, 0, sc.width, sc.height);
             images.push(data.buffer as ArrayBuffer);
             dels.push(delay);
             i++;
@@ -2673,7 +2702,7 @@ async function saveApng(op: { fps?: number }, signal: AbortSignal) {
     if (exportCanceled(signal)) return;
 
     const UPNG = (await import("@pdf-lib/upng")).default;
-    const bytes = UPNG.encode(images, outputV.width, outputV.height, 0, dels);
+    const bytes = UPNG.encode(images, eW, eH, 0, dels);
 
     try {
         await fs.promises.writeFile(exportPath, Buffer.from(bytes));
@@ -2688,7 +2717,7 @@ async function saveApng(op: { fps?: number }, signal: AbortSignal) {
 
 async function saveAnimatedImage(
     format: "webp" | "avif",
-    op: { fps?: number },
+    op: { fps?: number; scale?: number },
     signal: AbortSignal,
 ) {
     const exportPath = getSavePath(format);
@@ -2714,7 +2743,7 @@ async function saveAnimatedImage(
                 lastT = frame.timestamp;
                 const name = `${dir}/${String(frame.timestamp).padStart(16, "0")}.png`;
                 pendingWrites.push(
-                    frameTrans2Canvas(frame)
+                    exportScaleCanvas(frameTrans2Canvas(frame), op.scale ?? 1)
                         .convertToBlob({ type: "image/png" })
                         .then(async (blob) => {
                             await fs.promises.writeFile(
@@ -4096,6 +4125,39 @@ const fpsSelect = () =>
         alignItems: "center",
     });
 
+const scaleSelect = () =>
+    label(
+        [
+            select([
+                { value: "1", name: "100%" },
+                { value: "0.75", name: "75%" },
+                { value: "0.5", name: "50%" },
+                { value: "0.25", name: "25%" },
+            ] as const).class(Class.noDeco),
+            t("缩放"),
+        ],
+        1,
+    ).style({
+        display: "flex",
+        alignItems: "center",
+    });
+
+const fpsScaleConfig = () => {
+    const el = view("x").style({ paddingInline: "8px" });
+    const fps = fpsSelect();
+    const scale = scaleSelect();
+    el.add([fps, scale]);
+    return el
+        .bindGet(() => ({
+            fps: Number(fps.gv) || 0,
+            scale: Number(scale.gv) || 1,
+        }))
+        .bindSet((v: { fps?: number; scale?: number }) => {
+            fps.sv(String(v.fps ?? 0) as "0");
+            scale.sv(String(v.scale ?? 1) as "1");
+        });
+};
+
 const exportConfigEls = {
     gif: (() => {
         const el = view("x").style({ paddingInline: "8px" });
@@ -4112,15 +4174,17 @@ const exportConfigEls = {
             .attr({ min: "0", step: "0.1", ariaLabel: t("끝(초)") })
             .style({ width: "56px" })
             .sv("0");
+        const scale = scaleSelect();
         const trim = label([startInput, "–", endInput, t("초")], 1).style({
             display: "flex",
             alignItems: "center",
         });
-        el.add([dither, fps, trim]);
+        el.add([dither, fps, scale, trim]);
         return el
             .bindGet(() => ({
                 dither: dither.gv,
                 fps: Number(fps.gv) || 0,
+                scale: Number(scale.gv) || 1,
                 startS: Math.max(0, Number(startInput.gv) || 0),
                 endS: Math.max(0, Number(endInput.gv) || 0),
             }))
@@ -4128,52 +4192,21 @@ const exportConfigEls = {
                 (v: {
                     dither: boolean;
                     fps?: number;
+                    scale?: number;
                     startS?: number;
                     endS?: number;
                 }) => {
                     dither.sv(v.dither);
                     fps.sv(String(v.fps ?? 0) as "0");
+                    scale.sv(String(v.scale ?? 1) as "1");
                     startInput.sv(String(v.startS ?? 0));
                     endInput.sv(String(v.endS ?? 0));
                 },
             );
     })(),
-    apng: (() => {
-        const el = view("x").style({ paddingInline: "8px" });
-        const fps = fpsSelect();
-        el.add(fps);
-        return el
-            .bindGet(() => ({
-                fps: Number(fps.gv) || 0,
-            }))
-            .bindSet((v: { fps?: number }) => {
-                fps.sv(String(v.fps ?? 0) as "0");
-            });
-    })(),
-    webp: (() => {
-        const el = view("x").style({ paddingInline: "8px" });
-        const fps = fpsSelect();
-        el.add(fps);
-        return el
-            .bindGet(() => ({
-                fps: Number(fps.gv) || 0,
-            }))
-            .bindSet((v: { fps?: number }) => {
-                fps.sv(String(v.fps ?? 0) as "0");
-            });
-    })(),
-    avif: (() => {
-        const el = view("x").style({ paddingInline: "8px" });
-        const fps = fpsSelect();
-        el.add(fps);
-        return el
-            .bindGet(() => ({
-                fps: Number(fps.gv) || 0,
-            }))
-            .bindSet((v: { fps?: number }) => {
-                fps.sv(String(v.fps ?? 0) as "0");
-            });
-    })(),
+    apng: fpsScaleConfig(),
+    webp: fpsScaleConfig(),
+    avif: fpsScaleConfig(),
     mp4: (() => {
         const el = view("x").style({ paddingInline: "8px" });
         const codec = label(
@@ -4230,7 +4263,16 @@ const exportConfigEls = {
                 codec.sv(v.codec);
             });
     })(),
-    png: view("x"),
+    png: (() => {
+        const el = view("x").style({ paddingInline: "8px" });
+        const scale = scaleSelect();
+        el.add(scale);
+        return el
+            .bindGet(() => ({ scale: Number(scale.gv) || 1 }))
+            .bindSet((v: { scale?: number }) => {
+                scale.sv(String(v.scale ?? 1) as "1");
+            });
+    })(),
 } satisfies Record<(typeof outputType)[number]["type"], ElType<HTMLElement>>;
 
 const exportPx = dynamicSelect();
