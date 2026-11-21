@@ -213,8 +213,8 @@ async function dispaly2screen(
                 const command = _command as string;
                 try {
                     const path = commandSavePath;
-                    fs.rm(path, () => {});
-                    execSync(command, {});
+                    fs.rmSync(path, { force: true });
+                    execSync(command, { timeout: 30_000 });
                     buffer = fs.readFileSync(path);
                     fs.rm(path, () => {});
                 } catch (error) {

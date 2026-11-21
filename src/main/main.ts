@@ -4991,6 +4991,14 @@ ipcMain.on("oc:ding-drag", (event, dataUrl: unknown, name: unknown) => {
         }
         const dir = join(app.getPath("temp"), "oc-drag");
         mkdirSync(dir, { recursive: true });
+        // 매 드래그마다 임시 PNG가 쌓이므로 하루 지난 파일은 정리
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        for (const f of readdirSync(dir)) {
+            try {
+                if (statSync(join(dir, f)).mtimeMs < cutoff)
+                    rmSync(join(dir, f), { force: true });
+            } catch {}
+        }
         const base =
             typeof name === "string" && name
                 ? name.replace(/[\\/:*?"<>|]/g, "_")
