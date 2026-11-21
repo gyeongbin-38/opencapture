@@ -426,13 +426,14 @@ export function createCaptureWorkspace(options: {
     }
     async function compare() {
         const result = await stage();
-        if (!result) return;
+        if (!result) return false;
         const ids = [...thumbnails.keys()].filter((id) => id !== result.id);
         if (!ids.length) {
             showStatus(t("비교할 캡처를 하나 더 보관해 주세요."));
-            return;
+            return false;
         }
         await ipcRenderer.invoke("oc:compare:open", [ids.at(-1), result.id]);
+        return true;
     }
     async function promote() {
         const result = await stage();

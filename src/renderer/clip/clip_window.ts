@@ -5592,6 +5592,9 @@ function runCaptureTool(id: CaptureTool, point = radial.origin()) {
     if (id === "compare") {
         void captureWorkspace
             ?.compare()
+            .then((opened) => {
+                if (opened) void closeWin();
+            })
             .catch((error) => captureWorkspace?.showError(error));
         return;
     }
