@@ -3789,8 +3789,11 @@ function getFObjectV() {
     } = { fc: fillColor, sc: strokeColor, sw: strokeWidth };
     const n = fabricCanvas.getActiveObject();
     if (n) {
-        // todo 当线与形一起选中，确保形不会透明
-        pro.fc = n.fill?.toString();
+        const fillOwner =
+            n instanceof ActiveSelection
+                ? (n.getObjects().find((o) => o.canChangeFill) ?? n)
+                : n;
+        pro.fc = fillOwner.fill?.toString() || undefined;
         pro.sc = n.stroke?.toString();
         pro.sw = n.strokeWidth;
         if ((n as FabricImage).filters) {
