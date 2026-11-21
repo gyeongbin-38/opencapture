@@ -84,7 +84,7 @@ type uiData = {
     clipList: clip[];
     // [start, end]闭区间
     speed: { start: SrcId; end: SrcId; value: number }[];
-    eventList: { start: SrcId; end: SrcId; value: unknown }[]; // todo
+    eventList: { start: SrcId; end: SrcId; value: null }[];
     remove: { start: SrcId; end: SrcId }[];
 };
 
@@ -2099,17 +2099,25 @@ function editClip(i: number) {
     const centerPoint = rect2center(rect);
 
     const clipMoveLast = button(t("移到上一帧")).on("click", () => {
-        // todo 跳过其他clip
-        const i = Math.max(0, clip.i - 1) as SrcId;
-        clip.i = i;
-        jump2id(i);
+        const used = new Set<number>(
+            data.clipList.filter((c) => c !== clip).map((c) => c.i),
+        );
+        let i = clip.i - 1;
+        while (i >= 0 && used.has(i)) i--;
+        if (i < 0) return;
+        clip.i = i as SrcId;
+        jump2id(i as SrcId);
         reRener();
     });
     const clipMoveNext = button(t("移到下一帧")).on("click", () => {
-        // todo 跳过其他clip
-        const i = Math.min(listLength() - 1, clip.i + 1) as SrcId;
-        clip.i = i;
-        jump2id(i);
+        const used = new Set<number>(
+            data.clipList.filter((c) => c !== clip).map((c) => c.i),
+        );
+        let i = clip.i + 1;
+        while (i < listLength() && used.has(i)) i++;
+        if (i >= listLength()) return;
+        clip.i = i as SrcId;
+        jump2id(i as SrcId);
         reRener();
     });
     const clipTransition = label(
@@ -3706,9 +3714,16 @@ const timeLineClip = () => {
     el.el.ondblclick = (e) => {
         if (e.target === e.currentTarget) {
             const data = history.getData();
-            const i = Math.floor(
-                (e.offsetX / el.el.offsetWidth) * listLength(),
+            const i = Math.min(
+                listLength() - 1,
+                Math.floor((e.offsetX / el.el.offsetWidth) * listLength()),
             );
+            if (i < 0) return;
+            const exist = data.clipList.findIndex((c) => c.i === i);
+            if (exist >= 0) {
+                editClip(exist);
+                return;
+            }
             const newClip: clip = {
                 i: i as SrcId,
                 rect: { x: 0, y: 0, w: v.width, h: v.height },
