@@ -3,6 +3,7 @@ import type * as Electron from "electron";
 import store from "../../../lib/store/renderStore";
 import { lan, t } from "../../../lib/translate/translate";
 import { labLangFor, setLabLang } from "../lib/labText";
+import { reportUnhandledErrors } from "../lib/unhandled";
 const { ipcRenderer, clipboard } = require("electron") as typeof Electron;
 lan(store.get("语言.语言"));
 setLabLang(labLangFor(store.get("语言.语言")));
@@ -45,6 +46,9 @@ const result = ele("div")
         borderRadius: "10px",
     })
     .addInto(container);
+reportUnhandledErrors((message) => {
+    result.el.textContent = message;
+});
 const translateButton = button(t("번역"))
     .style({
         padding: "12px",

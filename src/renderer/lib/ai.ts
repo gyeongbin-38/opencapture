@@ -57,7 +57,11 @@ function runAI(
     let streamFun: (text: string, end: boolean) => void = () => {};
 
     const abortController = new AbortController();
-    const { promise, resolve } = Promise.withResolvers<string>();
+    const { promise, resolve, reject } = Promise.withResolvers<string>();
+    const finish = (end: string) => {
+        streamFun(resultText, true);
+        resolve(end);
+    };
 
     let url = x.url;
     if (x.url.replace(/\/$/, "").endsWith("v1/chat/completions")) {
@@ -74,34 +78,60 @@ function runAI(
         },
         signal: abortController.signal,
         body: JSON.stringify(m),
-    }).then((res) => {
-        if (!res.body) return;
-        const reader = res.body.getReader();
-        const textDecoder = new TextDecoder();
-        reader.read().then(function readBody(result) {
-            const text = textDecoder
-                .decode(result.value)
-                .split("\n")
-                .map((i) =>
-                    i
+    })
+        .then(async (res) => {
+            if (!res.ok) {
+                const errText = await res.text().catch(() => "");
+                let msg = `HTTP ${res.status}`;
+                try {
+                    const j = JSON.parse(errText);
+                    msg = j?.error?.message ?? msg;
+                } catch {
+                    if (errText) msg += `: ${errText.slice(0, 200)}`;
+                }
+                throw new Error(msg);
+            }
+            if (!res.body) throw new Error("response has no body");
+            const reader = res.body.getReader();
+            const textDecoder = new TextDecoder();
+            let buffered = "";
+            const readBody = (
+                result: ReadableStreamReadResult<Uint8Array>,
+            ): Promise<void> | void => {
+                buffered += textDecoder.decode(result.value, {
+                    stream: !result.done,
+                });
+                const lines = buffered.split("\n");
+                buffered = result.done ? "" : (lines.pop() ?? "");
+                for (const raw of lines) {
+                    const i = raw
                         .trim()
                         .replace(/^data:/, "")
-                        .trim(),
-                )
-                .filter((i) => i !== "");
-            for (const i of text) {
-                if (i === "[DONE]") {
-                    abortController.abort();
-                    streamFun(resultText, true);
-                    resolve(resultText);
+                        .trim();
+                    if (i === "") continue;
+                    if (i === "[DONE]") {
+                        abortController.abort();
+                        finish(resultText);
+                        return;
+                    }
+                    parse(i);
+                }
+                if (result.done) {
+                    finish(resultText);
                     return;
                 }
-                parse(i);
+                return reader.read().then(readBody);
+            };
+            return reader.read().then(readBody);
+        })
+        .catch((e) => {
+            streamFun(resultText, true);
+            if (abortController.signal.aborted) {
+                resolve(resultText);
+            } else {
+                reject(e);
             }
-
-            reader.read().then(readBody);
         });
-    });
     function parse(text: string) {
         let res = "";
         try {

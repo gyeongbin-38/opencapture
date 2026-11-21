@@ -16,11 +16,14 @@ import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
 import { type aiData, runAI } from "../lib/ai";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { Class, cssColor, cssVar, getImgUrl, initStyle } from "../root/root";
 
 initStyle(store);
 
 document.title = t("AI 视觉");
+
+reportUnhandledErrors(alert);
 
 const md = new Remarkable({ breaks: true });
 
@@ -193,6 +196,18 @@ async function runAIX(targetId?: string, force = false) {
         });
         newChatItem(id);
         pickLastItem();
+        if (end) stopEl.sv(false);
+    });
+
+    a.text.catch((e) => {
+        const old = content.get(id)?.content.text ?? "";
+        content.set(id, {
+            role: "assistant",
+            content: {
+                text: `${old}${old ? "\n\n" : ""}${e instanceof Error ? e.message : String(e)}`,
+            },
+        });
+        newChatItem(id);
     });
 }
 

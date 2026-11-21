@@ -2,6 +2,7 @@ import { button, ele, initDKH, txt, view } from "dkh-ui";
 import type { OpenCaptureItem } from "../../../lib/openCaptureTypes";
 import { icon } from "../dashboard/icons";
 import { t } from "../dashboard/t";
+import { reportUnhandledErrors } from "../lib/unhandled";
 
 initDKH({ pureStyle: true });
 document.title = t("임시 캡처");
@@ -22,6 +23,9 @@ const status = txt("")
     .class("shelf-status")
     .attr({ role: "status", ariaLive: "polite" })
     .addInto(panel);
+reportUnhandledErrors((message) => {
+    status.el.textContent = message;
+});
 txt(
     [
         `C ${t("복사")}`,
