@@ -2,9 +2,14 @@ import { view } from "dkh-ui";
 import { renderSend } from "../../../lib/ipc";
 import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { initStyle, setTitle } from "../root/root";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 setTitle(t("드롭존"));
 
 const iconPaths: Record<string, string> = {

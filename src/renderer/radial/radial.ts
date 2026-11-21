@@ -4,9 +4,14 @@ import { renderOn, renderSend } from "../../../lib/ipc";
 import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
 import type { IconType } from "../../iconTypes";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { getImgUrl, initStyle } from "../root/root";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 const actionDefs: Record<string, { icon: IconType; label: string }> = {
     screens: { icon: "camera", label: t("截屏") },

@@ -18,6 +18,7 @@ import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
 import { typedEntries } from "../../../lib/utils";
 import type { IconType } from "../../iconTypes";
+import { reportUnhandledErrors } from "../lib/unhandled";
 
 function initRecord() {
     if (store.get("录屏.提示.键盘.开启") || store.get("录屏.提示.鼠标.开启"))
@@ -296,6 +297,10 @@ function iconEl(src: IconType) {
 }
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 pack(document.body)
     .style({

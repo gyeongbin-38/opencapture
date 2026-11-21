@@ -3,9 +3,14 @@ import { renderSend } from "../../../lib/ipc";
 import store from "../../../lib/store/renderStore";
 import { t } from "../../../lib/translate/translate";
 import type { 功能 } from "../../ShareTypes.js";
+import { reportUnhandledErrors } from "../lib/unhandled";
 import { initStyle } from "../root/root";
 
 initStyle(store);
+
+reportUnhandledErrors((message) =>
+    renderSend("noti", [{ title: t("오류"), body: message }]),
+);
 
 const params = new URLSearchParams(location.search);
 const total = Math.max(1, Math.min(15, Number(params.get("seconds")) || 3));
