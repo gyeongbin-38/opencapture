@@ -50,6 +50,7 @@
     "415812": "Recharge forcée",
     "417602": "Vérification de l'état de connexion.",
     "422455": "Afficher le contenu en premier",
+    "422961": "Taille estimée de l'exportation",
     "431034": "Entrée par clic",
     "431992": "Gif",
     "451442": "Image rognée enregistrée.",
@@ -2530,5 +2531,6 @@
     "94e78a": "Impossible d'enregistrer le fichier.",
     "524cb4": "Impossible de copier dans le presse-papiers.",
     "5426c1": "Le codec sélectionné n'est pas pris en charge.",
-    "2cb5b3": "Échec de la migration des données."
+    "2cb5b3": "Échec de la migration des données.",
+    "a35514": "Exportation interrompue — espace disque insuffisant."
 }

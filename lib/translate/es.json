@@ -50,6 +50,7 @@
     "415812": "Recarga forzada",
     "417602": "Comprobando el estado de conexión.",
     "422455": "Mostrar primero el contenido",
+    "422961": "Tamaño estimado de exportación",
     "431034": "Entrada de clic",
     "431992": "Gif",
     "451442": "Imagen recortada guardada.",
@@ -2530,5 +2531,6 @@
     "94e78a": "No se pudo guardar el archivo.",
     "524cb4": "No se pudo copiar al portapapeles.",
     "5426c1": "El códec seleccionado no es compatible.",
-    "2cb5b3": "No se pudo migrar los datos."
+    "2cb5b3": "No se pudo migrar los datos.",
+    "a35514": "Exportación detenida: no hay suficiente espacio en disco."
 }

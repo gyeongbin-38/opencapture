@@ -2270,7 +2270,8 @@ async function save() {
         const type = exportEls.type.gv;
         if (type === "png") await saveImages(signal);
         else if (type === "gif") await saveGif(gifOp(), signal);
-        else if (type === "apng") await saveApng(signal);
+        else if (type === "apng")
+            await saveApng({ fps: exportConfigEls.apng.gv.fps }, signal);
         else if (type === "webp" || type === "avif")
             await saveAnimatedImage(type, signal);
         else if (type === "webm")
@@ -2338,8 +2339,12 @@ function tipNoAudio() {
     tipLog(t("导出未包含音频"));
 }
 
+const formatBytes = (bytes: number) =>
+    bytes >= 1024 ** 3
+        ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
+        : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+
 async function saveImages(signal: AbortSignal) {
-    // todo 大小警告
     const exportPath = getSavePath("png");
     if (!exportPath) return;
 
@@ -2350,6 +2355,19 @@ async function saveImages(signal: AbortSignal) {
         console.error("mkdir failed:", error);
         return;
     }
+
+    // 帧序列 PNG 按经验约 3B/px 估算；可用空间不足时直接放弃，
+    // 较大导出先给出预期提示
+    const estBytes = transformCs.length * outputV.width * outputV.height * 3;
+    try {
+        const st = fs.statfsSync(exportPath);
+        if (st.bavail * st.bsize < estBytes) {
+            tipLog(t("디스크 공간이 부족해 내보내기를 중단했습니다."));
+            return;
+        }
+    } catch {}
+    if (estBytes > 1024 ** 3)
+        tipLog(`${t("예상 내보내기 크기")} ≈ ${formatBytes(estBytes)}`);
 
     await waitProcessing();
     if (exportCanceled(signal)) return;
@@ -2438,7 +2456,7 @@ async function saveGif(
 
     const delayMap = new Map<number, number>();
     const heightDt = ms2timestamp(1000 / srcRate);
-    const lowDt = ms2timestamp(1000 / 15); // todo 设置
+    const lowDt = ms2timestamp(1000 / 15);
     const maxFps = op?.fps && op.fps > 0 ? Math.min(op.fps, srcRate) : 0;
     const minDt = maxFps ? ms2timestamp(1000 / maxFps) : 0;
     let lastT = 0;
@@ -2559,7 +2577,7 @@ async function saveGif(
     renderSend("ok_save", [exportPath]);
 }
 
-async function saveApng(signal: AbortSignal) {
+async function saveApng(op: { fps?: number }, signal: AbortSignal) {
     const exportPath = getSavePath("apng");
     if (!exportPath) return;
 
@@ -2570,15 +2588,25 @@ async function saveApng(signal: AbortSignal) {
 
     const delayMap = new Map<number, number>();
     const heightDt = ms2timestamp(1000 / srcRate);
-    const lowDt = ms2timestamp(1000 / 15); // todo 设置
+    const lowDt = ms2timestamp(1000 / 15);
+    const maxFps = op.fps && op.fps > 0 ? Math.min(op.fps, srcRate) : 0;
+    const minDt = maxFps ? ms2timestamp(1000 / maxFps) : 0;
     let lastT = 0;
     const zeroByte = (transformCs.at(0 as TransId) as EncodedVideoChunk)
         .byteLength;
     for (const [i, chunk] of transformCs.entries()) {
         if (i === 0) {
             delayMap.set(chunk.timestamp, 0);
+            lastT = chunk.timestamp;
         } else {
             const delay = chunk.timestamp - lastT;
+            if (maxFps) {
+                if (delay >= minDt) {
+                    delayMap.set(chunk.timestamp, timestamp2ms(delay));
+                    lastT = chunk.timestamp;
+                }
+                continue;
+            }
             if (chunk.byteLength < 0.3 * zeroByte) {
                 if (delay < lowDt) continue;
                 delayMap.set(chunk.timestamp, timestamp2ms(delay));
@@ -4065,7 +4093,33 @@ const exportConfigEls = {
                 },
             );
     })(),
-    apng: view(),
+    apng: (() => {
+        const el = view("x").style({ paddingInline: "8px" });
+        const fps = label(
+            [
+                select([
+                    { value: "0", name: t("원본 속도") },
+                    { value: "24" },
+                    { value: "15" },
+                    { value: "10" },
+                    { value: "5" },
+                ] as const).class(Class.noDeco),
+                t("초당 프레임"),
+            ],
+            1,
+        ).style({
+            display: "flex",
+            alignItems: "center",
+        });
+        el.add(fps);
+        return el
+            .bindGet(() => ({
+                fps: Number(fps.gv) || 0,
+            }))
+            .bindSet((v: { fps?: number }) => {
+                fps.sv(String(v.fps ?? 0) as "0");
+            });
+    })(),
     webp: view(),
     avif: view(),
     mp4: (() => {

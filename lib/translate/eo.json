@@ -50,6 +50,7 @@
     "415812": "Forto reŝargi",
     "417602": "Kontrolante konektan staton.",
     "422455": "Montru enhavon unue",
+    "422961": "Taksita eksporta grandeco",
     "431034": "Klaku enigi",
     "431992": "Gif",
     "451442": "Stondita bildo konservita.",
@@ -2530,5 +2531,6 @@
     "94e78a": "La dosiero ne povis esti konservita.",
     "524cb4": "Ne eblis kopii al la poŝo.",
     "5426c1": "La elektita kodeko ne estas subtenata.",
-    "2cb5b3": "Malsukcesis migrigi datumojn."
+    "2cb5b3": "Malsukcesis migrigi datumojn.",
+    "a35514": "Eksporto haltigita — nesufiĉa diska spaco."
 }

@@ -50,6 +50,7 @@
     "415812": "Force Reload",
     "417602": "Checking connection status.",
     "422455": "Priority for displaying content",
+    "422961": "Estimated export size",
     "431034": "Click to input",
     "431992": "Gif",
     "451442": "Cropped image saved.",
@@ -2611,5 +2612,6 @@
     "94e78a": "The file could not be saved.",
     "524cb4": "Could not copy to the clipboard.",
     "5426c1": "The selected codec is not supported.",
-    "2cb5b3": "Data migration failed."
+    "2cb5b3": "Data migration failed.",
+    "a35514": "Export stopped — not enough disk space."
 }
