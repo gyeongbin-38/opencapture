@@ -3640,20 +3640,20 @@ function colorInput(type: "fill" | "stroke") {
         const color = getInputV();
         i.style({ "background-color": color.hex() });
 
-        let textColor = "#000";
         const tColor = color;
         const bgColor = chroma(
             window
                 .getComputedStyle(document.documentElement)
                 .getPropertyValue("--bar-bg0"),
         );
-        if (tColor.alpha() >= 0.5 || tColor.alpha() === undefined) {
-            textColor = pickTextColor(tColor); // todo 直接混合
-        } else {
-            // 低透明度背景呈现栏的颜色
-            textColor = pickTextColor(bgColor);
-        }
-        i.style({ color: textColor });
+        // 输入框实际显示的是颜色盖在栏背景上的混合色，按混合色取对比色
+        const mixed = chroma.mix(
+            bgColor,
+            tColor.alpha(1),
+            tColor.alpha(),
+            "rgb",
+        );
+        i.style({ color: pickTextColor(mixed) });
 
         if (type === "fill") {
             drawColorEl.el.style.backgroundColor = color.hex();

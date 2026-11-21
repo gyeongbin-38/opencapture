@@ -602,7 +602,9 @@ function runFfmpeg(type: "ts" | "clip" | "join", n: number, args: string[]) {
                 updataPrEl(ffprocess);
                 if (type === "ts") {
                     retryAction = () => {
-                        void runFfmpeg(type, n, args).catch(() => {});
+                        void runFfmpeg(type, n, args).catch((e) =>
+                            console.error("ffmpeg retry failed:", e),
+                        );
                     };
                     setRecorderState(
                         "error",

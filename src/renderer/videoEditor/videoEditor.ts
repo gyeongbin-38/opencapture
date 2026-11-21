@@ -956,14 +956,20 @@ function mapKeysOnFrames(chunks: EncodedVideoChunk[], keys: superRecording) {
     history.apply();
 }
 
-function renderUiData(data: uiData) {
-    timeLineClipEl.setData(data.clipList);
-    timeLineSpeedEl.setData(data.speed);
+function renderUiData(data: uiData, lanes?: (keyof uiData)[]) {
+    const has = (k: keyof uiData) => !lanes || lanes.includes(k);
+    if (has("clipList")) timeLineClipEl.setData(data.clipList);
+    if (has("speed")) timeLineSpeedEl.setData(data.speed);
     // @ts-ignore
-    timeLineEventEl.setData(data.eventList);
-    timeLineRemoveEl.setData(
-        data.remove.map((r) => ({ start: r.start, end: r.end, value: null })),
-    );
+    if (has("eventList")) timeLineEventEl.setData(data.eventList);
+    if (has("remove"))
+        timeLineRemoveEl.setData(
+            data.remove.map((r) => ({
+                start: r.start,
+                end: r.end,
+                value: null,
+            })),
+        );
 }
 
 function getFrameXs(_data: uiData | null) {
@@ -2093,7 +2099,7 @@ function editClip(i: number) {
     }
 
     function reRener() {
-        renderUiData(data); // todo 部分更新
+        renderUiData(data, ["clipList"]);
     }
 
     const centerPoint = rect2center(rect);
@@ -3732,7 +3738,7 @@ const timeLineClip = () => {
             data.clipList.push(newClip);
 
             history.setData(data);
-            renderUiData(data);
+            renderUiData(data, ["clipList"]);
             editClip(data.clipList.length - 1);
         }
     };

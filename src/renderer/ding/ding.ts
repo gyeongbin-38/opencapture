@@ -1944,8 +1944,7 @@ function splitText(
 // 最高窗口
 let toppest = 1;
 let oPs: number[];
-let windowDiv: ElType<HTMLElement> | null = null; // todo 使用id代替
-
+let windowDivId: string | null = null;
 let resizeSender = false;
 
 document.onmousedown = (e) => {
@@ -1973,8 +1972,9 @@ document.onmousedown = (e) => {
     resizeSender = true;
 };
 function mouseStart(op: DingStart) {
-    windowDiv = elFromId(op.id);
-    const div = windowDiv as ElType<HTMLElement>;
+    windowDivId = op.id;
+    const div = elFromId(op.id);
+    if (!div) return;
     const {
         po: { x, y },
     } = renderSendSync("getMousePos", []);
@@ -1994,7 +1994,8 @@ function mouseStart(op: DingStart) {
 }
 function mouseMove(el: HTMLElement, x: number, y: number) {
     if (direction) {
-        if (windowDiv) move(windowDiv, { x, y });
+        const div = windowDivId ? elFromId(windowDivId) : null;
+        if (div) move(div, { x, y });
     } else {
         const div = dives.find((d) => d.el.contains(el));
         if (div) {
@@ -2012,7 +2013,7 @@ document.onmouseup = (_e) => {
 function mouseEnd() {
     oPs = [];
     changing = null;
-    windowDiv = null;
+    windowDivId = null;
     direction = "";
     markSessionDirty();
     cursor(direction);
